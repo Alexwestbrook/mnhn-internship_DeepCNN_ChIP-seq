@@ -1,5 +1,6 @@
-from keras_dna import Generator, ModelWrapper, MultiGenerator
 import tensorflow.keras as keras
+from keras_dna import Generator, ModelWrapper, MultiGenerator
+
 from keras_dna.sequence import SeqIntervalDl, StringSeqIntervalDl
 import os
 
