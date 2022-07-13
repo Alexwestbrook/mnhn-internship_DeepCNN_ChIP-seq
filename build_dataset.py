@@ -78,7 +78,7 @@ def parsing():
     parser.add_argument(
         "-full", "--full_size",
         action="store_true",
-        help="indicates to only use full sized reads")
+        help="indicates to only use fully sized reads")
     parser.add_argument(
         "-max", "--max_size",
         help="maximum number of reads to take from IP or Control, default to "
