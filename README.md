@@ -1,5 +1,4 @@
 # mnhn-internship_DeepCNN_ChIP-seq
-repository for sharing code with mnhn calculator
 
 This repository contains code written during my internship at Museum National d'Histoire Naturelle.
 You may find python code to read fastq files and train a CNN to classify reads from different files.
