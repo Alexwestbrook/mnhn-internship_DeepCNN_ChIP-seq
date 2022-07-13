@@ -72,7 +72,7 @@ python $scripts_dir/build_dataset.py -ip $data_dir/$data/raw_data/IP_reads.npz -
 
 
 
-### Training and evaluating
+#### Training and evaluating
 
 data='CENPT'
 dataset='dataset'
@@ -101,7 +101,7 @@ res_name='distrib_'$model_name'_train'
 python $scripts_dir/evaluate_model.py -m $writing_dir/$data/Trainedmodels/$model_name/model -d $data_dir/$data/$dataset.npz -out $writing_dir/$data/results/$model_name/$res_name -data 'train'
 
 
-### Relabeling and re-training
+#### Relabeling and re-training
 data='CENPT'
 dataset='dataset'
 model_name='model_inception'
