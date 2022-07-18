@@ -77,12 +77,12 @@ python $scripts_dir/build_dataset.py -ip $data_dir/$data/raw_data/IP_reads.npz -
 data='CENPT'
 dataset='dataset'
 model_name='model_inception'
-architecture='Inception.py'
+architecture='inception_dna_v1'
 # create output directory
 mkdir $writing_dir/$data/Trainedmodels/$model_name/
 mkdir $writing_dir/$data/results/$model_name/
 # train model
-python $scripts_dir/Train_model.py -arch $architecture -d $data_dir/$data/$dataset.npz -out $writing_dir/$data/Trainedmodels/$model_name/
+python $scripts_dir/Train_model.py -arch $architecture -d $data_dir/$data/$dataset.npz -out $writing_dir/$data/Trainedmodels/$model_name/ -ee
 
 
 # save test predictions
@@ -113,7 +113,7 @@ data='CENPT'
 dataset='dataset'
 new_labels='dataset_rel5'
 model_name='model_inception_rel5'
-architecture='Inception.py'
+architecture='inception_dna_v1'
 # create output directory
 mkdir $writing_dir/$data/Trainedmodels/$model_name/
 mkdir $writing_dir/$data/results/$model_name/
