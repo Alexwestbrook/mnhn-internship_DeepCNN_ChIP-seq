@@ -402,8 +402,9 @@ def find_duplicates(reads,
         batches = np.split(reads, batch_size*np.arange(1, n_batch, dtype=int))
     else:
         batches = [reads]
+    print(len(batches), 'batches')
     for id, batch in enumerate(batches):
-        print(f'Decoding batch {id}')
+        print(f'Processing batch {id}')
         if one_hot:
             batch = one_hot_to_seq(batch)
         for i, read in enumerate(batch):
@@ -412,7 +413,7 @@ def find_duplicates(reads,
                 dup = True
             else:
                 dico[read] = 1
-            if (i+1) % print_freq == 0:
+            if (i+1) % print_freq == 0 or i+1 == len(batch):
                 msg = f'seq {i+1}/{len(batch)}'
                 if dup:
                     msg += ' duplicates'
