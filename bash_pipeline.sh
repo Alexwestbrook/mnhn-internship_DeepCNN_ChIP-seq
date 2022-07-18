@@ -82,7 +82,7 @@ architecture='inception_dna_v1'
 mkdir $writing_dir/$data/Trainedmodels/$model_name/
 mkdir $writing_dir/$data/results/$model_name/
 # train model
-python $scripts_dir/Train_model.py -arch $architecture -d $data_dir/$data/$dataset.npz -out $writing_dir/$data/Trainedmodels/$model_name/ -ee
+python $scripts_dir/Train_model.py -arch $architecture -d $data_dir/$data/$dataset.npz -out $writing_dir/$data/Trainedmodels/$model_name/ -ee -dist
 
 
 # save test predictions
