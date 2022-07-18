@@ -403,8 +403,8 @@ def find_duplicates(reads,
     else:
         batches = [reads]
     for id, batch in enumerate(batches):
+        print(f'Decoding batch {id}')
         if one_hot:
-            print(f'Decoding batch {id}')
             batch = one_hot_to_seq(batch)
         for i, read in enumerate(batch):
             if read in dico:
