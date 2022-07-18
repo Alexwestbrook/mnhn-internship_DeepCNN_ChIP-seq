@@ -48,13 +48,17 @@ while cur_arg < len(sys.argv):
     with open(sys.argv[cur_arg], 'r') as f:
         # loop over file lines
         i = 0
+        read = ''
         while True:
             line = f.readline()
             if not line:
                 break
-            # only consider the 4k+1 lines containing the sequences
-            if (i-1) % 2 == 0:
-                reads.append(line[:-1])  # remove space at the end
+            # only consider the lines containing the sequences
+            if line[0] == '>' and read != '':
+                reads.append(read)
+                read = ''
+            else:
+                read += line.rstrip()  # remove space at the end
             i += 1
     cur_arg += 1
 reads = np.array(reads)

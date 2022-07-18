@@ -5,6 +5,7 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras.losses import Loss
+from tensorflow.keras.metrics import binary_crossentropy
 import os
 from sklearn.preprocessing import OneHotEncoder
 import time
@@ -31,6 +32,10 @@ class Eval_after_epoch(Callback):
                 np.reshape(self.preds, (self.epochs, -1)))
 
 # class ReweightingBinaryCrossentropy(Loss):
+def reweighting_binarycrossentropy(y_true, y_pred):
+    loss = binary_crossentropy(y_true, y_pred)
+
+    return 0
 
 
 class DataGenerator(Sequence):
