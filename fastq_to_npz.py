@@ -56,7 +56,7 @@ while cur_arg < len(sys.argv):
                 break
             # only consider the 4k+1 lines containing the sequences
             if (i-1) % 4 == 0:
-                reads.append(line[:-1])  # remove space at the end
+                reads.append(line.rstrip())  # remove space at the end
             i += 1
     cur_arg += 1
 reads = np.array(reads)
