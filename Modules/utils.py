@@ -31,10 +31,10 @@ class Eval_after_epoch(Callback):
         np.save(os.path.join(self.model_dir, 'eval_epochs'),
                 np.reshape(self.preds, (self.epochs, -1)))
 
+
 # class ReweightingBinaryCrossentropy(Loss):
 def reweighting_binarycrossentropy(y_true, y_pred):
     loss = binary_crossentropy(y_true, y_pred)
-
     return 0
 
 
@@ -547,6 +547,15 @@ def classify_1D(features, y, bins):
     assert(bin_thres != len(bins) - 1)
     thres = (bins[bin_thres] + bins[bin_thres+1]) / 2
     return accuracy, thres
+
+
+def chunck_into_reads(long_reads, read_length=101):
+    reads = []
+    for i, long in enumerate(long_reads):
+        chuncks = [long[i:i+read_length]
+                   for i in range(0, len(long), read_length)]
+        reads.extend(chuncks)
+    return reads
 
 # # sparse_one_hot encoding
 # categories = np.array([['A'], ['C'], ['G'], ['T']])
