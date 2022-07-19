@@ -54,6 +54,13 @@ fi
 
 #### dataset creation
 
+# extract fasta
+data='Bombyx'
+X_file1='p50_dissect_D2-24h_cluster_X_chunck_300bp.fasta'
+nonX_file1='p50_dissect_D2-24h_cluster_non-X_chunck_300bp.fasta'
+python $scripts_dir/fastq_to_npz.py $writing_dir/$data/raw_data/X_reads $data_dir/$data/raw_data/X/$X_file1
+python $scripts_dir/fastq_to_npz.py $writing_dir/$data/raw_data/nonX_reads $data_dir/$data/raw_data/nonX/$nonX_file1
+
 # extract fastq
 data='NONO'
 IP_file1='ENCFF767SQO.fastq'
