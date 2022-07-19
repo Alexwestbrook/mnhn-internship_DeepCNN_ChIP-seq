@@ -2,9 +2,10 @@
 
 import numpy as np
 import tensorflow as tf
+from keras.engine import data_adapter
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
-from tensorflow.keras.losses import Loss
+from tensorflow.keras import Model
 from tensorflow.keras.metrics import binary_crossentropy
 import os
 from sklearn.preprocessing import OneHotEncoder
@@ -32,10 +33,53 @@ class Eval_after_epoch(Callback):
                 np.reshape(self.preds, (self.epochs, -1)))
 
 
-# class ReweightingBinaryCrossentropy(Loss):
-def reweighting_binarycrossentropy(y_true, y_pred):
+class FirstEpochCheck(Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        self.model.first_epoch = False
+
+
+class ReweightingModel(Model):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.first_epoch = True
+
+    def train_step(self, data):
+        # Unpack the data. Its structure depends on your model and
+        # on what you pass to `fit()`.
+        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+        # Reweight samples
+        if not self.first_epoch:
+            sample_weight = tf.zeros(tf.shape(sample_weight))
+            # reweighting_positives(sample_weight, loss, y)
+        # Run forward pass.
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)
+            loss = self.compute_loss(x, y, y_pred, sample_weight)
+        self._validate_target_and_loss(y, loss)
+        # Run backwards pass.
+        self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
+        return self.compute_metrics(x, y, y_pred, sample_weight)
+
+
+@tf.function
+def reweighting_positives(weights, y_true, y_pred, T=1):
+    # compute loss
     loss = binary_crossentropy(y_true, y_pred)
-    return 0
+    # compute weights
+    val = - loss / T
+    max_val = tf.math.reduce_max(val)
+    new_weights = tf.exp(val - max_val)
+    print('unbalanced weights\n', new_weights)
+    # balance pos and neg weights to maintain relative importance
+    mask_pos = (tf.squeeze(y_true) == 1)
+    old_sum_pos = tf.reduce_sum(weights[mask_pos])
+    sum_pos = tf.reduce_sum(new_weights[mask_pos])
+    print('sum pos\n', sum_pos)
+    coef_pos = old_sum_pos/sum_pos
+    print('coef pos\n', coef_pos)
+    new_weights = tf.where(mask_pos, new_weights*coef_pos, weights)
+    print('weights\n', new_weights)
+    return new_weights
 
 
 class DataGenerator(Sequence):
