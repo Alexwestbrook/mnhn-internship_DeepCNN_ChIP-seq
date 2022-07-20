@@ -7,6 +7,7 @@ from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras import Model
 from tensorflow.keras.metrics import binary_crossentropy
+from tensorflow.python.eager import backprop
 import os
 from sklearn.preprocessing import OneHotEncoder
 import time
@@ -33,53 +34,65 @@ class Eval_after_epoch(Callback):
                 np.reshape(self.preds, (self.epochs, -1)))
 
 
-class FirstEpochCheck(Callback):
-    def on_epoch_end(self, epoch, logs=None):
-        self.model.first_epoch = False
-
-
 class ReweightingModel(Model):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, T=1, start_reweighting=2000, **kwargs):
         super().__init__(*args, **kwargs)
-        self.first_epoch = True
+        self.T = T
+        self.start_reweighting = start_reweighting
+
+    @tf.function
+    def maybe_reweight(self, x, y, sample_weight):
+        if self._train_counter > self.start_reweighting:
+            y_pred = self(x, training=False)
+            sample_weight = self.reweight_positives(sample_weight, y, y_pred)
+        return sample_weight
+
+    @tf.function
+    def reweight_positives(self, weights, y_true, y_pred):
+        weights = tf.squeeze(weights)
+        # compute loss
+        loss = binary_crossentropy(y_true, y_pred)
+        # compute new weights for each sample
+        val = - loss / self.T
+        max_val = tf.math.reduce_max(val)
+        new_weights = tf.exp(val - max_val)
+        # rescale positive weights to maintain total sum over batch
+        mask_pos = tf.squeeze(y_true)
+        mask_pos.set_shape([None])
+        old_sum_pos = tf.reduce_sum(weights[mask_pos])
+        sum_pos = tf.reduce_sum(new_weights[mask_pos])
+        coef_pos = old_sum_pos/sum_pos
+        # change only positive weights
+        new_weights = tf.where(mask_pos, new_weights*coef_pos, weights)
+        return tf.expand_dims(new_weights, axis=1)
 
     def train_step(self, data):
-        # Unpack the data. Its structure depends on your model and
-        # on what you pass to `fit()`.
+        # These are the only transformations `Model.fit` applies to user-input
+        # data when a `tf.data.Dataset` is provided.
+        data = data_adapter.expand_1d(data)
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
-        # Reweight samples
-        if not self.first_epoch:
-            sample_weight = tf.zeros(tf.shape(sample_weight))
-            # reweighting_positives(sample_weight, loss, y)
+
+        # Reweight samples ####################################
+        sample_weight = self.maybe_reweight(x, y, sample_weight)
+        ########################################################
+
         # Run forward pass.
-        with tf.GradientTape() as tape:
+        with backprop.GradientTape() as tape:
             y_pred = self(x, training=True)
-            loss = self.compute_loss(x, y, y_pred, sample_weight)
-        self._validate_target_and_loss(y, loss)
+            loss = self.compiled_loss(
+                y, y_pred, sample_weight, regularization_losses=self.losses)
         # Run backwards pass.
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
-        return self.compute_metrics(x, y, y_pred, sample_weight)
-
-
-@tf.function
-def reweighting_positives(weights, y_true, y_pred, T=1):
-    # compute loss
-    loss = binary_crossentropy(y_true, y_pred)
-    # compute weights
-    val = - loss / T
-    max_val = tf.math.reduce_max(val)
-    new_weights = tf.exp(val - max_val)
-    print('unbalanced weights\n', new_weights)
-    # balance pos and neg weights to maintain relative importance
-    mask_pos = (tf.squeeze(y_true) == 1)
-    old_sum_pos = tf.reduce_sum(weights[mask_pos])
-    sum_pos = tf.reduce_sum(new_weights[mask_pos])
-    print('sum pos\n', sum_pos)
-    coef_pos = old_sum_pos/sum_pos
-    print('coef pos\n', coef_pos)
-    new_weights = tf.where(mask_pos, new_weights*coef_pos, weights)
-    print('weights\n', new_weights)
-    return new_weights
+        self.compiled_metrics.update_state(y, y_pred, sample_weight)
+        # Collect metrics to return
+        return_metrics = {}
+        for metric in self.metrics:
+            result = metric.result()
+            if isinstance(result, dict):
+                return_metrics.update(result)
+            else:
+                return_metrics[metric.name] = result
+        return return_metrics
 
 
 class DataGenerator(Sequence):
