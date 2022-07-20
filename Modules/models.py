@@ -14,7 +14,7 @@ def build_model(model_name,
                 read_length=101,
                 learn_rate=0.001,
                 loss='binary_crossentropy',
-                reweighting=False,
+                method=0,
                 T=1,
                 start_reweighting=2000):
     model_dict = {
@@ -26,7 +26,7 @@ def build_model(model_name,
     }
     model = model_dict[model_name](
         read_length=read_length,
-        reweighting=reweighting,
+        method=method,
         T=T,
         start_reweighting=start_reweighting
     )
@@ -125,7 +125,7 @@ def inception_module(x,
 
 
 def inception_dna_v1(read_length=101,
-                     reweighting=False,
+                     method=0,
                      T=1,
                      start_reweighting=2000):
     """
@@ -174,11 +174,11 @@ def inception_dna_v1(read_length=101,
     x = Dense(units=1,
               activation='sigmoid',
               name='dense_out')(x)
-    if reweighting:
+    if method == 0:
         model = tf.keras.Model(input_layer,
                                x,
                                name='inception_dna_v1')
-    else:
+    elif method == 1:
         model = utils.ReweightingModel(input_layer,
                                        x,
                                        T=T,
@@ -188,7 +188,7 @@ def inception_dna_v1(read_length=101,
 
 
 def inception_dna_v2(read_length=101,
-                     reweighting=False,
+                     method=0,
                      T=1,
                      start_reweighting=2000):
     """
@@ -247,11 +247,11 @@ def inception_dna_v2(read_length=101,
     x = Dense(units=1,
               activation='sigmoid',
               name='dense_out')(x)
-    if reweighting:
+    if method == 0:
         model = tf.keras.Model(input_layer,
                                x,
                                name='inception_dna_v2')
-    else:
+    elif method == 1:
         model = utils.ReweightingModel(input_layer,
                                        x,
                                        T=T,
@@ -261,7 +261,7 @@ def inception_dna_v2(read_length=101,
 
 
 def Yann_original(read_length=101,
-                  reweighting=False,
+                  method=0,
                   T=1,
                   start_reweighting=2000):
     """
@@ -299,11 +299,11 @@ def Yann_original(read_length=101,
     x = Dense(units=1,
               activation='sigmoid',
               name='dense_out')(x)
-    if reweighting:
+    if method == 0:
         model = tf.keras.Model(input_layer,
                                x,
                                name='Yann_original')
-    else:
+    elif method == 1:
         model = utils.ReweightingModel(input_layer,
                                        x,
                                        T=T,
@@ -313,7 +313,7 @@ def Yann_original(read_length=101,
 
 
 def Yann_with_init(read_length=101,
-                   reweighting=False,
+                   method=0,
                    T=1,
                    start_reweighting=2000):
     """
@@ -355,11 +355,11 @@ def Yann_with_init(read_length=101,
     x = Dense(units=1,
               activation='sigmoid',
               name='dense_out')(x)
-    if reweighting:
+    if method == 0:
         model = tf.keras.Model(input_layer,
                                x,
                                name='Yann_with_init')
-    else:
+    elif method == 1:
         model = utils.ReweightingModel(input_layer,
                                        x,
                                        T=T,
@@ -369,7 +369,7 @@ def Yann_with_init(read_length=101,
 
 
 def Yann_with_init_and_padding(read_length=101,
-                               reweighting=False,
+                               method=0,
                                T=1,
                                start_reweighting=2000):
     """
@@ -413,11 +413,11 @@ def Yann_with_init_and_padding(read_length=101,
     x = Dense(units=1,
               activation='sigmoid',
               name='dense_out')(x)
-    if reweighting:
+    if method == 0:
         model = tf.keras.Model(input_layer,
                                x,
                                name='Yann_with_init_and_padding')
-    else:
+    elif method == 1:
         model = utils.ReweightingModel(input_layer,
                                        x,
                                        T=T,
