@@ -121,7 +121,7 @@ def parsing():
         default=1,
         type=int)
     parser.add_argument(
-        "-start_tm", "--start_train_method",
+        "-start_tm", "--start_tm",
         help="training iteration from which to start to use the train method",
         default=2000,
         type=int)
@@ -323,14 +323,14 @@ if __name__ == "__main__":
             model = models.build_model(args.architecture,
                                        read_length=args.read_length,
                                        learn_rate=args.learn_rate,
-                                       reweighting=args.train_method,
+                                       method=args.train_method,
                                        T=args.temperature,
                                        start_reweighting=args.start_tm)
     else:
         model = models.build_model(args.architecture,
                                    read_length=args.read_length,
                                    learn_rate=args.learn_rate,
-                                   reweighting=args.train_method,
+                                   method=args.train_method,
                                    T=args.temperature,
                                    start_reweighting=args.start_tm)
 
@@ -377,7 +377,7 @@ if __name__ == "__main__":
         CSVLogger(os.path.join(args.output, "epoch_data.csv"))
         ]
     # Add autotune callbakcs
-    if autotune:
+    if not args.disable_autotune:
         callbacks_list.append([
             ModelCheckpoint(filepath=os.path.join(args.output, "Checkpoint"),
                             monitor="val_accuracy",
