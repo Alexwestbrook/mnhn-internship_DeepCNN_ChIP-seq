@@ -416,7 +416,7 @@ def one_hot_to_seq_v2(reads):
     return seqs
 
 
-def write_fasta(seqs, fasta_file, wrap=80):
+def write_fasta(seqs, fasta_file, wrap=None):
     # from https://www.programcreek.com/python/?code=Ecogenomics%2FGTDBTk%
     # 2FGTDBTk-master%2Fgtdbtk%2Fbiolib_lite%2Fseq_io.py
     """Write sequences to a fasta file.
@@ -433,8 +433,11 @@ def write_fasta(seqs, fasta_file, wrap=80):
     with open(fasta_file, 'w') as f:
         for id, seq in enumerate(seqs):
             f.write('>{}\n'.format(id))
-            for i in range(0, len(seq), wrap):
-                f.write('{}\n'.format(seq[i:i + wrap]))
+            if wrap is not None:
+                for i in range(0, len(seq), wrap):
+                    f.write('{}\n'.format(seq[i:i + wrap]))
+            else:
+                f.write('{}\n'.format(seq))
 
 
 def check_read_lengths(reads):
