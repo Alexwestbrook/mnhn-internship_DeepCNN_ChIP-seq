@@ -26,6 +26,7 @@ import os
 import sys
 import argparse
 import time
+import json
 import Modules.utils as utils
 import Modules.models as models
 
@@ -305,6 +306,12 @@ def train_reweighting_model(model,
 if __name__ == "__main__":
     # Get arguments
     args = parsing()
+    # Store arguments in file
+    with open(os.path.join(args.output, 'Experiment_info.txt'), 'w') as f:
+        json.dump(vars(args), f, indent=4)
+        f.write('\n')
+    with open(os.path.join(args.output, 'Experiment_info.txt'), 'a') as f:
+        f.write(f'this is an add on')
 
     # Limit GPU memory usage
     tf.debugging.set_log_device_placement(True)
@@ -403,10 +410,14 @@ if __name__ == "__main__":
             utils.Eval_after_epoch(args.output,
                                    generator_test))
     # Train model
+    t0 = time.time()
     model.fit(generator_train,
               validation_data=generator_valid,
               epochs=args.epochs,
               callbacks=callbacks_list,
               verbose=args.verbose)
+    train_time = time.time() - t0
+    with open(os.path.join(args.output, 'Experiment_info.txt'), 'a') as f:
+        f.write(f'training time: {train_time}\n')
     # Save trained model
     model.save(os.path.join(args.output, "model"))
