@@ -57,7 +57,7 @@ class ReweightingModel(Model):
         max_val = tf.math.reduce_max(val)
         new_weights = tf.exp(val - max_val)
         # rescale positive weights to maintain total sum over batch
-        mask_pos = tf.squeeze(y_true)
+        mask_pos = (tf.squeeze(y_true) == 1)
         mask_pos.set_shape([None])
         old_sum_pos = tf.reduce_sum(weights[mask_pos])
         sum_pos = tf.reduce_sum(new_weights[mask_pos])
@@ -140,9 +140,9 @@ class DataGenerator(Sequence):
                 weights[i] = self.class_weights[self.labels[ID, 0]]
             else:
                 weights[i] = self.sample_weights[ID]
-        X = tf.convert_to_tensor(X, dtype=tf.float32)
-        Y = tf.convert_to_tensor(Y, dtype=tf.float32)
-        weights = tf.convert_to_tensor(weights, dtype=tf.float32)
+        # X = tf.convert_to_tensor(X, dtype=tf.float32)
+        # Y = tf.convert_to_tensor(Y, dtype=tf.float32)
+        # weights = tf.convert_to_tensor(weights, dtype=tf.float32)
         return X, Y, weights
 
     def on_epoch_end(self):
