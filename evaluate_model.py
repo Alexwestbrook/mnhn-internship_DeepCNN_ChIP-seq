@@ -4,6 +4,7 @@ import os
 import sys
 import argparse
 import Modules.utils as utils
+import Modules.models as models
 
 
 def parsing():
@@ -24,7 +25,7 @@ def parsing():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m", "--trained_model",
-        help="trained model file.",
+        help="trained model file, or model weights file.",
         type=str,
         required=True)
     parser.add_argument(
@@ -37,6 +38,17 @@ def parsing():
         help="Path to the output directory and file name.",
         type=str,
         required=True)
+    parser.add_argument(
+        "-tm", "--train_method",
+        help="method used during training, 0 for base and 1 for reweighting, "
+             "default to 0",
+        default=0,
+        type=int)
+    parser.add_argument(
+        "-rl", "--read_length",
+        help="Number of base pairs in input reads, default to 101",
+        default=101,
+        type=int)
     parser.add_argument(
         "-data", "--data_part",
         help="data to evaluate the model on, train or test, default to test",
@@ -51,6 +63,11 @@ def parsing():
     parser.add_argument(
         "-rel", "--relabeled",
         help="New labels for input dataset file with npz format.",
+        type=str)
+    parser.add_argument(
+        "-arch", "--architecture",
+        help='name of the model architecture in "models.py", required to load '
+             'model from weights.',
         type=str)
     args = parser.parse_args()
     # Check if the input data is valid
@@ -78,7 +95,13 @@ if gpus:
     except RuntimeError as e:
         print(e)
 
-model = tf.keras.models.load_model(args.trained_model)
+if args.train_method == 0:
+    model = tf.keras.models.load_model(args.trained_model)
+else:
+    model = models.build_model(args.architecture,
+                               read_length=args.read_length,
+                               method=args.train_method)
+    model.load_weights(args.trained_model)
 # Do stuff with the model
 
 # load the dataset

@@ -617,6 +617,22 @@ def chunck_into_reads(long_reads, read_length=101):
         reads.extend(chuncks)
     return reads
 
+
+def reverse_complement(seq):
+    reverse = ''
+    for base in seq[::-1]:
+        if base == 'A':
+            reverse += 'T'
+        elif base == 'C':
+            reverse += 'G'
+        elif base == 'G':
+            reverse += 'C'
+        elif base == 'T':
+            reverse += 'A'
+        else:
+            reverse += base
+    return reverse
+
 # # sparse_one_hot encoding
 # categories = np.array([['A'], ['C'], ['G'], ['T']])
 # encoder = OneHotEncoder(dtype=bool, handle_unknown='ignore')

@@ -310,8 +310,6 @@ if __name__ == "__main__":
     with open(os.path.join(args.output, 'Experiment_info.txt'), 'w') as f:
         json.dump(vars(args), f, indent=4)
         f.write('\n')
-    with open(os.path.join(args.output, 'Experiment_info.txt'), 'a') as f:
-        f.write(f'this is an add on')
 
     # Limit GPU memory usage
     tf.debugging.set_log_device_placement(True)
@@ -420,4 +418,7 @@ if __name__ == "__main__":
     with open(os.path.join(args.output, 'Experiment_info.txt'), 'a') as f:
         f.write(f'training time: {train_time}\n')
     # Save trained model
-    model.save(os.path.join(args.output, "model"))
+    if args.train_method == 0:
+        model.save(os.path.join(args.output, "model"))
+    else:
+        model.save_weights(os.path.join(args.output, "model_weights"))
