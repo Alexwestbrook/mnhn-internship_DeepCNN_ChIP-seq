@@ -50,14 +50,21 @@ while cur_arg < len(sys.argv):
     with open(sys.argv[cur_arg], 'r') as f:
         # loop over file lines
         i = 0
+        pos, neg, other = 0, 0, 0
         while True:
-            line = f.readline()
-            if not line:
+            id_line = f.readline()
+            if not id_line:
                 break
-            # only consider the 4k+1 lines containing the sequences
-            if (i-1) % 4 == 0:
-                reads.append(line.rstrip())  # remove space at the end
+            seq_line = f.readline().rstrip()  # remove space at the end
+            strand_line = f.readline().rstrip()
+            quality_line = f.readline()
+            reads.append(seq_line)
+            if strand_line == '+':
+                pos += 1
+            elif strand_line == '-':
+                neg += 1
             i += 1
+        print(f'file {cur_arg-1} contains {pos} + reads and {neg} - reads')
     cur_arg += 1
 reads = np.array(reads)
 # convert the list to array and store in a numpy binary file
