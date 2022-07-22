@@ -4,6 +4,7 @@ import os
 import sys
 import argparse
 import Modules.utils as utils
+import Modules.models as models
 
 
 def parsing():
@@ -25,7 +26,7 @@ def parsing():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-m", "--trained_model",
-        help="trained model file.",
+        help="trained model file, or model weights file.",
         type=str,
         required=True)
     parser.add_argument(
@@ -49,6 +50,22 @@ def parsing():
         help="probability threshold from which to relabel, default to 0.9.",
         default=0.9,
         type=float)
+    parser.add_argument(
+        "-arch", "--architecture",
+        help='name of the model architecture in "models.py", required to load '
+             'model from weights.',
+        type=str)
+    parser.add_argument(
+        "-tm", "--train_method",
+        help="method used during training, 0 for base and 1 for reweighting, "
+             "default to 0",
+        default=0,
+        type=int)
+    parser.add_argument(
+        "-rl", "--read_length",
+        help="Number of base pairs in input reads, default to 101",
+        default=101,
+        type=int)
     args = parser.parse_args()
     # Check if the input data is valid
     if not os.path.isfile(args.dataset):
@@ -76,7 +93,13 @@ if gpus:
     except RuntimeError as e:
         print(e)
 
-model = tf.keras.models.load_model(args.trained_model)
+if args.train_method == 0:
+    model = tf.keras.models.load_model(args.trained_model)
+else:
+    model = models.build_model(args.architecture,
+                               read_length=args.read_length,
+                               method=args.train_method)
+    model.load_weights(args.trained_model)
 # Predict on train, valid and test data and relabel when IP prediction is
 # below given threshold
 pred_train = model.predict(x_train,

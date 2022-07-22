@@ -306,6 +306,9 @@ def train_reweighting_model(model,
 if __name__ == "__main__":
     # Get arguments
     args = parsing()
+
+    if not os.path.isdir(args.output):
+        os.makedirs(args.output)
     # Store arguments in file
     with open(os.path.join(args.output, 'Experiment_info.txt'), 'w') as f:
         json.dump(vars(args), f, indent=4)
