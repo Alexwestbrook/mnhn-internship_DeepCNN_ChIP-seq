@@ -6,13 +6,17 @@ from tensorflow.keras.layers import Conv1D, MaxPool1D, concatenate, Dropout, \
     Dense, Input, Flatten
 from tensorflow.keras.initializers import VarianceScaling
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import Model
 import Modules.utils as utils
 
 
 def build_model(model_name,
                 read_length=101,
                 learn_rate=0.001,
-                loss='binary_crossentropy'):
+                loss='binary_crossentropy',
+                method=0,
+                T=1,
+                start_reweighting=2000):
     model_dict = {
         'inception_dna_v1': inception_dna_v1,
         'inception_dna_v2': inception_dna_v2,
@@ -22,7 +26,9 @@ def build_model(model_name,
     }
     model = model_dict[model_name](
         read_length=read_length,
-        learn_rate=learn_rate
+        method=method,
+        T=T,
+        start_reweighting=start_reweighting
     )
     model.compile(optimizer=Adam(learning_rate=learn_rate),
                   loss=loss,
@@ -118,7 +124,10 @@ def inception_module(x,
     return output
 
 
-def inception_dna_v1(read_length=101, learn_rate=0.001):
+def inception_dna_v1(read_length=101,
+                     method=0,
+                     T=1,
+                     start_reweighting=2000):
     """
     Builds a Deep neural network model
 
@@ -165,14 +174,23 @@ def inception_dna_v1(read_length=101, learn_rate=0.001):
     x = Dense(units=1,
               activation='sigmoid',
               name='dense_out')(x)
-
-    model = tf.keras.Model(input_layer,
-                           x,
-                           name='inception_dna_v1')
+    if method == 0:
+        model = tf.keras.Model(input_layer,
+                               x,
+                               name='inception_dna_v1')
+    elif method == 1:
+        model = utils.ReweightingModel(input_layer,
+                                       x,
+                                       T=T,
+                                       start_reweighting=start_reweighting,
+                                       name='inception_dna_v1')
     return model
 
 
-def inception_dna_v2(read_length=101, learn_rate=0.001):
+def inception_dna_v2(read_length=101,
+                     method=0,
+                     T=1,
+                     start_reweighting=2000):
     """
     Builds a Deep neural network model
 
@@ -229,12 +247,23 @@ def inception_dna_v2(read_length=101, learn_rate=0.001):
     x = Dense(units=1,
               activation='sigmoid',
               name='dense_out')(x)
-
-    model = tf.keras.Model(input_layer, x, name='inception_dna_v1')
+    if method == 0:
+        model = tf.keras.Model(input_layer,
+                               x,
+                               name='inception_dna_v2')
+    elif method == 1:
+        model = utils.ReweightingModel(input_layer,
+                                       x,
+                                       T=T,
+                                       start_reweighting=start_reweighting,
+                                       name='inception_dna_v2')
     return model
 
 
-def Yann_original(read_length=101):
+def Yann_original(read_length=101,
+                  method=0,
+                  T=1,
+                  start_reweighting=2000):
     """
     Builds a Deep neural network model
 
@@ -248,81 +277,45 @@ def Yann_original(read_length=101):
 
     """
     # build the CNN model
-    model = Sequential([
-        Conv1D(filters=64,
+    input_layer = Input(shape=(read_length, 4))
+    x = Conv1D(filters=64,
                kernel_size=6,
                activation='relu',
-               input_shape=(read_length, 4),
-               name='conv_1_6'),
-        MaxPool1D(pool_size=2,
-                  name='maxpool_1'),
-        Dropout(0.2),
-        Conv1D(filters=64,
+               name='conv_1_6')(input_layer)
+    x = MaxPool1D(pool_size=2,
+                  name='maxpool_1')(x)
+    x = Dropout(0.2)(x)
+    x = Conv1D(filters=64,
                kernel_size=6,
                activation='relu',
-               name='conv_2_6'),
-        MaxPool1D(pool_size=2,
-                  name='maxpool_2'),
-        Dropout(0.2),
-        Flatten(),
-        Dense(units=128,
+               name='conv_2_6')(x)
+    x = MaxPool1D(pool_size=2,
+                  name='maxpool_2')(x)
+    x = Dropout(0.2)(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
               activation='relu',
-              name='dense_1'),
-        Dense(units=1,
+              name='dense_1')(x)
+    x = Dense(units=1,
               activation='sigmoid',
-              name='dense_out')
-    ])
-
+              name='dense_out')(x)
+    if method == 0:
+        model = tf.keras.Model(input_layer,
+                               x,
+                               name='Yann_original')
+    elif method == 1:
+        model = utils.ReweightingModel(input_layer,
+                                       x,
+                                       T=T,
+                                       start_reweighting=start_reweighting,
+                                       name='Yann_original')
     return model
 
 
-def Yann_with_init(read_length=101):
-    """
-    Builds a Deep neural network model
-
-    Arguments
-    ---------
-    (optional) read_length the sequence length of reads given as input
-
-    Returns
-    -------
-    The compiled model
-
-    """
-    kernel_init = VarianceScaling()
-    # build the CNN model
-    model = Sequential([
-        Conv1D(filters=64,
-               kernel_size=6,
-               activation='relu',
-               kernel_initializer=kernel_init,
-               input_shape=(read_length, 4),
-               name='conv_1_6'),
-        MaxPool1D(pool_size=2,
-                  name='maxpool_1'),
-        Dropout(0.2),
-        Conv1D(filters=64,
-               kernel_size=6,
-               activation='relu',
-               kernel_initializer=kernel_init,
-               name='conv_2_6'),
-        MaxPool1D(pool_size=2,
-                  name='maxpool_2'),
-        Dropout(0.2),
-        Flatten(),
-        Dense(units=128,
-              activation='relu',
-              kernel_initializer=kernel_init,
-              name='dense_1'),
-        Dense(units=1,
-              activation='sigmoid',
-              name='dense_out')
-    ])
-
-    return model
-
-
-def Yann_with_init_and_padding(read_length=101):
+def Yann_with_init(read_length=101,
+                   method=0,
+                   T=1,
+                   start_reweighting=2000):
     """
     Builds a Deep neural network model
 
@@ -337,36 +330,99 @@ def Yann_with_init_and_padding(read_length=101):
     """
     kernel_init = VarianceScaling()
     # build the CNN model
-    model = Sequential([
-        Conv1D(filters=64,
+    input_layer = Input(shape=(read_length, 4))
+    x = Conv1D(filters=64,
                kernel_size=6,
-               padding='same',
                activation='relu',
                kernel_initializer=kernel_init,
-               input_shape=(read_length, 4),
-               name='conv_1_6'),
-        MaxPool1D(pool_size=2,
-                  name='maxpool_1'),
-        Dropout(0.2),
-        Conv1D(filters=64,
+               name='conv_1_6')(input_layer)
+    x = MaxPool1D(pool_size=2,
+                  name='maxpool_1')(x)
+    x = Dropout(0.2)(x)
+    x = Conv1D(filters=64,
                kernel_size=6,
-               padding='same',
                activation='relu',
                kernel_initializer=kernel_init,
-               name='conv_2_6'),
-        MaxPool1D(pool_size=2,
-                  name='maxpool_2'),
-        Dropout(0.2),
-        Flatten(),
-        Dense(units=128,
+               name='conv_2_6')(x)
+    x = MaxPool1D(pool_size=2,
+                  name='maxpool_2')(x)
+    x = Dropout(0.2)(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
               activation='relu',
               kernel_initializer=kernel_init,
-              name='dense_1'),
-        Dense(units=1,
+              name='dense_1')(x)
+    x = Dense(units=1,
               activation='sigmoid',
-              name='dense_out')
-    ])
+              name='dense_out')(x)
+    if method == 0:
+        model = tf.keras.Model(input_layer,
+                               x,
+                               name='Yann_with_init')
+    elif method == 1:
+        model = utils.ReweightingModel(input_layer,
+                                       x,
+                                       T=T,
+                                       start_reweighting=start_reweighting,
+                                       name='Yann_with_init')
+    return model
 
+
+def Yann_with_init_and_padding(read_length=101,
+                               method=0,
+                               T=1,
+                               start_reweighting=2000):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) read_length the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+    # build the CNN model
+    input_layer = Input(shape=(read_length, 4))
+    x = Conv1D(filters=64,
+               kernel_size=6,
+               padding='same',
+               activation='relu',
+               kernel_initializer=kernel_init,
+               name='conv_1_6')(input_layer)
+    x = MaxPool1D(pool_size=2,
+                  name='maxpool_1')(x)
+    x = Dropout(0.2)(x)
+    x = Conv1D(filters=64,
+               kernel_size=6,
+               padding='same',
+               activation='relu',
+               kernel_initializer=kernel_init,
+               name='conv_2_6')(x)
+    x = MaxPool1D(pool_size=2,
+                  name='maxpool_2')(x)
+    x = Dropout(0.2)(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
+              activation='relu',
+              kernel_initializer=kernel_init,
+              name='dense_1')(x)
+    x = Dense(units=1,
+              activation='sigmoid',
+              name='dense_out')(x)
+    if method == 0:
+        model = tf.keras.Model(input_layer,
+                               x,
+                               name='Yann_with_init_and_padding')
+    elif method == 1:
+        model = utils.ReweightingModel(input_layer,
+                                       x,
+                                       T=T,
+                                       start_reweighting=start_reweighting,
+                                       name='Yann_with_init_and_padding')
     return model
 
 

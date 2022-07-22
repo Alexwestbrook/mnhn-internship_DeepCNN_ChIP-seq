@@ -2,9 +2,12 @@
 
 import numpy as np
 import tensorflow as tf
+from keras.engine import data_adapter
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
-from tensorflow.keras.losses import Loss
+from tensorflow.keras import Model
+from tensorflow.keras.metrics import binary_crossentropy
+from tensorflow.python.eager import backprop
 import os
 from sklearn.preprocessing import OneHotEncoder
 import time
@@ -30,7 +33,66 @@ class Eval_after_epoch(Callback):
         np.save(os.path.join(self.model_dir, 'eval_epochs'),
                 np.reshape(self.preds, (self.epochs, -1)))
 
-# class ReweightingBinaryCrossentropy(Loss):
+
+class ReweightingModel(Model):
+    def __init__(self, *args, T=1, start_reweighting=2000, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.T = T
+        self.start_reweighting = start_reweighting
+
+    @tf.function
+    def maybe_reweight(self, x, y, sample_weight):
+        if self._train_counter > self.start_reweighting:
+            y_pred = self(x, training=False)
+            sample_weight = self.reweight_positives(sample_weight, y, y_pred)
+        return sample_weight
+
+    @tf.function
+    def reweight_positives(self, weights, y_true, y_pred):
+        weights = tf.squeeze(weights)
+        # compute loss
+        loss = binary_crossentropy(y_true, y_pred)
+        # compute new weights for each sample
+        val = - loss / self.T
+        max_val = tf.math.reduce_max(val)
+        new_weights = tf.exp(val - max_val)
+        # rescale positive weights to maintain total sum over batch
+        mask_pos = (tf.squeeze(y_true) == 1)
+        mask_pos.set_shape([None])
+        old_sum_pos = tf.reduce_sum(weights[mask_pos])
+        sum_pos = tf.reduce_sum(new_weights[mask_pos])
+        coef_pos = old_sum_pos/sum_pos
+        # change only positive weights
+        new_weights = tf.where(mask_pos, new_weights*coef_pos, weights)
+        return tf.expand_dims(new_weights, axis=1)
+
+    def train_step(self, data):
+        # These are the only transformations `Model.fit` applies to user-input
+        # data when a `tf.data.Dataset` is provided.
+        data = data_adapter.expand_1d(data)
+        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+
+        # Reweight samples ####################################
+        sample_weight = self.maybe_reweight(x, y, sample_weight)
+        ########################################################
+
+        # Run forward pass.
+        with backprop.GradientTape() as tape:
+            y_pred = self(x, training=True)
+            loss = self.compiled_loss(
+                y, y_pred, sample_weight, regularization_losses=self.losses)
+        # Run backwards pass.
+        self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
+        self.compiled_metrics.update_state(y, y_pred, sample_weight)
+        # Collect metrics to return
+        return_metrics = {}
+        for metric in self.metrics:
+            result = metric.result()
+            if isinstance(result, dict):
+                return_metrics.update(result)
+            else:
+                return_metrics[metric.name] = result
+        return return_metrics
 
 
 class DataGenerator(Sequence):
@@ -78,9 +140,9 @@ class DataGenerator(Sequence):
                 weights[i] = self.class_weights[self.labels[ID, 0]]
             else:
                 weights[i] = self.sample_weights[ID]
-        X = tf.convert_to_tensor(X, dtype=tf.float32)
-        Y = tf.convert_to_tensor(Y, dtype=tf.float32)
-        weights = tf.convert_to_tensor(weights, dtype=tf.float32)
+        # X = tf.convert_to_tensor(X, dtype=tf.float32)
+        # Y = tf.convert_to_tensor(Y, dtype=tf.float32)
+        # weights = tf.convert_to_tensor(weights, dtype=tf.float32)
         return X, Y, weights
 
     def on_epoch_end(self):
@@ -354,7 +416,7 @@ def one_hot_to_seq_v2(reads):
     return seqs
 
 
-def write_fasta(seqs, fasta_file, wrap=80):
+def write_fasta(seqs, fasta_file, wrap=None):
     # from https://www.programcreek.com/python/?code=Ecogenomics%2FGTDBTk%
     # 2FGTDBTk-master%2Fgtdbtk%2Fbiolib_lite%2Fseq_io.py
     """Write sequences to a fasta file.
@@ -371,8 +433,11 @@ def write_fasta(seqs, fasta_file, wrap=80):
     with open(fasta_file, 'w') as f:
         for id, seq in enumerate(seqs):
             f.write('>{}\n'.format(id))
-            for i in range(0, len(seq), wrap):
-                f.write('{}\n'.format(seq[i:i + wrap]))
+            if wrap is not None:
+                for i in range(0, len(seq), wrap):
+                    f.write('{}\n'.format(seq[i:i + wrap]))
+            else:
+                f.write('{}\n'.format(seq))
 
 
 def check_read_lengths(reads):
@@ -402,9 +467,10 @@ def find_duplicates(reads,
         batches = np.split(reads, batch_size*np.arange(1, n_batch, dtype=int))
     else:
         batches = [reads]
+    print(len(batches), 'batches')
     for id, batch in enumerate(batches):
+        print(f'Processing batch {id}')
         if one_hot:
-            print(f'Decoding batch {id}')
             batch = one_hot_to_seq(batch)
         for i, read in enumerate(batch):
             if read in dico:
@@ -412,7 +478,7 @@ def find_duplicates(reads,
                 dup = True
             else:
                 dico[read] = 1
-            if (i+1) % print_freq == 0:
+            if (i+1) % print_freq == 0 or i+1 == len(batch):
                 msg = f'seq {i+1}/{len(batch)}'
                 if dup:
                     msg += ' duplicates'
@@ -541,6 +607,31 @@ def classify_1D(features, y, bins):
     assert(bin_thres != len(bins) - 1)
     thres = (bins[bin_thres] + bins[bin_thres+1]) / 2
     return accuracy, thres
+
+
+def chunck_into_reads(long_reads, read_length=101):
+    reads = []
+    for i, long in enumerate(long_reads):
+        chuncks = [long[i:i+read_length]
+                   for i in range(0, len(long), read_length)]
+        reads.extend(chuncks)
+    return reads
+
+
+def reverse_complement(seq):
+    reverse = ''
+    for base in seq[::-1]:
+        if base == 'A':
+            reverse += 'T'
+        elif base == 'C':
+            reverse += 'G'
+        elif base == 'G':
+            reverse += 'C'
+        elif base == 'T':
+            reverse += 'A'
+        else:
+            reverse += base
+    return reverse
 
 # # sparse_one_hot encoding
 # categories = np.array([['A'], ['C'], ['G'], ['T']])

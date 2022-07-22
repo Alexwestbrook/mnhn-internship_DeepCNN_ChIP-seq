@@ -26,6 +26,7 @@ import os
 import sys
 import argparse
 import time
+import json
 import Modules.utils as utils
 import Modules.models as models
 
@@ -121,6 +122,11 @@ def parsing():
         default=1,
         type=int)
     parser.add_argument(
+        "-start_tm", "--start_tm",
+        help="training iteration from which to start to use the train method",
+        default=2000,
+        type=int)
+    parser.add_argument(
         "-v", "--verbose",
         help="0 for silent, 1 for progress bar and 2 for single line",
         default=2,
@@ -136,75 +142,6 @@ def parsing():
             sys.exit(f"{args.relabeled} does not exist.\n"
                      "Please enter a valid new labels file path.")
     return args
-
-
-def train_base_model(model,
-                     x_train,
-                     y_train,
-                     x_valid,
-                     y_valid,
-                     batch_size,
-                     epochs,
-                     output=None,
-                     eval_epoch=False,
-                     x_test=None,
-                     y_test=None,
-                     autotune=True,
-                     learn_rate=0.001,
-                     patience=10,
-                     verbose=2):
-    weights_train = utils.create_weights(y_train)
-    # Build generators for train, valid and test
-    generator_train = utils.DataGenerator(
-        np.arange(len(y_train)),
-        x_train,
-        y_train,
-        batch_size,
-        weights_train)
-    generator_valid = utils.DataGenerator(
-        np.arange(len(y_valid)),
-        x_valid,
-        y_valid,
-        batch_size,
-        shuffle=False)
-    # Create callbacks during training
-    callbacks_list = [
-        CSVLogger(os.path.join(output, "epoch_data.csv"))
-        ]
-    # Add autotune callbakcs
-    if autotune:
-        callbacks_list.append([
-            ModelCheckpoint(filepath=os.path.join(output, "Checkpoint"),
-                            monitor="val_accuracy",
-                            save_best_only=True),
-            EarlyStopping(monitor="val_loss",
-                          patience=patience,
-                          min_delta=1e-4,
-                          restore_best_weights=True),
-            ReduceLROnPlateau(monitor='val_loss',
-                              factor=0.1,
-                              patience=patience//2,
-                              min_lr=0.1*learn_rate),
-        ])
-    # Add callback for evaluating after epoch
-    if eval_epoch:
-        generator_test = utils.DataGenerator(
-            np.arange(len(y_test)),
-            x_test,
-            y_test,
-            batch_size,
-            shuffle=False)
-        callbacks_list.append(
-            utils.Eval_after_epoch(output,
-                                   generator_test))
-    # Train model
-    model.fit(generator_train,
-              validation_data=generator_valid,
-              epochs=epochs,
-              callbacks=callbacks_list,
-              verbose=verbose)
-    # Save trained model
-    model.save(os.path.join(output, "model"))
 
 
 def train_reweighting_model(model,
@@ -223,6 +160,7 @@ def train_reweighting_model(model,
                             autotune=True,
                             patience=10,
                             verbose=2):
+    """ Deprecated."""
     # Create sample weights for first epoch for class balance
     if len(y_train) == 1:
         y_train = np.expand_dims(y_train, axis=1)
@@ -368,6 +306,10 @@ def train_reweighting_model(model,
 if __name__ == "__main__":
     # Get arguments
     args = parsing()
+    # Store arguments in file
+    with open(os.path.join(args.output, 'Experiment_info.txt'), 'w') as f:
+        json.dump(vars(args), f, indent=4)
+        f.write('\n')
 
     # Limit GPU memory usage
     tf.debugging.set_log_device_placement(True)
@@ -385,11 +327,17 @@ if __name__ == "__main__":
         with strategy.scope():
             model = models.build_model(args.architecture,
                                        read_length=args.read_length,
-                                       learn_rate=args.learn_rate)
+                                       learn_rate=args.learn_rate,
+                                       method=args.train_method,
+                                       T=args.temperature,
+                                       start_reweighting=args.start_tm)
     else:
         model = models.build_model(args.architecture,
                                    read_length=args.read_length,
-                                   learn_rate=args.learn_rate)
+                                   learn_rate=args.learn_rate,
+                                   method=args.train_method,
+                                   T=args.temperature,
+                                   start_reweighting=args.start_tm)
 
     # Load the dataset
     with np.load(args.dataset) as f1:
@@ -415,36 +363,62 @@ if __name__ == "__main__":
         y_test = None
 
     # Train according to chosen method
+    weights_train = utils.create_weights(y_train)
+    # Build generators for train, valid and test
+    generator_train = utils.DataGenerator(
+        np.arange(len(y_train)),
+        x_train,
+        y_train,
+        args.batch_size,
+        weights_train)
+    generator_valid = utils.DataGenerator(
+        np.arange(len(y_valid)),
+        x_valid,
+        y_valid,
+        args.batch_size,
+        shuffle=False)
+    # Create callbacks during training
+    callbacks_list = [
+        CSVLogger(os.path.join(args.output, "epoch_data.csv"))
+        ]
+    # Add autotune callbakcs
+    if not args.disable_autotune:
+        callbacks_list.append([
+            ModelCheckpoint(filepath=os.path.join(args.output, "Checkpoint"),
+                            monitor="val_accuracy",
+                            save_best_only=True),
+            EarlyStopping(monitor="val_loss",
+                          patience=args.patience,
+                          min_delta=1e-4,
+                          restore_best_weights=True),
+            ReduceLROnPlateau(monitor='val_loss',
+                              factor=0.1,
+                              patience=args.patience//2,
+                              min_lr=0.1*args.learn_rate),
+        ])
+    # Add callback for evaluating after epoch
+    if args.eval_epoch:
+        generator_test = utils.DataGenerator(
+            np.arange(len(y_test)),
+            x_test,
+            y_test,
+            args.batch_size,
+            shuffle=False)
+        callbacks_list.append(
+            utils.Eval_after_epoch(args.output,
+                                   generator_test))
+    # Train model
+    t0 = time.time()
+    model.fit(generator_train,
+              validation_data=generator_valid,
+              epochs=args.epochs,
+              callbacks=callbacks_list,
+              verbose=args.verbose)
+    train_time = time.time() - t0
+    with open(os.path.join(args.output, 'Experiment_info.txt'), 'a') as f:
+        f.write(f'training time: {train_time}\n')
+    # Save trained model
     if args.train_method == 0:
-        train_base_model(model,
-                         x_train,
-                         y_train,
-                         x_valid,
-                         y_valid,
-                         batch_size=args.batch_size,
-                         epochs=args.epochs,
-                         output=args.output,
-                         eval_epoch=args.eval_epoch,
-                         x_test=x_test,
-                         y_test=y_test,
-                         autotune=not(args.disable_autotune),
-                         learn_rate=args.learn_rate,
-                         patience=args.patience,
-                         verbose=args.verbose)
-    elif args.train_method in [1, 2]:
-        train_reweighting_model(model,
-                                x_train,
-                                y_train,
-                                x_valid,
-                                y_valid,
-                                batch_size=args.batch_size,
-                                epochs=args.epochs,
-                                T=args.temperature,
-                                train_method=args.train_method,
-                                output=args.output,
-                                eval_epoch=args.eval_epoch,
-                                x_test=x_test,
-                                y_test=y_test,
-                                autotune=not(args.disable_autotune),
-                                patience=args.patience,
-                                verbose=args.verbose)
+        model.save(os.path.join(args.output, "model"))
+    else:
+        model.save_weights(os.path.join(args.output, "model_weights"))

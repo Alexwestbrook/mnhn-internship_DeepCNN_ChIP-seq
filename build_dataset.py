@@ -153,7 +153,7 @@ args = parsing()
 if args.format == 'npz':
     with np.load(args.ip_file) as f:
         IP_reads = f['reads']
-        IP_reads.shuffle
+        np.random.shuffle(IP_reads)
         if args.full_size:
             IP_reads = utils.remove_reads_with_N(
                 IP_reads,
@@ -167,7 +167,7 @@ if args.format == 'npz':
                 max_size=args.max_size)
     with np.load(args.control_file) as f:
         Control_reads = f['reads']
-        Control_reads.shuffle
+        np.random.shuffle(Control_reads)
         if args.full_size:
             Control_reads = utils.remove_reads_with_N(
                 Control_reads,

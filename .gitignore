@@ -1,0 +1,4 @@
+# ignore compiled code
+*.o
+*.pyc
+*.class
