@@ -47,11 +47,23 @@
 
 #### A549G4
 # IP
-wget gs://sra-pub-run-13/SRR9603955/SRR9603955.1
-wget gs://sra-pub-run-13/SRR9603953/SRR9603953.1
-# Control
-wget gs://sra-pub-run-13/SRR9603956/SRR9603956.1
-wget gs://sra-pub-run-13/SRR9603954/SRR9603954.1
+prefetch SRR9603955
+fasterq-dump SRR9603955 --out_dir ../shared_folder/A549G4/raw_data/IP/
+prefetch SRR9603953
+fasterq-dump SRR9603953 --out_dir ../shared_folder/A549G4/raw_data/IP/
+# Control (Input)
+prefetch SRR9603956
+fasterq-dump SRR9603956 --out_dir ../shared_folder/A549G4/raw_data/Control/
+prefetch SRR9603954
+fasterq-dump SRR9603954 --out_dir ../shared_folder/A549G4/raw_data/Control/
+
+#### HEK293-ZFAT
+# # IP
+# prefetch SRR9723246
+# fasterq-dump SRR9723246 --outdir ../shared_folder/HEK293-ZFAT/raw_data/IP/
+# # Control (Mock)
+# prefetch SRR9723245
+# fasterq-dump SRR9723245 --outdir ../shared_folder/HEK293-ZFAT/raw_data/Control/
 
 #### NONO
 # # IP
