@@ -74,7 +74,7 @@ python $scripts_dir/fastq_to_npz.py $writing_dir/$data/raw_data/Control_reads $d
 # build dataset
 data='CENPT'
 dataset='dataset'
-python $scripts_dir/build_dataset.py -ip $data_dir/$data/raw_data/IP_reads.npz -ctrl $data_dir/$data/raw_data/Control_reads.npz -out $data_dir/$data/$dataset -bal -20
+python $scripts_dir/build_dataset.py -ip $data_dir/$data/raw_data/IP_reads.npz -ctrl $data_dir/$data/raw_data/Control_reads.npz -out $data_dir/$data/$dataset -bal
 
 
 
