@@ -48,14 +48,15 @@
 #### A549G4
 # IP
 prefetch SRR9603955
-fasterq-dump SRR9603955 --out_dir ../shared_folder/A549G4/raw_data/IP/
+fasterq-dump SRR9603955 --outdir ../shared_folder/A549G4/raw_data/IP/
 prefetch SRR9603953
-fasterq-dump SRR9603953 --out_dir ../shared_folder/A549G4/raw_data/IP/
+fasterq-dump SRR9603953 --outdir ../shared_folder/A549G4/raw_data/IP/
+fasterq-dump SRR9603955 --outdir ../shared_folder/A549G4/raw_data/IP/
 # Control (Input)
 prefetch SRR9603956
-fasterq-dump SRR9603956 --out_dir ../shared_folder/A549G4/raw_data/Control/
+fasterq-dump SRR9603956 --outdir ../shared_folder/A549G4/raw_data/Control/
 prefetch SRR9603954
-fasterq-dump SRR9603954 --out_dir ../shared_folder/A549G4/raw_data/Control/
+fasterq-dump SRR9603954 --outdir ../shared_folder/A549G4/raw_data/Control/
 
 #### HEK293-ZFAT
 # # IP
