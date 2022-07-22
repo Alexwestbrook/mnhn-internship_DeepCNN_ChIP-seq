@@ -45,6 +45,14 @@
 # fastq-dump Control/SRR12762384.1
 # fastq-dump Control/SRR12762385.1
 
+#### A549G4
+# IP
+wget gs://sra-pub-run-13/SRR9603955/SRR9603955.1
+wget gs://sra-pub-run-13/SRR9603953/SRR9603953.1
+# Control
+wget gs://sra-pub-run-13/SRR9603956/SRR9603956.1
+wget gs://sra-pub-run-13/SRR9603954/SRR9603954.1
+
 #### NONO
 # # IP
 # wget https://www.encodeproject.org/files/ENCFF767SQO/@@download/ENCFF767SQO.fastq.gz
