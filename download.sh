@@ -34,16 +34,16 @@
 
 # CENPT bombyx
 # # IP
-# wget s3://sra-pub-src-9/SRR12762381/V369C5.R1.fastq.gz.1
-# wget s3://sra-pub-src-12/SRR12762382/A914C09.R1.fastq.gz.1
+# prefetch SRR12762381
+# fasterq-dump SRR12762381 --outdir ../shared_folder/CENPT/raw_data/IP/
+# prefetch SRR12762382
+# fasterq-dump SRR12762382 --outdir ../shared_folder/CENPT/raw_data/IP/
 # # Control
-# wget s3://sra-pub-src-13/SRR12762384/V369C4.R1.fastq.gz.1
-# wget s3://sra-pub-src-13/SRR12762385/A914C10.R1.fastq.gz.1
-# # method
-# fastq-dump IP/SRR12762381.1
-# fastq-dump IP/SRR12762382.1
-# fastq-dump Control/SRR12762384.1
-# fastq-dump Control/SRR12762385.1
+# prefetch SRR12762384
+# fasterq-dump SRR12762384 --outdir ../shared_folder/CENPT/raw_data/Control/
+# prefetch SRR12762385
+# fasterq-dump SRR12762385 --outdir ../shared_folder/CENPT/raw_data/Control/
+
 
 #### A549G4
 # IP
