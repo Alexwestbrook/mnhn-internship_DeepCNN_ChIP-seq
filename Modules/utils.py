@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
+from numpy.core.numeric import normalize_axis_tuple
 import tensorflow as tf
 from keras.engine import data_adapter
 from tensorflow.keras.callbacks import Callback
@@ -95,6 +97,7 @@ class ReweightingModel(Model):
         return return_metrics
 
 
+# Generators
 class DataGenerator(Sequence):
     def __init__(self,
                  indexes,
@@ -187,6 +190,106 @@ def data_generator_from_files(files, batch_size, class_weights={0: 1, 1: 1},
                                       class_weights)
 
 
+# Data loader
+def sliding_window_view(x, window_shape, axis=None, *,
+                        subok=False, writeable=False):
+    window_shape = (tuple(window_shape)
+                    if np.iterable(window_shape)
+                    else (window_shape,))
+    # first convert input to array, possibly keeping subclass
+    x = np.array(x, copy=False, subok=subok)
+
+    window_shape_array = np.array(window_shape)
+    if np.any(window_shape_array < 0):
+        raise ValueError('`window_shape` cannot contain negative values')
+
+    if axis is None:
+        axis = tuple(range(x.ndim))
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Since axis is `None`, must provide '
+                             f'window_shape for all dimensions of `x`; '
+                             f'got {len(window_shape)} window_shape elements '
+                             f'and `x.ndim` is {x.ndim}.')
+    else:
+        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Must provide matching length window_shape and '
+                             f'axis; got {len(window_shape)} window_shape '
+                             f'elements and {len(axis)} axes elements.')
+
+    out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
+
+    # note: same axis can be windowed repeatedly
+    x_shape_trimmed = list(x.shape)
+    for ax, dim in zip(axis, window_shape):
+        if x_shape_trimmed[ax] < dim:
+            raise ValueError(
+                'window shape cannot be larger than input array shape')
+        x_shape_trimmed[ax] -= dim - 1
+    out_shape = tuple(x_shape_trimmed) + window_shape
+    return as_strided(x, strides=out_strides, shape=out_shape,
+                      subok=subok, writeable=writeable)
+
+
+def strided_window_view(x, window_shape, stride, out_shape=None,
+                        axis=None, *, subok=False, writeable=False):
+    window_shape = (tuple(window_shape)
+                    if np.iterable(window_shape)
+                    else (window_shape,))
+    # first convert input to array, possibly keeping subclass
+    x = np.array(x, copy=False, subok=subok)
+
+    window_shape_array = np.array(window_shape)
+    if np.any(window_shape_array < 0):
+        raise ValueError('`window_shape` cannot contain negative values')
+
+    if axis is None:
+        axis = tuple(range(x.ndim))
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Since axis is `None`, must provide '
+                             f'window_shape for all dimensions of `x`; '
+                             f'got {len(window_shape)} window_shape elements '
+                             f'and `x.ndim` is {x.ndim}.')
+    else:
+        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Must provide matching length window_shape and '
+                             f'axis; got {len(window_shape)} window_shape '
+                             f'elements and {len(axis)} axes elements.')
+
+    # out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
+    # CHANGED THIS LINE TO
+    out_strides = (x.strides[0]*stride, ) + tuple(x.strides[1:]) + x.strides
+
+    # note: same axis can be windowed repeatedly
+    x_shape_trimmed = list(x.shape)
+    for ax, dim in zip(axis, window_shape):
+        if x_shape_trimmed[ax] < dim:
+            raise ValueError(
+                'window shape cannot be larger than input array shape')
+        # x_shape_trimmed[ax] -= dim - 1
+        # CHANGED THIS LINE TO
+        x_shape_trimmed[ax] = int(np.ceil((x_shape_trimmed[ax]-dim+1)/stride))
+    out_shape = tuple(x_shape_trimmed) + window_shape
+    return as_strided(x, strides=out_strides, shape=out_shape,
+                      subok=subok, writeable=writeable)
+
+
+def load_chr(chr_file, window):
+    """
+    Load all sliding windows of a chromosome
+    """
+    with np.load(chr_file) as f:
+        one_hot_chr = f['one_hot_genome']
+    sliding_window = sliding_window_view(one_hot_chr, (window, 4), axis=(0, 1))
+    data = sliding_window.reshape(sliding_window.shape[0],
+                                  sliding_window.shape[2],
+                                  sliding_window.shape[3])
+    indexes = np.arange(len(data))
+    return indexes, data
+
+
+# Sample weight handling
 def create_weights(y):
     """
     Computes weights for negative and positive examples if they are unbalanced
@@ -254,6 +357,7 @@ def balance_classes(weights, y):
     return weights
 
 
+# One-hot encoding and decoding
 def one_hot_encoding(array, read_length=101, one_hot_type=bool):
     return one_hot_encoding_v1(array,
                                read_length=read_length,
@@ -417,6 +521,37 @@ def one_hot_to_seq_v2(reads):
     return seqs
 
 
+# Fastq, fasta and string sequences operations
+def remove_reads_with_N(sequences,
+                        tolerance=0,
+                        max_size=None,
+                        read_length=None,
+                        verbose=False):
+    if max is not None:
+        sequences = sequences[:max_size]
+    too_short = []
+    with_Ns = []
+    if tolerance == 0:
+        for i, seq in enumerate(sequences):
+            if (read_length is not None and len(seq) != read_length):
+                too_short.append(i)
+            if 'N' in seq:
+                with_Ns.append(i)
+    else:
+        for i, seq in enumerate(sequences):
+            start_count = 0
+            if read_length is not None:
+                start_count = read_length - len(seq)
+                assert(start_count >= 0)
+            if seq.count('N') + start_count > tolerance:
+                with_Ns.append(i)
+    if verbose:
+        print(too_short, ' reads too short')
+        print(with_Ns, ' reads with Ns')
+    sequences = np.delete(sequences, too_short + with_Ns)
+    return sequences
+
+
 def write_fasta(seqs, fasta_file, wrap=None):
     # from https://www.programcreek.com/python/?code=Ecogenomics%2FGTDBTk%
     # 2FGTDBTk-master%2Fgtdbtk%2Fbiolib_lite%2Fseq_io.py
@@ -458,8 +593,20 @@ def find_duplicates(reads,
                     print_freq=10_000_000,
                     one_hot=False,
                     batch_size=10_000_000):
+    return find_duplicates_v1(reads,
+                              print_freq=print_freq,
+                              one_hot=one_hot,
+                              batch_size=batch_size)
+
+
+def find_duplicates_v1(reads,
+                       print_freq=10_000_000,
+                       one_hot=False,
+                       batch_size=10_000_000):
     """
     Return all unique reads and occurences.
+
+    Can deal with string reads or one_hot reads
     """
     dico = {}
     dup = False
@@ -543,45 +690,57 @@ def remove_duplicates(reads, print_freq=10_000_000):
     return dico.keys()
 
 
-def ram_usage():
-    # https://www.geeksforgeeks.org/how-to-get-current-cpu-and-ram-usage-in-python/
-    # Getting all memory using os.popen()
-    total_memory, used_memory, free_memory = map(
-        int, os.popen('free -t -m').readlines()[-1].split()[1:])
-    # Memory usage
-    print("RAM memory % used:", round((used_memory/total_memory) * 100, 2))
+def chunck_into_reads(long_reads, read_length=101):
+    reads = []
+    for i, long in enumerate(long_reads):
+        chuncks = [long[i:i+read_length]
+                   for i in range(0, len(long), read_length)]
+        reads.extend(chuncks)
+    return reads
 
 
-def remove_reads_with_N(sequences,
-                        tolerance=0,
-                        max_size=None,
-                        read_length=None,
-                        verbose=False):
-    if max is not None:
-        sequences = sequences[:max_size]
-    too_short = []
-    with_Ns = []
-    if tolerance == 0:
-        for i, seq in enumerate(sequences):
-            if (read_length is not None and len(seq) != read_length):
-                too_short.append(i)
-            if 'N' in seq:
-                with_Ns.append(i)
-    else:
-        for i, seq in enumerate(sequences):
-            start_count = 0
-            if read_length is not None:
-                start_count = read_length - len(seq)
-                assert(start_count >= 0)
-            if seq.count('N') + start_count > tolerance:
-                with_Ns.append(i)
-    if verbose:
-        print(too_short, ' reads too short')
-        print(with_Ns, ' reads with Ns')
-    sequences = np.delete(sequences, too_short + with_Ns)
-    return sequences
+def reverse_complement(seq):
+    reverse = ''
+    for base in seq[::-1]:
+        if base == 'A':
+            reverse += 'T'
+        elif base == 'C':
+            reverse += 'G'
+        elif base == 'G':
+            reverse += 'C'
+        elif base == 'T':
+            reverse += 'A'
+        else:
+            reverse += base
+    return reverse
 
 
+def remove_windows_with_N(one_hot_seq, window):
+    N_mask = np.all(np.logical_not(one_hot_seq), axis=1)
+    print(N_mask)
+    nb_windows = len(one_hot_seq) - window + 1
+    N_window_mask = np.zeros(nb_windows, dtype=bool)
+    start = np.argmax(N_mask)
+    print(start)
+    for i, N in enumerate(N_mask[start:], start):
+        if N:
+            last_N = 0
+        elif last_N < window:
+            N_window_mask[i] = True
+        last_N += 1
+    N_mask_reverse = np.flip(N_mask)
+    print(N_mask_reverse)
+    start = np.argmax(N_mask_reverse)
+    for i, N in enumerate(N_mask_reverse[start:], start):
+        if N:
+            last_N = 0
+        elif last_N < window:
+            N_window_mask[nb_windows - i] = True
+        last_N += 1
+    return N_window_mask
+
+
+# Other
 def GC_content(reads):
     assert(len(reads.shape) == 3)
     content = np.sum(reads, axis=1)
@@ -610,58 +769,17 @@ def classify_1D(features, y, bins):
     return accuracy, thres
 
 
-def chunck_into_reads(long_reads, read_length=101):
-    reads = []
-    for i, long in enumerate(long_reads):
-        chuncks = [long[i:i+read_length]
-                   for i in range(0, len(long), read_length)]
-        reads.extend(chuncks)
-    return reads
-
-
-def reverse_complement(seq):
-    reverse = ''
-    for base in seq[::-1]:
-        if base == 'A':
-            reverse += 'T'
-        elif base == 'C':
-            reverse += 'G'
-        elif base == 'G':
-            reverse += 'C'
-        elif base == 'T':
-            reverse += 'A'
-        else:
-            reverse += base
-    return reverse
-
-
 def s_plural(value):
     if value > 1:
         return 's'
     else:
         return ''
 
-# # sparse_one_hot encoding
-# categories = np.array([['A'], ['C'], ['G'], ['T']])
-# encoder = OneHotEncoder(dtype=bool, handle_unknown='ignore')
-# encoder.fit(categories)
 
-
-# def sparse_one_hot_encoding(array, read_length=read_length,
-#                             one_hot_type=one_hot_type, encoder=encoder):
-#     n_seq = 0
-#     for seq in array:
-#         seq_list = np.reshape(list(seq), (read_length, 1))
-#         res = encoder.transform(seq_list)
-#         cols = res.nonzero()[0]
-#         letter = res.indices
-#         if n_seq != 0:
-#             rows = np.ones(len(cols), dtype=int) * n_seq
-#             indices = np.concatenate(
-#                 (indices, np.stack((rows, cols, letter), axis=1))
-#             )
-#         else:
-#             rows = np.zeros(len(cols), dtype=int)
-#             indices = np.stack((rows, cols, letter), axis=1)
-#         n_seq += 1
-#     return indices
+def ram_usage():
+    # https://www.geeksforgeeks.org/how-to-get-current-cpu-and-ram-usage-in-python/
+    # Getting all memory using os.popen()
+    total_memory, used_memory, free_memory = map(
+        int, os.popen('free -t -m').readlines()[-1].split()[1:])
+    # Memory usage
+    print("RAM memory % used:", round((used_memory/total_memory) * 100, 2))

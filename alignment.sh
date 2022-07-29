@@ -35,12 +35,14 @@ done
 
 if [ $paired_end = true ]
 then
-    bowtie2 -p $threads -x $index -1 $data_dir/$fastq_prefix'_1.fastq' -2 $data_dir/$fastq_prefix'_2.fastq' -S $writing_dir/$fastq_prefix'_paired.sam'
+    out_prefix=$writing_dir/$fastq_prefix'_paired'
+    bowtie2 -p $threads -x $index -1 $data_dir/$fastq_prefix'_1.fastq' -2 $data_dir/$fastq_prefix'_2.fastq' -S $out_prefix.sam
 else
-    bowtie2 -p $threads -x $index -U $data_dir/$fastq_prefix.fastq -S $writing_dir/$fastq_prefix.sam
+    out_prefix=$writing_dir/$fastq_prefix
+    bowtie2 -p $threads -x $index -U $data_dir/$fastq_prefix.fastq -S $out_prefix.sam
 fi
-samtools view -bS $writing_dir/$fastq_prefix.sam > $writing_dir/$fastq_prefix.bam
-samtools sort $writing_dir/$fastq_prefix.bam -o $writing_dir/$fastq_prefix.sorted.bam
-samtools index $writing_dir/$fastq_prefix.sorted.bam
+samtools view -bS $out_prefix.sam > $out_prefix.bam
+samtools sort $out_prefix.bam -o $out_prefix.sorted.bam
+samtools index $out_prefix.sorted.bam
 
 
