@@ -284,13 +284,14 @@ def one_hot_encoding_v1(array, read_length=101, one_hot_type=bool):
         if len(seq) != read_length:
             unmatched_lengths += 1
         for j in range(min(len(seq), read_length)):
-            if seq[j] == 'A':
+            base = seq[j].upper()
+            if base == 'A':
                 new_array[i, j, 0] = 1
-            elif seq[j] == 'C':
+            elif base == 'C':
                 new_array[i, j, 1] = 1
-            elif seq[j] == 'G':
+            elif base == 'G':
                 new_array[i, j, 2] = 1
-            elif seq[j] == 'T':
+            elif base == 'T':
                 new_array[i, j, 3] = 1
     if unmatched_lengths != 0:
         print(f"Warning: {unmatched_lengths} sequences don't have the "
@@ -632,6 +633,13 @@ def reverse_complement(seq):
         else:
             reverse += base
     return reverse
+
+
+def s_plural(value):
+    if value > 1:
+        return 's'
+    else:
+        return ''
 
 # # sparse_one_hot encoding
 # categories = np.array([['A'], ['C'], ['G'], ['T']])
