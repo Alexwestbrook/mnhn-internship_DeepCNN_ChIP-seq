@@ -13,6 +13,7 @@ from tensorflow.python.eager import backprop
 import os
 from sklearn.preprocessing import OneHotEncoder
 import time
+from matplotlib import pyplot as plt
 
 
 class Eval_after_epoch(Callback):
@@ -275,17 +276,24 @@ def strided_window_view(x, window_shape, stride, out_shape=None,
                       subok=subok, writeable=writeable)
 
 
-def load_chr(chr_file, window):
+def load_chr(chr_file, window_size, remove_Ns=False):
     """
     Load all sliding windows of a chromosome
     """
     with np.load(chr_file) as f:
         one_hot_chr = f['one_hot_genome']
-    sliding_window = sliding_window_view(one_hot_chr, (window, 4), axis=(0, 1))
+    sliding_window = sliding_window_view(
+        one_hot_chr,
+        (window_size, 4),
+        axis=(0, 1))
     data = sliding_window.reshape(sliding_window.shape[0],
                                   sliding_window.shape[2],
                                   sliding_window.shape[3])
-    indexes = np.arange(len(data))
+    if remove_Ns:
+        indexes = remove_windows_with_N(one_hot_chr, window_size)
+        data = data[indexes]
+    else:
+        indexes = np.arange(len(data))
     return indexes, data
 
 
@@ -715,29 +723,115 @@ def reverse_complement(seq):
     return reverse
 
 
-def remove_windows_with_N(one_hot_seq, window):
+def remove_windows_with_N(one_hot_seq, window_size):
+    return remove_windows_with_N_v3(one_hot_seq, window_size)
+
+
+def remove_windows_with_N_v1(one_hot_seq, window_size):
+    """
+    Remove windows containing Ns in a one-hot sequence.
+
+    This function returns a boolean mask over the windows. Its implementation
+    uses a python loop, although it is faster than the vectorized method found
+    so far.
+    """
+    # mask positions of N values in one_hot_seq, i.e. column is all False
     N_mask = np.all(np.logical_not(one_hot_seq), axis=1)
-    print(N_mask)
-    nb_windows = len(one_hot_seq) - window + 1
-    N_window_mask = np.zeros(nb_windows, dtype=bool)
-    start = np.argmax(N_mask)
-    print(start)
-    for i, N in enumerate(N_mask[start:], start):
-        if N:
+    # create mask for valid windows, by default none are
+    nb_windows = len(one_hot_seq) - window_size + 1
+    valid_window_mask = np.zeros(nb_windows, dtype=bool)
+    # search for Ns in first positions, before end of first window
+    starting_Ns = np.where(N_mask[:window_size-1:])[0]
+    # Compute distance to previous N in last_N, considering start as N
+    if len(starting_Ns) == 0:
+        # No N found, previous N is the start position
+        last_N = window_size - 1
+    else:
+        # At least one N found, previous N is at the highest position
+        last_N = window_size - 2 - np.max(starting_Ns)
+    for i, isN in enumerate(N_mask[window_size-1:]):
+        if isN:
             last_N = 0
-        elif last_N < window:
-            N_window_mask[i] = True
-        last_N += 1
-    N_mask_reverse = np.flip(N_mask)
-    print(N_mask_reverse)
-    start = np.argmax(N_mask_reverse)
-    for i, N in enumerate(N_mask_reverse[start:], start):
-        if N:
+        else:
+            last_N += 1  # increase distance before testing
+            if last_N >= window_size:
+                # far enough from previous N for a valid window
+                valid_window_mask[i] = True
+    return valid_window_mask
+
+
+def remove_windows_with_N_v2(one_hot_seq, window_size):
+    """
+    Remove windows containing Ns in a one-hot sequence.
+
+    This function  returns indexes of valid windows. Its implementation is
+    vetorized, although slower than the naive approach.
+    """
+    # Find indexes of N values in one_hot_seq, i.e. column is all False
+    N_idx = np.where(np.all(np.logical_not(one_hot_seq), axis=1))[0]
+    # Compute distance from each position to previous N
+    # Start at 1 to consider start as an N
+    last_N_indexes = np.arange(1, len(one_hot_seq)+1)
+    # Split at each N, and reset counter
+    for split in np.split(last_N_indexes, N_idx)[1:]:
+        split -= split[0]
+    # Select windows by last element, if it is far enough from last N
+    valid_window_mask = np.where(
+        last_N_indexes[window_size-1:] >= window_size)[0]
+    return valid_window_mask
+
+
+def remove_windows_with_N_v3(one_hot_seq, window_size):
+    """
+    Remove windows containing Ns in a one-hot sequence.
+
+    This function returns indexes of valid windows. Its implementation
+    uses a python loop, although it is faster than the vectorized method found
+    so far.
+    For human chromosome 1 : 35s
+    """
+    # mask positions of N values in one_hot_seq, i.e. column is all False
+    N_mask = np.all(np.logical_not(one_hot_seq), axis=1)
+    # Store valid window indexes
+    valid_window_idx = []
+    # Search for Ns in first positions, before end of first window
+    starting_Ns = np.where(N_mask[:window_size-1:])[0]
+    if len(starting_Ns) == 0:
+        # No N found, previous N is the start position
+        last_N = window_size - 1
+    else:
+        # At least one N found, previous N is at the highest position
+        last_N = window_size - 2 - np.max(starting_Ns)
+    for i, isN in enumerate(N_mask[window_size-1:]):
+        if isN:
             last_N = 0
-        elif last_N < window:
-            N_window_mask[nb_windows - i] = True
-        last_N += 1
-    return N_window_mask
+        else:
+            last_N += 1  # increase distance before testing
+            if last_N >= window_size:
+                # far enough from previous N for a valid window
+                valid_window_idx.append(i)
+    return np.array(valid_window_idx, dtype=int)
+
+
+def parse_bed_peaks(bed_file):
+    with open(bed_file, 'r') as f:
+        chr_peaks = {}
+        while True:
+            line = f.readline().rstrip()
+            if not line:
+                break
+            splits = line.split('\t')
+            chr = splits[0][3:]
+            start = int(splits[1])
+            end = int(splits[2])
+            score = int(splits[4])
+            if chr in chr_peaks.keys():
+                chr_peaks[chr].append(np.array([start, end, score]))
+            else:
+                chr_peaks[chr] = [np.array([start, end, score])]
+        for key in chr_peaks.keys():
+            chr_peaks[key] = np.array(chr_peaks[key])
+    return chr_peaks
 
 
 # Other
@@ -783,3 +877,25 @@ def ram_usage():
         int, os.popen('free -t -m').readlines()[-1].split()[1:])
     # Memory usage
     print("RAM memory % used:", round((used_memory/total_memory) * 100, 2))
+
+
+def metaplot_over_indices(values,
+                          indices,
+                          window_half_size,
+                          index_mode='mid',
+                          plot=True):
+    if index_mode == 'mid':
+        window = np.arange(-window_half_size, window_half_size + 1)
+    elif index_mode == 'start':
+        window = np.arange(2*window_half_size + 1)
+    elif index_mode == 'end':
+        window = np.arange(-2*window_half_size, 1)
+    else:
+        raise ValueError("Invalid index_mode")
+    indices = np.expand_dims(indices, axis=1) + np.expand_dims(window, axis=0)
+    mean_values = np.mean(values[indices], axis=0)
+    if plot:
+        plt.plot(window, mean_values)
+        plt.show()
+        plt.close()
+    return mean_values, window

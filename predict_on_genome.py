@@ -116,5 +116,5 @@ for genome_file, output in zip(args.genome_files, args.outputs):
         labels,
         args.batch_size,
         shuffle=False)
-    pred = model.predict(generator_chr)
-    np.savez(output, pred=pred)
+    preds = model.predict(generator_chr).ravel()
+    np.savez(output, preds=preds)
