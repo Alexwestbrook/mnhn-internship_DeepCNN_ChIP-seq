@@ -34,7 +34,7 @@ def parsing():
         type=str,
         required=True)
     parser.add_argument(
-        "-c", "--chrmosomes",
+        "-c", "--chromosomes",
         help="chromosomes to predict on.",
         nargs="+",
         type=str,
