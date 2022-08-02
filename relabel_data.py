@@ -74,53 +74,58 @@ def parsing():
     return args
 
 
-args = parsing()
+if __name__ == "__main__":
+    # Get arguments
+    args = parsing()
+    # Maybe build output directory
+    directory = os.path.dirname(args.output)
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
+    # Load the dataset
+    with np.load(args.dataset) as f:
+        x_train = f['x_train']
+        y_train = f['y_train']
+        x_valid = f['x_valid']
+        y_valid = f['y_valid']
+        x_test = f['x_test']
+        y_test = f['y_test']
+    # Limit gpu memory usage
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
+    # Load trained model
+    if args.train_method == 0:
+        model = tf.keras.models.load_model(args.trained_model)
+    else:
+        model = models.build_model(args.architecture,
+                                   read_length=args.read_length,
+                                   method=args.train_method)
+        model.load_weights(args.trained_model)
+    # Predict on train, valid and test data and relabel when IP prediction is
+    # below given threshold
+    pred_train = model.predict(x_train,
+                               batch_size=args.batch_size).ravel()
+    mask_train = np.logical_and(pred_train > args.threshold,
+                                y_train == 1)
+    y_train = np.where(mask_train, 1, 0)
 
-# load the dataset
-with np.load(args.dataset) as f:
-    x_train = f['x_train']
-    y_train = f['y_train']
-    x_valid = f['x_valid']
-    y_valid = f['y_valid']
-    x_test = f['x_test']
-    y_test = f['y_test']
+    pred_valid = model.predict(x_valid,
+                               batch_size=args.batch_size).ravel()
+    mask_valid = np.logical_and(pred_valid > args.threshold,
+                                y_valid == 1)
+    y_valid = np.where(mask_valid, 1, 0)
 
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print(e)
-
-if args.train_method == 0:
-    model = tf.keras.models.load_model(args.trained_model)
-else:
-    model = models.build_model(args.architecture,
-                               read_length=args.read_length,
-                               method=args.train_method)
-    model.load_weights(args.trained_model)
-# Predict on train, valid and test data and relabel when IP prediction is
-# below given threshold
-pred_train = model.predict(x_train,
-                           batch_size=args.batch_size).ravel()
-mask_train = np.logical_and(pred_train > args.threshold,
-                            y_train == 1)
-y_train = np.where(mask_train, 1, 0)
-
-pred_valid = model.predict(x_valid,
-                           batch_size=args.batch_size).ravel()
-mask_valid = np.logical_and(pred_valid > args.threshold,
-                            y_valid == 1)
-y_valid = np.where(mask_valid, 1, 0)
-
-pred_test = model.predict(x_test,
-                          batch_size=args.batch_size).ravel()
-mask_test = np.logical_and(pred_test > args.threshold,
-                           y_test == 1)
-y_test = np.where(mask_test, 1, 0)
-# save new labels
-np.savez(args.output,
-         y_train=y_train,
-         y_valid=y_valid,
-         y_test=y_test)
+    pred_test = model.predict(x_test,
+                              batch_size=args.batch_size).ravel()
+    mask_test = np.logical_and(pred_test > args.threshold,
+                               y_test == 1)
+    y_test = np.where(mask_test, 1, 0)
+    # save new labels
+    np.savez(args.output,
+             y_train=y_train,
+             y_valid=y_valid,
+             y_test=y_test)
