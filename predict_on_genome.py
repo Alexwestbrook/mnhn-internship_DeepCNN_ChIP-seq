@@ -29,15 +29,19 @@ def parsing():
         type=str,
         required=True)
     parser.add_argument(
-        "-g", "--genome_files",
-        help="genome files to predict on",
+        "-g", "--genome_dir",
+        help="genome directory.",
+        type=str,
+        required=True)
+    parser.add_argument(
+        "-c", "--chrmosomes",
+        help="chromosomes to predict on.",
         nargs="+",
         type=str,
         required=True)
     parser.add_argument(
-        "-o", "--outputs",
-        help="output files to write predictions in.",
-        nargs="+",
+        "-o", "--output",
+        help="output directory to write predictions in.",
         type=str,
         required=True)
     parser.add_argument(
@@ -68,11 +72,10 @@ def parsing():
         type=str)
     args = parser.parse_args()
     # Check if the input data is valid
-    if len(args.genome_files) != len(args.outputs):
-        sys.exit("Please specify as many genome files as output files.")
-    for genome_file in args.genome_files:
-        if not os.path.isfile(genome_file):
-            sys.exit(f"{genome_file} does not exist.\n"
+    for chr_id in args.chromosomes:
+        if not os.path.isfile(os.path.join(args.genome_dir,
+                                           f'chr{chr_id}.npz')):
+            sys.exit(f"chr{chr_id}.npz does not exist.\n"
                      "Please enter valid genome file paths.")
     # If the data was relabeled, check the new label file
     if args.labels:
@@ -85,6 +88,9 @@ def parsing():
 if __name__ == "__main__":
     # Get arguments
     args = parsing()
+    # Maybe create output directory
+    if not os.path.isdir(args.output):
+        os.makedirs(args.output)
     # Limit gpu memory usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
@@ -102,13 +108,11 @@ if __name__ == "__main__":
                                    method=args.train_method)
         model.load_weights(args.trained_model)
     # Load genome
-    for genome_file, output in zip(args.genome_files, args.outputs):
-        # Maybe build output directory
-        directory = os.path.dirname(args.output)
-        if not os.path.isdir(directory):
-            os.makedirs(directory)
+    for chr_id in args.chromosomes:
         # Load genomic data and maybe labels (labels aren't currently used)
-        indexes, data = utils.load_chr(genome_file, args.read_length)
+        indexes, data = utils.load_chr(
+            os.path.join(args.genome_dir, f'chr{chr_id}.npz'),
+            args.read_length)
         if args.labels:
             with np.load(args.labels) as f:
                 labels = f['labels']
@@ -125,4 +129,5 @@ if __name__ == "__main__":
             shuffle=False)
         # predict on data and save predictions
         preds = model.predict(generator_chr).ravel()
-        np.savez(output, preds=preds)
+        np.savez(os.path.join(args.output, f"preds_on_chr{chr_id}"),
+                 preds=preds)
