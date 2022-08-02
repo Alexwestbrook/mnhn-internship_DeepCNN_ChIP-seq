@@ -306,7 +306,7 @@ def train_reweighting_model(model,
 if __name__ == "__main__":
     # Get arguments
     args = parsing()
-
+    # Maybe build output directory
     if not os.path.isdir(args.output):
         os.makedirs(args.output)
     # Store arguments in file
@@ -314,7 +314,7 @@ if __name__ == "__main__":
         json.dump(vars(args), f, indent=4)
         f.write('\n')
 
-    # Limit GPU memory usage
+    # Limit gpu memory usage
     tf.debugging.set_log_device_placement(True)
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
@@ -365,9 +365,8 @@ if __name__ == "__main__":
         x_test = None
         y_test = None
 
-    # Train according to chosen method
-    weights_train = utils.create_weights(y_train)
     # Build generators for train, valid and test
+    weights_train = utils.create_weights(y_train)
     generator_train = utils.DataGenerator(
         np.arange(len(y_train)),
         x_train,
@@ -384,7 +383,7 @@ if __name__ == "__main__":
     callbacks_list = [
         CSVLogger(os.path.join(args.output, "epoch_data.csv"))
         ]
-    # Add autotune callbakcs
+    # Add optional autotune callbakcs
     if not args.disable_autotune:
         callbacks_list.append([
             ModelCheckpoint(filepath=os.path.join(args.output, "Checkpoint"),
@@ -399,7 +398,7 @@ if __name__ == "__main__":
                               patience=args.patience//2,
                               min_lr=0.1*args.learn_rate),
         ])
-    # Add callback for evaluating after epoch
+    # Add optional callback for evaluating after epoch
     if args.eval_epoch:
         generator_test = utils.DataGenerator(
             np.arange(len(y_test)),

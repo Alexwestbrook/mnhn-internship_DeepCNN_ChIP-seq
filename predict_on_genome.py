@@ -82,39 +82,47 @@ def parsing():
     return args
 
 
-args = parsing()
-
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print(e)
-
-if args.train_method == 0:
-    model = tf.keras.models.load_model(args.trained_model)
-else:
-    model = models.build_model(args.architecture,
-                               read_length=args.read_length,
-                               method=args.train_method)
-    model.load_weights(args.trained_model)
-
-
-for genome_file, output in zip(args.genome_files, args.outputs):
-    indexes, data = utils.load_chr(genome_file, args.read_length)
-    if args.labels:
-        with np.load(args.labels) as f:
-            labels = f['labels']
-        if len(labels) != len(data):
-            raise ValueError('labels must have same length as data')
+if __name__ == "__main__":
+    # Get arguments
+    args = parsing()
+    # Limit gpu memory usage
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
+    # Load trained model
+    if args.train_method == 0:
+        model = tf.keras.models.load_model(args.trained_model)
     else:
-        labels = np.zeros(len(data), dtype=bool)
-    generator_chr = utils.DataGenerator(
-        indexes,
-        data,
-        labels,
-        args.batch_size,
-        shuffle=False)
-    preds = model.predict(generator_chr).ravel()
-    np.savez(output, preds=preds)
+        model = models.build_model(args.architecture,
+                                   read_length=args.read_length,
+                                   method=args.train_method)
+        model.load_weights(args.trained_model)
+    # Load genome
+    for genome_file, output in zip(args.genome_files, args.outputs):
+        # Maybe build output directory
+        directory = os.path.dirname(args.output)
+        if not os.path.isdir(directory):
+            os.makedirs(directory)
+        # Load genomic data and maybe labels (labels aren't currently used)
+        indexes, data = utils.load_chr(genome_file, args.read_length)
+        if args.labels:
+            with np.load(args.labels) as f:
+                labels = f['labels']
+            if len(labels) != len(data):
+                raise ValueError('labels must have same length as data')
+        else:
+            labels = np.zeros(len(data), dtype=bool)
+        # build a generator
+        generator_chr = utils.DataGenerator(
+            indexes,
+            data,
+            labels,
+            args.batch_size,
+            shuffle=False)
+        # predict on data and save predictions
+        preds = model.predict(generator_chr).ravel()
+        np.savez(output, preds=preds)
