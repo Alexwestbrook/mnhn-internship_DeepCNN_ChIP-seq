@@ -107,6 +107,8 @@ if __name__ == "__main__":
                                    read_length=args.read_length,
                                    method=args.train_method)
         model.load_weights(args.trained_model)
+    # Initialize predictions
+    all_preds = {}
     # Load genome
     for chr_id in args.chromosomes:
         # Load genomic data and maybe labels (labels aren't currently used)
@@ -128,6 +130,6 @@ if __name__ == "__main__":
             args.batch_size,
             shuffle=False)
         # predict on data and save predictions
-        preds = model.predict(generator_chr).ravel()
-        np.savez(os.path.join(args.output, f"preds_on_chr{chr_id}"),
-                 preds=preds)
+        all_preds[f"chr{chr_id}"] = model.predict(generator_chr).ravel()
+np.savez_compressed(os.path.join(args.output, f"preds_on_genome"),
+                    **all_preds)

@@ -14,6 +14,7 @@ import os
 from sklearn.preprocessing import OneHotEncoder
 import time
 from matplotlib import pyplot as plt
+from scipy.signal import gaussian, convolve
 
 
 class Eval_after_epoch(Callback):
@@ -899,3 +900,59 @@ def metaplot_over_indices(values,
         plt.show()
         plt.close()
     return mean_values, window
+
+
+def z_score(preds, rel_indices=None):
+    if rel_indices is not None:
+        rel_preds = preds[rel_indices]
+        mean, std = np.mean(rel_preds), np.std(rel_preds)
+    else:
+        mean, std = np.mean(preds), np.std(preds)
+    return (preds - mean)/std
+
+
+def smooth(values, window_size, mode='linear', sigma=1):
+    if mode == 'linear':
+        box = np.ones(window_size) / window_size
+    elif mode == 'gaussian':
+        box = gaussian(window_size, sigma)
+        box /= np.sum(box)
+    else:
+        raise ValueError("Invalid mode")
+    return convolve(values, box, mode='same')
+
+
+def find_peaks(preds, pred_thres, length_thres=1, tol=0):
+    # find peaks as values above the peak threshold
+    peak_mask = (preds > pred_thres)
+    # find where peak start and end
+    change_idx = np.where(peak_mask[1:] != peak_mask[:-1])[0] + 1
+    if peak_mask[0]:
+        # If preds starts with a peak, add an index at the start
+        change_idx = np.insert(change_idx, 0, 0)
+    if peak_mask[-1]:
+        # If preds ends with a peak, add an index at the end
+        change_idx = np.append(change_idx, len(peak_mask))
+    # Check that change_idx contains as many starts as ends
+    assert (len(change_idx) % 2 == 0)
+    # Merge consecutive peaks if their distance is below a threshold
+    if tol != 0:
+        # compute difference between end of peak and start of next one
+        diffs = change_idx[2::2] - change_idx[1:-1:2]
+        # get index when difference is below threshold, see below for matching
+        # index in diffs and in change_idx
+        # diff index:   0   1   2  ...     n-1
+        # change index:1-2 3-4 5-6 ... (2n-1)-2n
+        small_diff_idx = np.where(diffs <= tol)[0]
+        delete_idx = np.concatenate((small_diff_idx*2 + 1,
+                                     small_diff_idx*2 + 2))
+        # Remove close ends and starts using boolean mask
+        mask = np.ones(len(change_idx), dtype=bool)
+        mask[delete_idx] = False
+        change_idx = change_idx[mask]
+    # reshape as starts and ends
+    peaks = np.reshape(change_idx, (-1, 2))
+    # compute lengths of peaks and remove the ones below given threshold
+    lengths = np.diff(peaks, axis=1).ravel()
+    peaks = peaks[lengths > length_thres]
+    return peaks
