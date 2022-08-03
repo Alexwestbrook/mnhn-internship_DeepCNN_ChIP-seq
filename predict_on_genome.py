@@ -131,5 +131,5 @@ if __name__ == "__main__":
             shuffle=False)
         # predict on data and save predictions
         all_preds[f"chr{chr_id}"] = model.predict(generator_chr).ravel()
-np.savez_compressed(os.path.join(args.output, f"preds_on_genome"),
-                    **all_preds)
+    np.savez_compressed(os.path.join(args.output, f"preds_on_genome"),
+                        **all_preds)

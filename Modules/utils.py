@@ -15,6 +15,7 @@ from sklearn.preprocessing import OneHotEncoder
 import time
 from matplotlib import pyplot as plt
 from scipy.signal import gaussian, convolve
+import pyBigWig
 
 
 class Eval_after_epoch(Callback):
@@ -883,16 +884,16 @@ def ram_usage():
 def metaplot_over_indices(values,
                           indices,
                           window_half_size,
-                          index_mode='mid',
+                          anchor='center',
                           plot=True):
-    if index_mode == 'mid':
+    if anchor == 'center':
         window = np.arange(-window_half_size, window_half_size + 1)
-    elif index_mode == 'start':
+    elif anchor == 'start':
         window = np.arange(2*window_half_size + 1)
-    elif index_mode == 'end':
+    elif anchor == 'end':
         window = np.arange(-2*window_half_size, 1)
     else:
-        raise ValueError("Invalid index_mode")
+        raise NameError("Invalid anchor")
     indices = np.expand_dims(indices, axis=1) + np.expand_dims(window, axis=0)
     mean_values = np.mean(values[indices], axis=0)
     if plot:
@@ -917,8 +918,13 @@ def smooth(values, window_size, mode='linear', sigma=1):
     elif mode == 'gaussian':
         box = gaussian(window_size, sigma)
         box /= np.sum(box)
+    elif mode == 'triangle':
+        box = np.concatenate((np.arange((window_size+1) // 2),
+                              np.arange(window_size // 2 - 1, -1, -1)),
+                             dtype=float)
+        box /= np.sum(box)
     else:
-        raise ValueError("Invalid mode")
+        raise NameError("Invalid mode")
     return convolve(values, box, mode='same')
 
 
@@ -956,3 +962,23 @@ def find_peaks(preds, pred_thres, length_thres=1, tol=0):
     lengths = np.diff(peaks, axis=1).ravel()
     peaks = peaks[lengths > length_thres]
     return peaks
+
+
+def adapt_to_window(values, window_size, anchor='center'):
+    if anchor == 'center':
+        return values[(window_size // 2):
+                      (- ((window_size+1) // 2) + 1)]
+    elif anchor == 'start':
+        return values[:-window_size+1]
+    elif anchor == 'end':
+        return values[window_size-1:]
+    else:
+        raise NameError("Choose anchor from 'center', 'start' or 'end'")
+
+
+def load_annotation(file, chr_id, window_size, anchor='center'):
+    bw = pyBigWig.open(file)
+    values = bw.values(f"chr{chr_id}", 0, -1, numpy=True)
+    values[np.isnan(values)] = 0
+    values = adapt_to_window(values, window_size, anchor=anchor)
+    return values
