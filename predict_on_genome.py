@@ -70,18 +70,23 @@ def parsing():
         help='name of the model architecture in "models.py", required to load '
              'model from weights.',
         type=str)
+    parser.add_argument(
+        "--multi_file",
+        action='store_true',
+        help='indicates to store prediction on each chromosome separately'
+    )
     args = parser.parse_args()
     # Check if the input data is valid
     for chr_id in args.chromosomes:
         if not os.path.isfile(os.path.join(args.genome_dir,
                                            f'chr{chr_id}.npz')):
             sys.exit(f"chr{chr_id}.npz does not exist.\n"
-                     "Please enter valid genome file paths.")
+                     "Please enter valid genome file path.")
     # If the data was relabeled, check the new label file
     if args.labels:
         if not os.path.isfile(args.labels):
             sys.exit(f"{args.labels} does not exist.\n"
-                     "Please enter a valid new labels file path.")
+                     "Please enter a valid labels file path.")
     return args
 
 
@@ -108,7 +113,8 @@ if __name__ == "__main__":
                                    method=args.train_method)
         model.load_weights(args.trained_model)
     # Initialize predictions
-    all_preds = {}
+    if not args.multi_file:
+        all_preds = {}
     # Load genome
     for chr_id in args.chromosomes:
         # Load genomic data and maybe labels (labels aren't currently used)
@@ -130,6 +136,13 @@ if __name__ == "__main__":
             args.batch_size,
             shuffle=False)
         # predict on data and save predictions
-        all_preds[f"chr{chr_id}"] = model.predict(generator_chr).ravel()
-    np.savez_compressed(os.path.join(args.output, f"preds_on_genome"),
-                        **all_preds)
+        preds = model.predict(generator_chr).ravel()
+        if args.multi_file:
+            np.savez_compressed(os.path.join(args.output,
+                                             f"preds_on_chr{chr_id}"),
+                                preds=preds)
+        else:
+            all_preds[f"chr{chr_id}"] = preds
+    if not args.multi_file:
+        np.savez_compressed(os.path.join(args.output, f"preds_on_genome"),
+                            **all_preds)
