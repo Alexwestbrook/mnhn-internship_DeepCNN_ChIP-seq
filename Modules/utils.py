@@ -818,19 +818,16 @@ def remove_windows_with_N_v3(one_hot_seq, window_size):
 def parse_bed_peaks(bed_file):
     with open(bed_file, 'r') as f:
         chr_peaks = {}
-        while True:
-            line = f.readline().rstrip()
-            if not line:
-                break
-            splits = line.split('\t')
-            chr = splits[0][3:]
-            start = int(splits[1])
-            end = int(splits[2])
-            score = int(splits[4])
-            if chr in chr_peaks.keys():
-                chr_peaks[chr].append(np.array([start, end, score]))
+        for line in f:
+            line = line.rstrip()
+            chr_id, start, end, _, score, *_ = line.split('\t')
+            chr_id = chr_id[3:]
+            start, end, score = tuple(
+                int(item) for item in (start, end, score))
+            if chr_id in chr_peaks.keys():
+                chr_peaks[chr_id].append(np.array([start, end, score]))
             else:
-                chr_peaks[chr] = [np.array([start, end, score])]
+                chr_peaks[chr_id] = [np.array([start, end, score])]
         for key in chr_peaks.keys():
             chr_peaks[key] = np.array(chr_peaks[key])
     return chr_peaks
@@ -982,3 +979,16 @@ def load_annotation(file, chr_id, window_size, anchor='center'):
     values[np.isnan(values)] = 0
     values = adapt_to_window(values, window_size, anchor=anchor)
     return values
+
+
+def find_peaks_in_window(peaks, window_start, window_end):
+    sorted_peaks = peaks[np.argsort(peaks[:, 0]), :]
+    flat_peaks = sorted_peaks[:, :2].flatten()
+    first_id = np.searchsorted(flat_peaks, window_start)
+    last_id = np.searchsorted(flat_peaks, window_end - 1)
+    valid_peaks = sorted_peaks[(first_id // 2):((last_id + 1) // 2), :]
+    if first_id % 2 == 1:
+        valid_peaks[0, 0] = window_start
+    if last_id % 2 == 1:
+        valid_peaks[-1, 1] = window_end - 1
+    return valid_peaks
