@@ -89,8 +89,9 @@ if __name__ == "__main__":
     # Get arguments
     args = parsing()
     # Maybe build output directory
-    if not os.path.isdir(args.output):
-        os.makedirs(args.output)
+    directory = os.path.dirname(args.output)
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
     # Limit gpu memory usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
