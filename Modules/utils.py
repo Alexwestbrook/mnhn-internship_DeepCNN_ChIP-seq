@@ -16,6 +16,11 @@ import time
 from matplotlib import pyplot as plt
 from scipy.signal import gaussian, convolve
 import pyBigWig
+from sklearn.cluster import AgglomerativeClustering
+from scipy.cluster.hierarchy import linkage, dendrogram
+import seaborn as sns
+import pandas as pd
+from collections import defaultdict
 
 
 class Eval_after_epoch(Callback):
@@ -815,7 +820,7 @@ def remove_windows_with_N_v3(one_hot_seq, window_size):
     return np.array(valid_window_idx, dtype=int)
 
 
-def parse_bed_peaks(bed_file):
+def parse_bed_peaks(bed_file, window_size=101):
     with open(bed_file, 'r') as f:
         chr_peaks = {}
         for line in f:
@@ -829,8 +834,31 @@ def parse_bed_peaks(bed_file):
             else:
                 chr_peaks[chr_id] = [np.array([start, end, score])]
         for key in chr_peaks.keys():
-            chr_peaks[key] = np.array(chr_peaks[key])
+            # convert to array and adjust indices to window
+            chr_peaks[key] = (np.array(chr_peaks[key])
+                              - np.array([1, 1, 0]) * window_size // 2)
     return chr_peaks
+
+
+def parse_repeats(repeat_file, window_size=101, header_lines=3):
+    with open(repeat_file, 'r') as f:
+        # skip first lines
+        for i in range(header_lines):
+            next(f)
+        # build depth 2 dictionnary, first key is chr_id and 2nd key is family
+        repeats = defaultdict(lambda: defaultdict(list))
+        for line in f:
+            line = line.strip()
+            _, _, _, _, chr_id, start, end, _, _, _, family, *_ = line.split()
+            chr_id = chr_id[3:]
+            start, end = tuple(int(item) for item in (start, end))
+            repeats[chr_id][family].append(np.array([start, end]))
+        for chr_id in repeats.keys():
+            for family in repeats[chr_id].keys():
+                # convert to array and adjust indices to window
+                repeats[chr_id][family] = (np.array(repeats[chr_id][family])
+                                           - window_size // 2)
+    return repeats
 
 
 # Other
@@ -882,7 +910,10 @@ def metaplot_over_indices(values,
                           indices,
                           window_half_size,
                           anchor='center',
-                          plot=True):
+                          plot='simple',
+                          res_dir=None,
+                          data='unknown_data',
+                          chr='unknown_chr'):
     if anchor == 'center':
         window = np.arange(-window_half_size, window_half_size + 1)
     elif anchor == 'start':
@@ -891,13 +922,53 @@ def metaplot_over_indices(values,
         window = np.arange(-2*window_half_size, 1)
     else:
         raise NameError("Invalid anchor")
+    # broadcast column of indices and window line
     indices = np.expand_dims(indices, axis=1) + np.expand_dims(window, axis=0)
+    # compute mean over original indices at each point of the window
     mean_values = np.mean(values[indices], axis=0)
-    if plot:
+    if plot == 'simple':
         plt.plot(window, mean_values)
-        plt.show()
-        plt.close()
-    return mean_values, window
+        return_values = tuple()
+    elif plot == 'heatmap':
+        corrs = lineWiseCorrcoef(values[indices], mean_values)
+        new_indices = indices[np.argsort(corrs)[::-1], :]
+        fig, ax = plt.subplots(2, 2, sharex='col', figsize=(9, 9),
+                               gridspec_kw={'width_ratios': [20, 1],
+                                            'height_ratios': [6, 20]})
+        ax[0, 1].remove()  # remove unused upper right axes
+        ax[0, 0].plot(mean_values)
+        df = pd.DataFrame(values[new_indices], columns=window)
+        sns.heatmap(df, center=0, ax=ax[1, 0], cbar_ax=ax[1, 1],
+                    xticklabels=window_half_size, yticklabels=1000,
+                    robust=True)
+        return_values = (corrs,)
+    elif plot == 'clustermap':
+        corr_matrix = np.corrcoef(values[indices])
+        link_matrix = linkage(corr_matrix, method='ward')
+        df = pd.DataFrame(values[indices], columns=window)
+        clust = sns.clustermap(values[indices], center=0,
+                               row_linkage=link_matrix, col_cluster=False,
+                               xticklabels=window_half_size,
+                               yticklabels=1000, robust=True)
+        return_values = (clust,)
+    if res_dir:
+        plt.savefig(os.path.join(res_dir,
+                                 f'metaplot_{data}_{plot}_{chr}_peaks.png'),
+                    bbox_inches='tight')
+    plt.show()
+    plt.close()
+    return return_values + (mean_values, window)
+
+
+def lineWiseCorrcoef(X, y):
+    # from https://stackoverflow.com/questions/19401078/efficient-columnwise-
+    # correlation-coefficient-calculation
+    n = y.size
+    DX = X - (np.einsum('ij->i', X) / np.double(n)).reshape((-1, 1))
+    y -= (np.einsum('i->', y) / np.double(n))
+    tmp = np.einsum('ij,ij->i', DX, DX)
+    tmp *= np.einsum('i,i->', y, y)
+    return np.dot(DX, y) / np.sqrt(tmp)
 
 
 def z_score(preds, rel_indices=None):
@@ -992,3 +1063,96 @@ def find_peaks_in_window(peaks, window_start, window_end):
     if last_id % 2 == 1:
         valid_peaks[-1, 1] = window_end - 1
     return valid_peaks
+
+
+def overlap(peak0: np.array, peak1: np.array):
+    """
+    Determine whether peaks overlap and which one ends first.
+
+    Arguments
+    ---------
+    peak0 : 1-D array in format [peak_start, peak_end, *optional_score]
+            peak_start and peak_end must be indices on the chromosome
+    peak1 : same as peak0
+
+    Return
+    ------
+    A tuple of 2 booleans: (overlaps, end_first)
+    overlaps: True if peaks overlap by more than one point.
+    end_first: index of the peak with lowest end point.
+    """
+    start0, end0, *_ = peak0
+    start1, end1, *_ = peak1
+    overlaps = end0 > start1 and end1 > start0
+    end_first = end0 > end1
+    return overlaps, end_first
+
+
+def overlapping_peaks(peaks0, peaks1):
+    """
+    Determine which peaks overlap with at least one other and which don't.
+
+    Arguments
+    ---------
+    peaks0: 2-D array of disjoint peaks, peaks must be in format
+            [peak_start, peak_end, *optional_score]
+            peak_start and peak_end must be indices on the chromosome
+    peaks1: same as peaks0
+
+    Return
+    ------
+    A tuple of 2 lists: (overlapping, non_overlapping)
+    overlapping: list of 2 lists of overlapping peaks. First list contains
+                 peaks from peaks0 overlapping with at least one peak from
+                 peaks1 and second list contains peaks from peaks1 overlapping
+                 with at least one peak from peaks0.
+    non_overlapping: list of 2 lists of non overlapping peaks. First list
+                     contains non overlapping peaks from peaks0 and second
+                     list contains non overlapping peaks from peaks1
+
+    Implementation
+    --------------
+    Both peaks0 and peaks1 are sorted then first peaks from each list are
+    compared. The first ending peak is discarded and put into the
+    appropriate output list. The remaining peak is then compared to the next
+    one in the list from which the previous peak was discarded. A flag called
+    "remember_overlaps" is set to True anytime we see an overlap, to remember
+    that the remaining peak must be put in the overlapping list even if it
+    doesn't overlap with the next one.
+    """
+    # Sort peak lists
+    sorted_0 = list(peaks0[np.argsort(peaks0[:, 0]), :])
+    sorted_1 = list(peaks1[np.argsort(peaks1[:, 0]), :])
+    # merge into one list for simple index accession
+    sorted = [sorted_0, sorted_1]
+    # flag
+    remember_overlaps = False
+    # initialize output lists
+    overlapping = [[], []]
+    non_overlapping = [[], []]
+    while sorted_0 and sorted_1:
+        # check overlap between first peaks of both lists
+        overlaps, end_first = overlap(sorted_0[0], sorted_1[0])
+        # remove first ending peak because it can't overlap with others anymore
+        peak = sorted[end_first].pop(0)
+        if overlaps:
+            # overlap -> set flag to True and store peak in overlapping
+            remember_overlaps = True
+            overlapping[end_first].append(peak)
+        elif remember_overlaps:
+            # no overlap but flag is True -> set flag back to False and
+            #                                store peak in overlapping
+            remember_overlaps = False
+            overlapping[end_first].append(peak)
+        else:
+            # no overlap, flag is False -> store peak in non overlapping
+            non_overlapping[end_first].append(peak)
+    # index of the non empty list
+    non_empty = bool(sorted_1)
+    if remember_overlaps:
+        # flag is True -> store first remaining peak in overlapping
+        overlapping[non_empty].append(sorted[non_empty].pop())
+    for peak in sorted[non_empty]:
+        # store all leftover peaks in non overlapping
+        non_overlapping[non_empty].append(peak)
+    return overlapping, non_overlapping

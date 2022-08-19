@@ -47,19 +47,15 @@ while cur_arg < len(sys.argv):
     reads = []
     with open(sys.argv[cur_arg], 'r') as f:
         # loop over file lines
-        i = 0
         read = ''
-        while True:
-            line = f.readline()
-            if not line:
-                break
-            # only consider the lines containing the sequences
-            if line[0] == '>' and read != '':
-                reads.append(read)
-                read = ''
+        for line in f:
+            if line[0] == '>':  # First line header, discard this line
+                if read != '':
+                    reads.append(read)  # add completed read
+                    read = ''
             else:
                 read += line.rstrip()  # remove space at the end
-            i += 1
+    reads.append(read)  # add last read
     cur_arg += 1
 reads = np.array(reads)
 # convert the list to array and store in a numpy binary file
