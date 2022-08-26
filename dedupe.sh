@@ -30,19 +30,3 @@ else
     bash bbmap/clumpify.sh in=$in3 out=$out3 -subs=0 dedupe
     bash bbmap/clumpify.sh in=$in4 out=$out4 -subs=0 dedupe
 fi
-
-# from https://www.biostars.org/p/9764/
-
-# out1=$data/raw_data/$label/$access1'_deduped_shuf'.fastq
-# out2=$data/raw_data/$label/$access2'_deduped_shuf'.fastq
-# # paired end reads, doesn't work though
-# paste <(zcat $mid1) <(zcat $mid2) | paste - - - - | shuf | awk -F'\t' '{OFS="\n"; print $1,$3,$5,$7 > $out1; print $2,$4,$6,$8 > $out2}'
-
-# # single end reads
-# awk '{OFS="\t"; getline seq; \
-#                 getline sep; \
-#                 getline qual; \
-#                 print $0,seq,sep,qual}' $mid1 | \
-# shuf | \
-# awk '{OFS="\n"; print $1,$2,$3,$4}' \
-# > $out1

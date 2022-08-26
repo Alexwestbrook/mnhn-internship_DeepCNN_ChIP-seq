@@ -21,6 +21,7 @@ from scipy.cluster.hierarchy import linkage, dendrogram
 import seaborn as sns
 import pandas as pd
 from collections import defaultdict
+from pathlib import Path
 
 
 class Eval_after_epoch(Callback):
@@ -169,32 +170,40 @@ def data_generation(IDs, reads, labels, class_weights):
         X[i, ] = reads[ID]
         Y[i] = labels[ID]
         weights[i] = class_weights[labels[ID]]
-    X = tf.convert_to_tensor(X, dtype=tf.float32)
-    Y = tf.convert_to_tensor(Y, dtype=tf.float32)
-    Y = tf.expand_dims(Y, axis=1)
-    weights = tf.convert_to_tensor(weights, dtype=tf.float32)
     return X, Y, weights
 
 
-def data_generator_from_files(files, batch_size, class_weights={0: 1, 1: 1},
-                              shuffle=True):
+def data_generator(dataset_dir, batch_size, class_weights={0: 1, 1: 1},
+                   shuffle=True, split='train', relabeled=False):
+    files = Path(dataset_dir).glob(split + '_*')
+
     while True:
+        if shuffle:
+            np.random.shuffle(files)
         for file in files:
             with np.load(file) as f:
-                reads = f['x_train']
-                labels = f['y_train']
-            indexes = np.arange(len(labels))
+                x = f['one_hots']
+            if relabeled:
+                label_file = Path(file.parent, 'labels_' + file.name)
+                with np.load(label_file) as f:
+                    labels = f['labels']
+            else:
+                labels = np.zeros(len(x), dtype=bool)
+                labels[::2] = 1
+
+            indexes = np.arange(len(x))
             list_IDs = indexes
+
             n_batch = int(np.ceil(len(list_IDs) / batch_size))
             if shuffle:
                 np.random.shuffle(indexes)
 
             for index in range(n_batch):
-                start_batch = index*batch_size
-                end_batch = min((index+1)*batch_size, len(indexes)-1)
+                start_batch = index * batch_size
+                end_batch = min((index + 1) * batch_size, len(indexes) - 1)
                 indexes_batch = indexes[start_batch:end_batch]
-                list_IDs_batch = [list_IDs[k] for k in indexes]
-                yield data_generation(list_IDs_batch, reads, labels,
+                list_IDs_batch = [list_IDs[k] for k in indexes_batch]
+                yield data_generation(list_IDs_batch, x, labels,
                                       class_weights)
 
 
@@ -373,6 +382,40 @@ def balance_classes(weights, y):
 
 
 # One-hot encoding and decoding
+def one_hot_encode(seq, read_length=101, one_hot_type=bool):
+    one_hot = np.zeros((read_length, 4), dtype=one_hot_type)
+    for i, base in enumerate(seq):
+        if i >= read_length:
+            break
+        if base == 'A':
+            one_hot[i, 0] = 1
+        elif base == 'C':
+            one_hot[i, 1] = 1
+        elif base == 'G':
+            one_hot[i, 2] = 1
+        elif base == 'T':
+            one_hot[i, 3] = 1
+    return one_hot
+
+
+def one_hot_decode(one_hot, read_length=101, one_hot_type=bool):
+    if len(one_hot.shape) == 2:
+        read_length, n_bases = one_hot.shape
+    else:
+        raise ValueError(
+            'input must be a single one hot encoded read with ')
+    categories = np.array([['A'], ['C'], ['G'], ['T']])
+    encoder = OneHotEncoder(dtype=bool,
+                            handle_unknown='ignore',
+                            sparse=False)
+    encoder.fit(categories)
+
+    seq = encoder.inverse_transform(one_hot)
+    seq = seq.ravel()
+    seq = ''.join(['N' if value is None else value for value in seq])
+    return seq
+
+
 def one_hot_encoding(array, read_length=101, one_hot_type=bool):
     return one_hot_encoding_v1(array,
                                read_length=read_length,
@@ -548,7 +591,7 @@ def remove_reads_with_N(sequences,
     with_Ns = []
     if tolerance == 0:
         for i, seq in enumerate(sequences):
-            if (read_length is not None and len(seq) != read_length):
+            if (read_length is not None and len(seq) < read_length):
                 too_short.append(i)
             if 'N' in seq:
                 with_Ns.append(i)
@@ -820,7 +863,7 @@ def remove_windows_with_N_v3(one_hot_seq, window_size):
     return np.array(valid_window_idx, dtype=int)
 
 
-def parse_bed_peaks(bed_file, window_size=101):
+def parse_bed_peaks(bed_file, window_size=101, merge=True):
     with open(bed_file, 'r') as f:
         chr_peaks = {}
         for line in f:
@@ -834,9 +877,16 @@ def parse_bed_peaks(bed_file, window_size=101):
             else:
                 chr_peaks[chr_id] = [np.array([start, end, score])]
         for key in chr_peaks.keys():
-            # convert to array and adjust indices to window
-            chr_peaks[key] = (np.array(chr_peaks[key])
+            # convert to array, remove duplicates and adjust indices to window
+            chr_peaks[key] = (np.unique(np.array(chr_peaks[key]), axis=0)
                               - np.array([1, 1, 0]) * window_size // 2)
+            try:
+                # Check if some peaks overlap
+                overlaps, _ = self_overlapping_peaks(chr_peaks[key],
+                                                     merge=merge)
+                assert len(overlaps) == 0
+            except AssertionError:
+                print(f'Warning: some peaks overlap in chr{key}')
     return chr_peaks
 
 
@@ -909,6 +959,8 @@ def ram_usage():
 def metaplot_over_indices(values,
                           indices,
                           window_half_size,
+                          label='values',
+                          compare=None,
                           anchor='center',
                           plot='simple',
                           res_dir=None,
@@ -926,21 +978,51 @@ def metaplot_over_indices(values,
     indices = np.expand_dims(indices, axis=1) + np.expand_dims(window, axis=0)
     # compute mean over original indices at each point of the window
     mean_values = np.mean(values[indices], axis=0)
+    if compare:
+        compare_values, compare_label = compare
+        mean_compare = np.mean(compare_values[indices], axis=0)
+    # Make desired plot
+    prop_cycle = plt.rcParams['axes.prop_cycle']
+    colors = prop_cycle.by_key()['color']
     if plot == 'simple':
-        plt.plot(window, mean_values)
+        fig, ax = plt.subplots()
+        ax.plot(window, mean_values, label=label, color=colors[1])
+        handles, labels = ax.get_legend_handles_labels()
+        if compare:
+            ax2 = ax.twinx()
+            ax2.plot(window, mean_compare, label=compare_label)
+            handles2, labels2 = ax2.get_legend_handles_labels()
+            handles += handles2
+            labels += labels2
+        ax.legend(handles, labels)
         return_values = tuple()
     elif plot == 'heatmap':
         corrs = lineWiseCorrcoef(values[indices], mean_values)
         new_indices = indices[np.argsort(corrs)[::-1], :]
-        fig, ax = plt.subplots(2, 2, sharex='col', figsize=(9, 9),
-                               gridspec_kw={'width_ratios': [20, 1],
-                                            'height_ratios': [6, 20]})
-        ax[0, 1].remove()  # remove unused upper right axes
-        ax[0, 0].plot(mean_values)
+        fig, axs = plt.subplots(2, 2, sharex='col', figsize=(9, 11),
+                                gridspec_kw={'width_ratios': [20, 1],
+                                             'height_ratios': [6, 20]})
+        # Average plot
+        ax00 = axs[0, 0]
+        ax00.plot(mean_values, label=label, color=colors[1])
+        ax00.axvline(x=window_half_size+1, color='black', linestyle='--',
+                     label='ENCODE peak center')
+        handles, labels = ax00.get_legend_handles_labels()
+        if compare:
+            ax2 = ax00.twinx()
+            ax2.plot(mean_compare, label=compare_label)
+            handles2, labels2 = ax2.get_legend_handles_labels()
+            handles += handles2
+            labels += labels2
+        ax00.xaxis.set_tick_params(which='both', labelbottom=True)
+        ax00.legend(handles, labels)
+        # remove upper right ax
+        axs[0, 1].remove()
+        # Heatmap
         df = pd.DataFrame(values[new_indices], columns=window)
-        sns.heatmap(df, center=0, ax=ax[1, 0], cbar_ax=ax[1, 1],
+        sns.heatmap(df, center=0, ax=axs[1, 0], cbar_ax=axs[1, 1],
                     xticklabels=window_half_size, yticklabels=1000,
-                    robust=True)
+                    robust=True, vmin=0, vmax=1)
         return_values = (corrs,)
     elif plot == 'clustermap':
         corr_matrix = np.corrcoef(values[indices])
@@ -963,6 +1045,9 @@ def metaplot_over_indices(values,
 def lineWiseCorrcoef(X, y):
     # from https://stackoverflow.com/questions/19401078/efficient-columnwise-
     # correlation-coefficient-calculation
+    # Make copies because arays will be changed in place
+    X = X.copy()
+    y = y.copy()
     n = y.size
     DX = X - (np.einsum('ij->i', X) / np.double(n)).reshape((-1, 1))
     y -= (np.einsum('i->', y) / np.double(n))
@@ -1017,7 +1102,7 @@ def find_peaks(preds, pred_thres, length_thres=1, tol=0):
         # index in diffs and in change_idx
         # diff index:   0   1   2  ...     n-1
         # change index:1-2 3-4 5-6 ... (2n-1)-2n
-        small_diff_idx = np.where(diffs <= tol)[0]
+        small_diff_idx, = np.where(diffs <= tol)
         delete_idx = np.concatenate((small_diff_idx*2 + 1,
                                      small_diff_idx*2 + 2))
         # Remove close ends and starts using boolean mask
@@ -1078,12 +1163,12 @@ def overlap(peak0: np.array, peak1: np.array):
     Return
     ------
     A tuple of 2 booleans: (overlaps, end_first)
-    overlaps: True if peaks overlap by more than one point.
+    overlaps: True if peaks overlap by at least one point.
     end_first: index of the peak with lowest end point.
     """
     start0, end0, *_ = peak0
     start1, end1, *_ = peak1
-    overlaps = end0 > start1 and end1 > start0
+    overlaps = end0 >= start1 and end1 >= start0
     end_first = end0 > end1
     return overlaps, end_first
 
@@ -1156,3 +1241,28 @@ def overlapping_peaks(peaks0, peaks1):
         # store all leftover peaks in non overlapping
         non_overlapping[non_empty].append(peak)
     return overlapping, non_overlapping
+
+
+def is_sorted(array):
+    # from https://stackoverflow.com/questions/47004506/check-if-a-numpy-array-
+    # is-sorted
+    return np.all(array[:-1] <= array[1:])
+
+
+def self_overlapping_peaks(peaks, merge=True, tol=1):
+    sorted_by_starts = peaks[np.argsort(peaks[:, 0]), :2].ravel()
+    gaps = sorted_by_starts[1:-1].reshape(-1, 2)
+    diffs = - np.diff(gaps, axis=1).ravel()
+    overlap_idx, = np.where(diffs >= - tol)
+    if merge:
+        if len(overlap_idx) != 0:
+            delete_idx = np.concatenate((overlap_idx*2 + 1,
+                                         overlap_idx*2 + 2))
+            # Remove close ends and starts using boolean mask
+            mask = np.ones(len(sorted_by_starts), dtype=bool)
+            mask[delete_idx] = False
+            merged = sorted_by_starts[mask].reshape(-1, 2)
+        else:
+            merged = None
+        return overlap_idx, merged
+    return overlap_idx
