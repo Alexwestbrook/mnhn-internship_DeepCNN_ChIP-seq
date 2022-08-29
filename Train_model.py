@@ -27,8 +27,9 @@ import sys
 import argparse
 import time
 import json
-import Modules.utils as utils
+from Modules import utils
 import Modules.models as models
+from pathlib import Path
 
 
 def parsing():
@@ -61,6 +62,13 @@ def parsing():
         "-d", "--dataset", help="Input dataset file with npz format.",
         type=str,
         required=True)
+    parser.add_argument(
+        "-ff", "--from_files",
+        help="specifies that the dataset consists of multiple npz archives. "
+        "In this case dataset must the name of the directory contaiing the "
+        "files. Do not store other files in this directory or the data "
+        "generator might try to read them as data.",
+        action='store_true')
     parser.add_argument(
         "-out", "--output",
         help="Path to the output directory and file name.",
@@ -133,14 +141,19 @@ def parsing():
         type=int)
     args = parser.parse_args()
     # Check if the input data is valid
-    if not os.path.isfile(args.dataset):
-        sys.exit(f"{args.dataset} does not exist.\n"
-                 "Please enter a valid dataset file path.")
-    # If the data was relabeled, check the new label file
-    if args.relabeled:
-        if not os.path.isfile(args.relabeled):
-            sys.exit(f"{args.relabeled} does not exist.\n"
-                     "Please enter a valid new labels file path.")
+    if args.from_files:
+        if not Path(args.dataset).is_dir():
+            sys.exit(f"When specifying from_files argument, dataset must be "
+                     "directory, {args.dataset} isn't")
+    else:
+        if not Path(args.dataset).is_file():
+            sys.exit(f"{args.dataset} does not exist.\n"
+                     "Please enter a valid dataset file path.")
+        # If the data was relabeled, check the new label file
+        if args.relabeled:
+            if not Path(args.relabeled).exists():
+                sys.exit(f"{args.relabeled} does not exist.\n"
+                         "Please enter a valid new labels file path.")
     return args
 
 
@@ -343,42 +356,54 @@ if __name__ == "__main__":
                                    start_reweighting=args.start_tm)
 
     # Load the dataset
-    with np.load(args.dataset) as f1:
-        x_train = f1['x_train']
-        x_valid = f1['x_valid']
-        if args.relabeled:
-            with np.load(args.relabeled) as f2:
-                y_train = f2['y_train']
-                y_valid = f2['y_valid']
-        else:
-            y_train = f1['y_train']
-            y_valid = f1['y_valid']
-    if args.eval_epoch:
+    if args.from_files:
+        generator_train = utils.data_generator(
+            args.dataset,
+            args.batch_size,
+            relabeled=args.relabeled)
+        generator_valid = utils.data_generator(
+            args.dataset,
+            args.batch_size,
+            shuffle=False,
+            split='valid',
+            relabeled=args.relabeled)
+    else:
         with np.load(args.dataset) as f1:
-            x_test = f1['x_test']
+            x_train = f1['x_train']
+            x_valid = f1['x_valid']
             if args.relabeled:
                 with np.load(args.relabeled) as f2:
-                    y_test = f2['y_test']
+                    y_train = f2['y_train']
+                    y_valid = f2['y_valid']
             else:
-                y_test = f1['y_test']
-    else:
-        x_test = None
-        y_test = None
+                y_train = f1['y_train']
+                y_valid = f1['y_valid']
+        if args.eval_epoch:
+            with np.load(args.dataset) as f1:
+                x_test = f1['x_test']
+                if args.relabeled:
+                    with np.load(args.relabeled) as f2:
+                        y_test = f2['y_test']
+                else:
+                    y_test = f1['y_test']
+        else:
+            x_test = None
+            y_test = None
 
-    # Build generators for train, valid and test
-    weights_train = utils.create_weights(y_train)
-    generator_train = utils.DataGenerator(
-        np.arange(len(y_train)),
-        x_train,
-        y_train,
-        args.batch_size,
-        weights_train)
-    generator_valid = utils.DataGenerator(
-        np.arange(len(y_valid)),
-        x_valid,
-        y_valid,
-        args.batch_size,
-        shuffle=False)
+        # Build generators for train, valid and test
+        weights_train = utils.create_weights(y_train)
+        generator_train = utils.DataGenerator(
+            np.arange(len(y_train)),
+            x_train,
+            y_train,
+            args.batch_size,
+            weights_train)
+        generator_valid = utils.DataGenerator(
+            np.arange(len(y_valid)),
+            x_valid,
+            y_valid,
+            args.batch_size,
+            shuffle=False)
     # Create callbacks during training
     callbacks_list = [
         CSVLogger(os.path.join(args.output, "epoch_data.csv"))
@@ -400,12 +425,21 @@ if __name__ == "__main__":
         ])
     # Add optional callback for evaluating after epoch
     if args.eval_epoch:
-        generator_test = utils.DataGenerator(
-            np.arange(len(y_test)),
-            x_test,
-            y_test,
-            args.batch_size,
-            shuffle=False)
+        if args.from_files:
+            generator_test = utils.data_generator(
+                args.dataset,
+                args.batch_size,
+                shuffle=False,
+                split='test',
+                relabeled=args.relabeled,
+                cache=False)
+        else:
+            generator_test = utils.DataGenerator(
+                np.arange(len(y_test)),
+                x_test,
+                y_test,
+                args.batch_size,
+                shuffle=False)
         callbacks_list.append(
             utils.Eval_after_epoch(args.output,
                                    generator_test))
@@ -424,3 +458,8 @@ if __name__ == "__main__":
         model.save(os.path.join(args.output, "model"))
     else:
         model.save_weights(os.path.join(args.output, "model_weights"))
+    # Remove temporary npy files if needed
+    for file in Path('../data_test/CTCF_IP_dataset/').glob('train_*.npy'):
+        file.unlink()
+    for file in Path('../data_test/CTCF_IP_dataset/').glob('valid_*.npy'):
+        file.unlink()

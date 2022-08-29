@@ -174,15 +174,20 @@ def data_generation(IDs, reads, labels, class_weights):
 
 
 def data_generator(dataset_dir, batch_size, class_weights={0: 1, 1: 1},
-                   shuffle=True, split='train', relabeled=False):
-    files = Path(dataset_dir).glob(split + '_*')
+                   shuffle=True, split='train', relabeled=False, cache=True):
+    files = list(Path(dataset_dir).glob(split + '_*'))
 
+    first_loop = True
+    new_files = []
     while True:
         if shuffle:
             np.random.shuffle(files)
         for file in files:
-            with np.load(file) as f:
-                x = f['one_hots']
+            if first_loop:
+                with np.load(file) as f:
+                    x = f['one_hots']
+            else:
+                x = np.load(file)
             if relabeled:
                 label_file = Path(file.parent, 'labels_' + file.name)
                 with np.load(label_file) as f:
@@ -200,11 +205,19 @@ def data_generator(dataset_dir, batch_size, class_weights={0: 1, 1: 1},
 
             for index in range(n_batch):
                 start_batch = index * batch_size
-                end_batch = min((index + 1) * batch_size, len(indexes) - 1)
+                end_batch = (index + 1) * batch_size
                 indexes_batch = indexes[start_batch:end_batch]
                 list_IDs_batch = [list_IDs[k] for k in indexes_batch]
-                yield data_generation(list_IDs_batch, x, labels,
-                                      class_weights)
+                yield f'batch {index}/{n_batch} on file {file}'
+                # yield data_generation(list_IDs_batch, x, labels,
+                #                       class_weights)
+            if first_loop:
+                new_file = Path(file.parent, file.stem + '.npy')
+                new_files.append(new_file)
+                np.save(new_file, x)
+        if first_loop:
+            files = new_files
+        first_loop = False
 
 
 # Data loader
