@@ -357,16 +357,14 @@ if __name__ == "__main__":
 
     # Load the dataset
     if args.from_files:
-        generator_train = utils.data_generator(
+        generator_train = utils.DataGeneratorFromFiles(
             args.dataset,
-            args.batch_size,
-            relabeled=args.relabeled)
-        generator_valid = utils.data_generator(
+            args.batch_size)
+        generator_valid = utils.DataGeneratorFromFiles(
             args.dataset,
             args.batch_size,
             shuffle=False,
-            split='valid',
-            relabeled=args.relabeled)
+            split='valid')
     else:
         with np.load(args.dataset) as f1:
             x_train = f1['x_train']
@@ -426,13 +424,11 @@ if __name__ == "__main__":
     # Add optional callback for evaluating after epoch
     if args.eval_epoch:
         if args.from_files:
-            generator_test = utils.data_generator(
+            generator_test = utils.DataGeneratorFromFiles(
                 args.dataset,
                 args.batch_size,
                 shuffle=False,
-                split='test',
-                relabeled=args.relabeled,
-                cache=False)
+                split='test')
         else:
             generator_test = utils.DataGenerator(
                 np.arange(len(y_test)),
@@ -449,7 +445,8 @@ if __name__ == "__main__":
               validation_data=generator_valid,
               epochs=args.epochs,
               callbacks=callbacks_list,
-              verbose=args.verbose)
+              verbose=args.verbose,
+              shuffle=False)
     train_time = time.time() - t0
     with open(os.path.join(args.output, 'Experiment_info.txt'), 'a') as f:
         f.write(f'training time: {train_time}\n')

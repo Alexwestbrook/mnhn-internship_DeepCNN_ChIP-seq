@@ -109,8 +109,8 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     The read length is infered from the maximum length in the first shard, all
     reads will be truncated or extended with N values to fit this length.
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     out_dir (str): name of the output dataset directory, must be empty
     fastq_files (list of str): list of fastq files to read from
     shard_size (int): number of reads in a shard
