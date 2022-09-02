@@ -1,8 +1,21 @@
 #!/usr/bin/env python
+import os
+from pathlib import Path
+from collections import defaultdict
+from typing import Optional, Union
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 from numpy.core.numeric import normalize_axis_tuple
+
+import pandas as pd
+from matplotlib import pyplot as plt
+import seaborn as sns
+
+from sklearn.preprocessing import OneHotEncoder
+from scipy.signal import gaussian, convolve
+from scipy.cluster.hierarchy import linkage, dendrogram
+
 import tensorflow as tf
 from keras.engine import data_adapter
 from tensorflow.keras.callbacks import Callback
@@ -10,18 +23,8 @@ from tensorflow.keras.utils import Sequence
 from tensorflow.keras import Model
 from tensorflow.keras.metrics import binary_crossentropy
 from tensorflow.python.eager import backprop
-import os
-from sklearn.preprocessing import OneHotEncoder
-import time
-from matplotlib import pyplot as plt
-from scipy.signal import gaussian, convolve
+
 import pyBigWig
-from sklearn.cluster import AgglomerativeClustering
-from scipy.cluster.hierarchy import linkage, dendrogram
-import seaborn as sns
-import pandas as pd
-from collections import defaultdict
-from pathlib import Path
 
 
 class Eval_after_epoch(Callback):
@@ -162,6 +165,204 @@ class DataGenerator(Sequence):
             np.random.shuffle(self.indexes)
 
 
+class DataGeneratorFromFiles(Sequence):
+    """
+    Build callable generator for Tensorflow model from multiple files
+
+    Parameters
+    ----------
+    dataset_dir: path to dataset directory, containing files in numpy binary
+    format npy or npz. Filenames must be '[split]_[index].[npy or npz]'. For
+    example, the first train file (in npy format) must be named 'train_0.npy'.
+    The directory must not contain unrelated files or globbing might include
+    more files in the dataset.
+    If files are provided in npz format, they will be copied in npy format for
+    faster access during training and prediction. The copy will have same name
+    as the original but with the .npy extension instead of .npz. It will
+    raise an Exception if the file already exists in npy format.
+
+    batch_size: number of samples per batch.
+
+    split: name of the split to generate, must match the dataset filenames
+
+    use_labels: If False, the even index samples are assumed of label 1 and odd
+    index samples of label 0. If True, indicates to use labels in label files.
+    The files must be in the same directory as their data files and with the
+    name labels_[split]_[index].npy. The labels must be an array of same shape
+    as the data.
+
+    class_weight: dictionary mapping labels to class weights values. By
+    default, weights are 1 for each label.
+
+    use_sample_weight: If True, overides class_weight argument and indicates to
+    use weight files. The sample_weight files must be in the same directory as
+    their data files and with the name weights_[split]_[index].npy. The
+    weights must be an array of same shape as the data.
+
+    shuffle: if True, indicates to shuffle file order and content before each
+    iteration, recommended for training. During prediction, set to False for
+    easy matching between data and prediction.
+
+    file_suffix: npy, npz or None. Indicates the suffix of the files to use in
+    the dataset. If None, the suffix is inferred from the presence of a
+    [split]_0.npy file. If not, the file_suffix is assumed to be npz. Due to
+    conversion of npz into npy, an Error will be raised in case of conflicting
+    names.
+    """
+    def __init__(self,
+                 dataset_dir: Path,
+                 batch_size: int,
+                 split: str = 'train',
+                 use_labels: bool = False,
+                 class_weights: dict = {0: 1, 1: 1},
+                 use_sample_weights: np.ndarray = False,
+                 shuffle: bool = True,
+                 file_suffix: str = None):
+        self.batch_size = batch_size
+        self.use_labels = use_labels
+        self.class_weights = class_weights
+        self.use_sample_weights = use_sample_weights
+        # Initializers for file parsing
+        if use_labels:
+            self.label_files = []
+        if use_sample_weights:
+            self.weight_files = []
+        self.data_files = []
+        self.files_idx = []
+        self.contents_idx = []
+        self.dim = None
+        # Check if first .npy file exists, if not assume data is in .npz
+        if file_suffix is None:
+            if Path(dataset_dir, split + '_0.npy').exists():
+                file_suffix = '.npy'
+            else:
+                file_suffix = '.npz'
+        for file in Path(dataset_dir).glob(split + '_*' + file_suffix):
+            # Get file information, if npz, make a npy copy for faster reading
+            if file_suffix == '.npy':
+                data = np.load(file)
+                self.data_files.append(file)
+            elif file_suffix == '.npz':
+                with np.load(file) as f:
+                    data = f['one_hots']
+                new_file = Path(file.parent, file.stem + '.npy')
+                if new_file.exists():
+                    raise FileExistsError(
+                        f"{file} could not be converted to npy because "
+                        f"{new_file} already exists"
+                    )
+                np.save(new_file, data)
+                self.data_files.append(new_file)
+            # File content indices, used for for shuffling file contents
+            self.contents_idx.append(np.arange(len(data)))
+            # Get label files
+            if use_labels:
+                label_file = Path(file.parent, 'labels_' + file.stem + '.npy')
+                if not label_file.exists():
+                    raise FileNotFoundError(f"No label file found for {file}")
+                self.label_files.append(label_file)
+            # Get weight files
+            if use_sample_weights:
+                weight_file = Path(file.parent, 'weights_'+file.stem+'.npy')
+                if not weight_file.exists():
+                    raise FileNotFoundError(f"No weight file found for {file}")
+                self.weight_files.append(weight_file)
+            # Get shape of a data sample
+            if self.dim is None:
+                self.dim = data[0].shape
+        # Free space from data
+        del data
+
+        if self.dim is None:
+            raise FileNotFoundError(
+                f"No {split} files found in {dataset_dir}. Files must be in "
+                "numpy binary format, named as [split]_[number].[npy or npz]")
+        # File indices and number of samples, used for shuffling file order
+        self.files_idx = np.vstack((
+            np.arange(len(self.data_files)),
+            [len(content) for content in self.contents_idx]
+        )).T
+        # File seperators for finding which file an index falls into
+        self.file_seperators = np.zeros(len(self.files_idx) + 1,
+                                        dtype=np.int64)
+        self.file_seperators[1:] = np.cumsum(self.files_idx[:, 1])
+        # Shuffle handling
+        self.shuffle = shuffle
+        if shuffle:
+            self.rng = np.random.default_rng()
+            self.on_epoch_end()
+
+    def __len__(self):
+        total_samples = self.file_seperators[-1]
+        return int(np.ceil(total_samples / self.batch_size))
+
+    def __getitem__(self, index):
+        # Initialize batch
+        print(f"getitem {index}")
+        print("file order")
+        print(self.files_idx)
+        X = np.empty((self.batch_size, *self.dim), dtype='float')
+        Y = np.empty((self.batch_size, 1), dtype='float')
+        weights = np.empty((self.batch_size, 1), dtype='float')
+        # Keep track of next index to fill
+        filled_idx = 0
+        # Fill batch sequentially from all files required to be opened
+        # Hopefully most cases require only one file
+        for file_idx, start, stop in self._file_access(index):
+            if start == 0:
+                # Open a new data file
+                self.cur_data = np.load(self.data_files[file_idx])
+                # Get labels
+                if self.use_labels:
+                    self.cur_labels = np.load(self.label_files[file_idx])
+                else:
+                    self.cur_labels = np.zeros(len(self.cur_data), dtype=bool)
+                    self.cur_labels[::2] = 1
+                # Get weights
+                if self.use_sample_weights:
+                    self.cur_weights = np.load(self.weight_files[file_idx])
+                else:
+                    self.cur_weights = np.empty(len(self.cur_data), dtype=bool)
+                    for label, weight in self.class_weights.items():
+                        self.cur_weights[self.cur_labels == label] = weight
+            content_indices = self.contents_idx[file_idx][start:stop]
+            to_fill = slice(filled_idx, filled_idx + stop - start)
+            print(to_fill)
+            print(X.shape)
+            print(X[to_fill].shape)
+            X[to_fill] = self.cur_data[content_indices]
+            Y[to_fill, 0] = self.cur_labels[content_indices]
+            weights[to_fill, 0] = self.cur_weights[content_indices]
+            filled_idx += stop - start
+        return X[:filled_idx], Y[:filled_idx], weights[:filled_idx]
+
+    def _file_access(self, index):
+        """Determine which file or files to get next batch from"""
+        offset = index * self.batch_size - self.file_seperators
+        start_idx = argmax_last(offset >= 0)
+        end_idx = min(argmax_last(offset > - self.batch_size),
+                      len(self.files_idx) - 1)
+        print("start file", start_idx, "| end file", end_idx)
+        starts = np.maximum(offset, 0)
+        for idx in range(start_idx, end_idx + 1):
+            file_idx, file_len = self.files_idx[idx]
+            start = starts[idx]
+            if idx == end_idx:
+                stop = min(offset[idx] + self.batch_size, file_len)
+            else:
+                stop = file_len
+            yield file_idx, start, stop
+
+    def on_epoch_end(self):
+        if self.shuffle:
+            self.rng.shuffle(self.files_idx)
+            print(self.files_idx)
+            for file_idx in self.files_idx[:, 0]:
+                print(file_idx)
+                self.rng.shuffle(self.contents_idx[file_idx])
+            self.file_seperators[1:] = np.cumsum(self.files_idx[:, 1])
+
+
 def data_generation(IDs, reads, labels, class_weights):
     X = np.empty((len(IDs), *reads[0].shape), dtype='bool')
     Y = np.empty((len(IDs), 1), dtype='bool')
@@ -208,9 +409,8 @@ def data_generator(dataset_dir, batch_size, class_weights={0: 1, 1: 1},
                 end_batch = (index + 1) * batch_size
                 indexes_batch = indexes[start_batch:end_batch]
                 list_IDs_batch = [list_IDs[k] for k in indexes_batch]
-                yield f'batch {index}/{n_batch} on file {file}'
-                # yield data_generation(list_IDs_batch, x, labels,
-                #                       class_weights)
+                yield data_generation(list_IDs_batch, x, labels,
+                                      class_weights)
             if first_loop:
                 new_file = Path(file.parent, file.stem + '.npy')
                 new_files.append(new_file)
@@ -221,90 +421,6 @@ def data_generator(dataset_dir, batch_size, class_weights={0: 1, 1: 1},
 
 
 # Data loader
-def sliding_window_view(x, window_shape, axis=None, *,
-                        subok=False, writeable=False):
-    window_shape = (tuple(window_shape)
-                    if np.iterable(window_shape)
-                    else (window_shape,))
-    # first convert input to array, possibly keeping subclass
-    x = np.array(x, copy=False, subok=subok)
-
-    window_shape_array = np.array(window_shape)
-    if np.any(window_shape_array < 0):
-        raise ValueError('`window_shape` cannot contain negative values')
-
-    if axis is None:
-        axis = tuple(range(x.ndim))
-        if len(window_shape) != len(axis):
-            raise ValueError(f'Since axis is `None`, must provide '
-                             f'window_shape for all dimensions of `x`; '
-                             f'got {len(window_shape)} window_shape elements '
-                             f'and `x.ndim` is {x.ndim}.')
-    else:
-        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
-        if len(window_shape) != len(axis):
-            raise ValueError(f'Must provide matching length window_shape and '
-                             f'axis; got {len(window_shape)} window_shape '
-                             f'elements and {len(axis)} axes elements.')
-
-    out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
-
-    # note: same axis can be windowed repeatedly
-    x_shape_trimmed = list(x.shape)
-    for ax, dim in zip(axis, window_shape):
-        if x_shape_trimmed[ax] < dim:
-            raise ValueError(
-                'window shape cannot be larger than input array shape')
-        x_shape_trimmed[ax] -= dim - 1
-    out_shape = tuple(x_shape_trimmed) + window_shape
-    return as_strided(x, strides=out_strides, shape=out_shape,
-                      subok=subok, writeable=writeable)
-
-
-def strided_window_view(x, window_shape, stride, out_shape=None,
-                        axis=None, *, subok=False, writeable=False):
-    window_shape = (tuple(window_shape)
-                    if np.iterable(window_shape)
-                    else (window_shape,))
-    # first convert input to array, possibly keeping subclass
-    x = np.array(x, copy=False, subok=subok)
-
-    window_shape_array = np.array(window_shape)
-    if np.any(window_shape_array < 0):
-        raise ValueError('`window_shape` cannot contain negative values')
-
-    if axis is None:
-        axis = tuple(range(x.ndim))
-        if len(window_shape) != len(axis):
-            raise ValueError(f'Since axis is `None`, must provide '
-                             f'window_shape for all dimensions of `x`; '
-                             f'got {len(window_shape)} window_shape elements '
-                             f'and `x.ndim` is {x.ndim}.')
-    else:
-        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
-        if len(window_shape) != len(axis):
-            raise ValueError(f'Must provide matching length window_shape and '
-                             f'axis; got {len(window_shape)} window_shape '
-                             f'elements and {len(axis)} axes elements.')
-
-    # out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
-    # CHANGED THIS LINE TO
-    out_strides = (x.strides[0]*stride, ) + tuple(x.strides[1:]) + x.strides
-
-    # note: same axis can be windowed repeatedly
-    x_shape_trimmed = list(x.shape)
-    for ax, dim in zip(axis, window_shape):
-        if x_shape_trimmed[ax] < dim:
-            raise ValueError(
-                'window shape cannot be larger than input array shape')
-        # x_shape_trimmed[ax] -= dim - 1
-        # CHANGED THIS LINE TO
-        x_shape_trimmed[ax] = int(np.ceil((x_shape_trimmed[ax]-dim+1)/stride))
-    out_shape = tuple(x_shape_trimmed) + window_shape
-    return as_strided(x, strides=out_strides, shape=out_shape,
-                      subok=subok, writeable=writeable)
-
-
 def load_chr(chr_file, window_size, remove_Ns=False):
     """
     Load all sliding windows of a chromosome
@@ -328,16 +444,23 @@ def load_chr(chr_file, window_size, remove_Ns=False):
 
 # Sample weight handling
 def create_weights(y):
-    """
-    Computes weights for negative and positive examples if they are unbalanced
+    """Return weights to balance negative and positive classes.
 
-    Arguments
-    ---------
-    y: array of labels to weight
+    Overall sum of weights is maintained equal.
+
+    Parameters
+    ----------
+    y : ndarray
+        1D-array of labels to weight, labels must be 0 and 1
 
     Returns
     -------
-    weights: dictonary of class weights, 0 for neg, 1 for pos
+    dict[label] -> weight
+        dictonary mapping label to class weight
+
+    See also
+    --------
+    create_sample_weights : return weights as an array
     """
     n_pos = len(y[y == 1])
     n_neg = len(y[y == 0])
@@ -347,11 +470,27 @@ def create_weights(y):
 
 
 def create_sample_weights(y):
-    """
+    """Return sample weights to balance negative and positive classes.
+
     Analog to `create_weights` returning an array of sample weights.
 
-    Uses:
-    create_weights
+    Parameters
+    ----------
+    y : ndarray, shape=(n,)
+        1D-array of labels to weight, labels must be 0 and 1
+
+    Returns
+    -------
+    ndarray, shape=(n,)
+        1D-array of weight values for each element of `y`
+
+    See also
+    --------
+    create_weights : return weights as a dictionary of class weights
+
+    Notes
+    -----
+    Calls `create_weights`
     """
     weights = create_weights(y)
     sample_weights = np.where(np.squeeze(y) == 1,
@@ -442,8 +581,8 @@ def one_hot_encoding_v1(array, read_length=101, one_hot_type=bool):
     If a given read sequence is too short, it is filled with 0 which represent
     N values. If it is too long, the read is truncated to read_length
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     array: numpy array containing n reads sequences of same length l
 
     Returns
@@ -485,8 +624,8 @@ def one_hot_encoding_v2(reads,
     N values. If it is too long, the read is truncated to read_length.
     This implementation uses scikit-learn's OneHotEncoder
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     reads: numpy array containing n reads sequences of same length l
 
     Returns
@@ -592,7 +731,7 @@ def one_hot_to_seq_v2(reads):
     return seqs
 
 
-# Fastq, fasta and string sequences operations
+# Sequence manipulation
 def remove_reads_with_N(sequences,
                         tolerance=0,
                         max_size=None,
@@ -621,30 +760,6 @@ def remove_reads_with_N(sequences,
         print(with_Ns, ' reads with Ns')
     sequences = np.delete(sequences, too_short + with_Ns)
     return sequences
-
-
-def write_fasta(seqs, fasta_file, wrap=None):
-    # from https://www.programcreek.com/python/?code=Ecogenomics%2FGTDBTk%
-    # 2FGTDBTk-master%2Fgtdbtk%2Fbiolib_lite%2Fseq_io.py
-    """Write sequences to a fasta file.
-
-    Parameters
-    ----------
-    seqs : dict[seq_id] -> seq
-        Sequences indexed by sequence id.
-    fasta_file : str
-        Path to write the sequences to.
-    wrap: int
-        Number of AA/NT before the line is wrapped.
-    """
-    with open(fasta_file, 'w') as f:
-        for id, seq in enumerate(seqs):
-            f.write('>{}\n'.format(id))
-            if wrap is not None:
-                for i in range(0, len(seq), wrap):
-                    f.write('{}\n'.format(seq[i:i + wrap]))
-            else:
-                f.write('{}\n'.format(seq))
 
 
 def check_read_lengths(reads):
@@ -876,6 +991,32 @@ def remove_windows_with_N_v3(one_hot_seq, window_size):
     return np.array(valid_window_idx, dtype=int)
 
 
+# Standard file format functions
+def write_fasta(seqs, fasta_file, wrap=None):
+    """Write sequences to a fasta file.
+
+    Found on https://www.programcreek.com/python/?code=Ecogenomics%2FGTDBTk%
+    2FGTDBTk-master%2Fgtdbtk%2Fbiolib_lite%2Fseq_io.py
+
+    Parameters
+    ----------
+    seqs : dict[seq_id] -> seq
+        Sequences indexed by sequence id.
+    fasta_file : str
+        Path to write the sequences to.
+    wrap: int
+        Number of bases before the line is wrapped.
+    """
+    with open(fasta_file, 'w') as f:
+        for id, seq in enumerate(seqs):
+            f.write('>{}\n'.format(id))
+            if wrap is not None:
+                for i in range(0, len(seq), wrap):
+                    f.write('{}\n'.format(seq[i:i + wrap]))
+            else:
+                f.write('{}\n'.format(seq))
+
+
 def parse_bed_peaks(bed_file, window_size=101, merge=True):
     with open(bed_file, 'r') as f:
         chr_peaks = {}
@@ -924,51 +1065,91 @@ def parse_repeats(repeat_file, window_size=101, header_lines=3):
     return repeats
 
 
-# Other
-def GC_content(reads):
-    assert(len(reads.shape) == 3)
-    content = np.sum(reads, axis=1)
+def load_annotation(file, chr_id, window_size, anchor='center'):
+    bw = pyBigWig.open(file)
+    values = bw.values(f"chr{chr_id}", 0, -1, numpy=True)
+    values[np.isnan(values)] = 0
+    values = adapt_to_window(values, window_size, anchor=anchor)
+    return values
+
+
+def adapt_to_window(values, window_size, anchor='center'):
+    """Selects a slice from `values` to match a sliding window anchor.
+
+    When anchor is 'center', the slice is adapted to match the middle points
+    of the sliding window along values.
+
+    Parameters
+    ----------
+    values : ndarray
+        1D-array of values to slice from
+    window_size : int
+        Size of the window to slide along `values`, must be smaller than the
+        size of values
+    anchor : {center, start, end}, default='center'
+        Specifies which point of the window the values should match
+
+    Returns
+    -------
+    ndarray
+        1D-array which is a contiguous slice of `values`
+    """
+    if anchor == 'center':
+        return values[(window_size // 2):
+                      (- ((window_size+1) // 2) + 1)]
+    elif anchor == 'start':
+        return values[:-window_size+1]
+    elif anchor == 'end':
+        return values[window_size-1:]
+    else:
+        raise ValueError("Choose anchor from 'center', 'start' or 'end'")
+
+
+# GC content
+def GC_content(one_hot_reads: np.ndarray):
+    """Compute GC content on all reads in one-hot format
+
+    Parameters
+    ----------
+    one_hot_reads: array of reads with shape (nb_reads, read_length, 4)
+
+    Returns
+    -------
+    gc: array of gc content with shape (nb_reads)
+    """
+    assert(len(one_hot_reads.shape) == 3 and one_hot_reads.shape[2] == 4)
+    # Compute content of each base
+    content = np.sum(one_hot_reads, axis=1)  # shape (nb_reads, 4)
     gc = (content[:, 1] + content[:, 2]) / np.sum(content, axis=1)
     return gc
 
 
 def classify_1D(features, y, bins):
+    """Find best threshold to classify 1D features with label y.
+
+    Computing is done in bins for fast execution, so it isn't exact
+    """
+    def cumul_count(features, bins):
+        feature_bins = np.digitize(features, bins).ravel()
+        count = np.bincount(feature_bins, minlength=len(bins)+1)[1:]
+        return np.cumsum(count)
     bins = np.histogram(features, bins=bins, range=(0, 1))[1]
-    gc_pos = features[y == 1]
-    gc_neg = features[y == 0]
-    pos_bins = np.digitize(gc_pos, bins).ravel()
-    pos_count = np.bincount(pos_bins, minlength=len(bins)+1)[1:]
-    cumul_pos_count = np.cumsum(pos_count)
-    neg_bins = np.digitize(gc_neg, bins).ravel()
-    neg_count = np.bincount(neg_bins, minlength=len(bins)+1)[1:]
-    cumul_neg_count = np.cumsum(neg_count)
+    features_pos = features[y == 1]
+    features_neg = features[y == 0]
+    cumul_pos_count = cumul_count(features_pos, bins)
+    cumul_neg_count = cumul_count(features_neg, bins)
     cumul_diff = cumul_pos_count - cumul_neg_count
     bin_thres = np.argmax(np.abs(cumul_diff))
     if cumul_diff[bin_thres] < 0:
-        accuracy = (len(gc_pos) - cumul_diff[bin_thres]) / len(features)
+        accuracy = (len(features_pos) - cumul_diff[bin_thres]) / len(features)
     else:
-        accuracy = (len(gc_neg) + cumul_diff[bin_thres]) / len(features)
-    assert(bin_thres != len(bins) - 1)
+        accuracy = (len(features_neg) + cumul_diff[bin_thres]) / len(features)
+    # assert(bin_thres != len(bins) - 1)
     thres = (bins[bin_thres] + bins[bin_thres+1]) / 2
     return accuracy, thres
 
 
-def s_plural(value):
-    if value > 1:
-        return 's'
-    else:
-        return ''
-
-
-def ram_usage():
-    # https://www.geeksforgeeks.org/how-to-get-current-cpu-and-ram-usage-in-python/
-    # Getting all memory using os.popen()
-    total_memory, used_memory, free_memory = map(
-        int, os.popen('free -t -m').readlines()[-1].split()[1:])
-    # Memory usage
-    print("RAM memory % used:", round((used_memory/total_memory) * 100, 2))
-
-
+# Signal manipulation
 def metaplot_over_indices(values,
                           indices,
                           window_half_size,
@@ -1055,20 +1236,6 @@ def metaplot_over_indices(values,
     return return_values + (mean_values, window)
 
 
-def lineWiseCorrcoef(X, y):
-    # from https://stackoverflow.com/questions/19401078/efficient-columnwise-
-    # correlation-coefficient-calculation
-    # Make copies because arays will be changed in place
-    X = X.copy()
-    y = y.copy()
-    n = y.size
-    DX = X - (np.einsum('ij->i', X) / np.double(n)).reshape((-1, 1))
-    y -= (np.einsum('i->', y) / np.double(n))
-    tmp = np.einsum('ij,ij->i', DX, DX)
-    tmp *= np.einsum('i,i->', y, y)
-    return np.dot(DX, y) / np.sqrt(tmp)
-
-
 def z_score(preds, rel_indices=None):
     if rel_indices is not None:
         rel_preds = preds[rel_indices]
@@ -1094,24 +1261,54 @@ def smooth(values, window_size, mode='linear', sigma=1):
     return convolve(values, box, mode='same')
 
 
-def find_peaks(preds, pred_thres, length_thres=1, tol=0):
-    # find peaks as values above the peak threshold
+# Peak manipulation
+def find_peaks(preds, pred_thres, length_thres=1, tol=1):
+    """Determine peaks from prediction signal and threshold.
+
+    Identify when `preds` is above the threshold `pred_thres` pointwise,
+    then determine regions of consecutive high prediction, called peaks.
+
+    Parameters
+    ----------
+    preds : ndarray
+        1D-array of predictions along the chromosome
+    pred_thres : float
+        Threshold above which prediction is considered in a peak
+    length_thres : int, default=1
+        Minimum length required for peaks, any peak below or equal to that
+        length will be discarded
+    tol : int, default=1
+        Distance between consecutive peaks under which the peaks are merged
+        into one. Can be set higher to get a single peak when signal is
+        fluctuating too much. Unlike slices, peaks include their end points,
+        meaning [1 2] and [4 5] actually contain a gap of one base, even
+        but the distance is 2 (4-2). The dafault value of 1 means that no
+        peaks will be merged.
+
+    Returns
+    -------
+    peaks : ndarray, shape=(n, 2)
+        2D-array, each line corresponds to a peak. A peak is a 1D-array of
+        size 2, with format [peak_start, peak_end]. `peak_start` and
+        `peak_end` are indices on the chromosome.
+    """
+    # Find pointwise peaks as predictions above the threshold
     peak_mask = (preds > pred_thres)
-    # find where peak start and end
+    # Find where peak start and end
     change_idx = np.where(peak_mask[1:] != peak_mask[:-1])[0] + 1
     if peak_mask[0]:
-        # If preds starts with a peak, add an index at the start
+        # If predictions start with a peak, add an index at the start
         change_idx = np.insert(change_idx, 0, 0)
     if peak_mask[-1]:
-        # If preds ends with a peak, add an index at the end
+        # If predictions end with a peak, add an index at the end
         change_idx = np.append(change_idx, len(peak_mask))
-    # Check that change_idx contains as many starts as ends
-    assert (len(change_idx) % 2 == 0)
+    # # Check that change_idx contains as many starts as ends
+    # assert (len(change_idx) % 2 == 0)
     # Merge consecutive peaks if their distance is below a threshold
     if tol != 0:
-        # compute difference between end of peak and start of next one
+        # Compute difference between end of peak and start of next one
         diffs = change_idx[2::2] - change_idx[1:-1:2]
-        # get index when difference is below threshold, see below for matching
+        # Get index when difference is below threshold, see below for matching
         # index in diffs and in change_idx
         # diff index:   0   1   2  ...     n-1
         # change index:1-2 3-4 5-6 ... (2n-1)-2n
@@ -1122,40 +1319,44 @@ def find_peaks(preds, pred_thres, length_thres=1, tol=0):
         mask = np.ones(len(change_idx), dtype=bool)
         mask[delete_idx] = False
         change_idx = change_idx[mask]
-    # reshape as starts and ends
+    # Reshape as starts and ends
     peaks = np.reshape(change_idx, (-1, 2))
-    # compute lengths of peaks and remove the ones below given threshold
+    # Compute lengths of peaks and remove the ones below given threshold
     lengths = np.diff(peaks, axis=1).ravel()
     peaks = peaks[lengths > length_thres]
     return peaks
 
 
-def adapt_to_window(values, window_size, anchor='center'):
-    if anchor == 'center':
-        return values[(window_size // 2):
-                      (- ((window_size+1) // 2) + 1)]
-    elif anchor == 'start':
-        return values[:-window_size+1]
-    elif anchor == 'end':
-        return values[window_size-1:]
-    else:
-        raise NameError("Choose anchor from 'center', 'start' or 'end'")
-
-
-def load_annotation(file, chr_id, window_size, anchor='center'):
-    bw = pyBigWig.open(file)
-    values = bw.values(f"chr{chr_id}", 0, -1, numpy=True)
-    values[np.isnan(values)] = 0
-    values = adapt_to_window(values, window_size, anchor=anchor)
-    return values
-
-
 def find_peaks_in_window(peaks, window_start, window_end):
+    """Find peaks overlapping with the window and cut them to fit the window.
+
+    Parameters
+    ----------
+    peaks : ndarray, shape=(n, m)
+        2D-array, each line corresponds to a peak. A peak is a 1D-array of
+        size m0 = 2 or 3, with format [peak_start, peak_end, *optional_score].
+        `peak_start` and `peak_end` must be indices on the chromosome.
+        Peaks mustn't overlap, meaning that there is no other peak starting or
+        ending between `peak_start` and `peak_end`.
+    window_start, window_end : int
+        Indices of the start and end of the window to be displayed
+
+    Returns
+    -------
+    valid_peaks : ndarray, shape=(l, m)
+        2D-array of peaks overlapping on the window and cut to fit in the
+        window.
+    """
+    # Sort peaks by peak_start
     sorted_peaks = peaks[np.argsort(peaks[:, 0]), :]
-    flat_peaks = sorted_peaks[:, :2].flatten()
+    # Remove score and flatten
+    flat_peaks = sorted_peaks[:, :2].ravel()
+    # Find first and last peaks to include
     first_id = np.searchsorted(flat_peaks, window_start)
     last_id = np.searchsorted(flat_peaks, window_end - 1)
+    # Adapt indices for the 2D-array
     valid_peaks = sorted_peaks[(first_id // 2):((last_id + 1) // 2), :]
+    # Cut first and last peaks if they exceed window size
     if first_id % 2 == 1:
         valid_peaks[0, 0] = window_start
     if last_id % 2 == 1:
@@ -1163,119 +1364,359 @@ def find_peaks_in_window(peaks, window_start, window_end):
     return valid_peaks
 
 
-def overlap(peak0: np.array, peak1: np.array):
-    """
-    Determine whether peaks overlap and which one ends first.
+def overlap(peak0: np.ndarray,
+            peak1: np.ndarray,
+            tol: int = 0) -> tuple(bool, bool):
+    """Determine whether peaks overlap and which one ends first.
 
-    Arguments
-    ---------
-    peak0 : 1-D array in format [peak_start, peak_end, *optional_score]
-            peak_start and peak_end must be indices on the chromosome
-    peak1 : same as peak0
+    Parameters
+    ----------
+    peak0, peak1 : ndarray
+        1D-arrays with format [peak_start, peak_end, *optional_score].
+        `peak_start` and `peak_end` must be indices on the chromosome. `peak0`
+        and `peak1` may have different sizes since the score is ignored
+    tol : int, default=0
+        Maximum difference between peak_end and the next peak_start to
+        consider as an overlap. This value defaults to 0 because unlike slices,
+        peaks include their end points, meaning [1 2] and [2 5] actually
+        overlap.
 
-    Return
-    ------
-    A tuple of 2 booleans: (overlaps, end_first)
-    overlaps: True if peaks overlap by at least one point.
-    end_first: index of the peak with lowest end point.
+    Returns
+    -------
+    overlaps : bool
+        True if peaks overlap by at least one point.
+    end_first : bool
+        Index of the peak with lowest end point.
     """
     start0, end0, *_ = peak0
     start1, end1, *_ = peak1
-    overlaps = end0 >= start1 and end1 >= start0
+    overlaps = (end0 + tol >= start1) and (end1 + tol >= start0)
     end_first = end0 > end1
     return overlaps, end_first
 
 
 def overlapping_peaks(peaks0, peaks1):
-    """
-    Determine which peaks overlap with at least one other and which don't.
+    """Determine overlaps between two arrays of disjoint peaks.
 
-    Arguments
-    ---------
-    peaks0: 2-D array of disjoint peaks, peaks must be in format
-            [peak_start, peak_end, *optional_score]
-            peak_start and peak_end must be indices on the chromosome
-    peaks1: same as peaks0
+    Parameters
+    ----------
+    peaks0 : ndarray, shape=(n0, m0)
+        2D-array, each line corresponds to a peak. A peak is a 1D-array of
+        size m0 = 2 or 3, with format [peak_start, peak_end, *optional_score].
+        `peak_start` and `peak_end` must be indices on the chromosome.
+        Peaks must be disjoint within a 2D-array, meaning that there is no
+        other peak starting or ending between `peak_start` and `peak_end`.
+    peaks1 : ndarray, shape=(n1, m1)
+        Same as peaks0, but with potentially different shape.
 
-    Return
-    ------
-    A tuple of 2 lists: (overlapping, non_overlapping)
-    overlapping: list of 2 lists of overlapping peaks. First list contains
-                 peaks from peaks0 overlapping with at least one peak from
-                 peaks1 and second list contains peaks from peaks1 overlapping
-                 with at least one peak from peaks0.
-    non_overlapping: list of 2 lists of non overlapping peaks. First list
-                     contains non overlapping peaks from peaks0 and second
-                     list contains non overlapping peaks from peaks1
+    Returns
+    -------
+    overlapping : List[List[ndarray], List[ndarray]]
+        First list contains peaks from peaks0 overlapping with at least one
+        peak from peaks1 and second list contains peaks from peaks1
+        overlapping with at least one peak from peaks0.
+    non_overlapping : List[List[ndarray], List[ndarray]]
+        First list contains peaks from peaks0 that do not overlap with any
+        peak from peaks1 and second list contains peaks from peaks1 that do
+        not overlap with any peak from peaks0
 
-    Implementation
-    --------------
-    Both peaks0 and peaks1 are sorted then first peaks from each list are
-    compared. The first ending peak is discarded and put into the
+    See also
+    --------
+    self_overlapping_peaks : find overlapping peaks within a single array
+
+    Notes
+    -----
+    Both arrays are sorted then first peaks from each array are tested for
+    overlap. The first ending peak is discarded and put into the
     appropriate output list. The remaining peak is then compared to the next
-    one in the list from which the previous peak was discarded. A flag called
-    "remember_overlaps" is set to True anytime we see an overlap, to remember
+    one in the array from which the previous peak was discarded. The flag
+    `remember_overlaps` is set to True anytime we see an overlap, to remember
     that the remaining peak must be put in the overlapping list even if it
     doesn't overlap with the next one.
     """
-    # Sort peak lists
+    # Sort peak lists by peak_start
     sorted_0 = list(peaks0[np.argsort(peaks0[:, 0]), :])
     sorted_1 = list(peaks1[np.argsort(peaks1[:, 0]), :])
-    # merge into one list for simple index accession
+    # Merge into one list for simple index accession
     sorted = [sorted_0, sorted_1]
-    # flag
+    # Flag
     remember_overlaps = False
-    # initialize output lists
+    # Initialize output lists
     overlapping = [[], []]
     non_overlapping = [[], []]
     while sorted_0 and sorted_1:
-        # check overlap between first peaks of both lists
+        # Check overlap between first peaks of both lists
         overlaps, end_first = overlap(sorted_0[0], sorted_1[0])
-        # remove first ending peak because it can't overlap with others anymore
+        # Remove first ending peak because it can't overlap with others anymore
         peak = sorted[end_first].pop(0)
         if overlaps:
-            # overlap -> set flag to True and store peak in overlapping
+            # Overlap -> set flag to True and store peak in overlapping
             remember_overlaps = True
             overlapping[end_first].append(peak)
         elif remember_overlaps:
-            # no overlap but flag is True -> set flag back to False and
+            # No overlap but flag is True -> set flag back to False and
             #                                store peak in overlapping
             remember_overlaps = False
             overlapping[end_first].append(peak)
         else:
-            # no overlap, flag is False -> store peak in non overlapping
+            # No overlap, flag is False -> store peak in non overlapping
             non_overlapping[end_first].append(peak)
-    # index of the non empty list
+    # Index of the non empty list
     non_empty = bool(sorted_1)
     if remember_overlaps:
-        # flag is True -> store first remaining peak in overlapping
+        # Flag is True -> store first remaining peak in overlapping
         overlapping[non_empty].append(sorted[non_empty].pop())
     for peak in sorted[non_empty]:
-        # store all leftover peaks in non overlapping
+        # Store all leftover peaks in non overlapping
         non_overlapping[non_empty].append(peak)
     return overlapping, non_overlapping
 
 
-def is_sorted(array):
-    # from https://stackoverflow.com/questions/47004506/check-if-a-numpy-array-
-    # is-sorted
-    return np.all(array[:-1] <= array[1:])
+def self_overlapping_peaks(peaks: np.ndarray,
+                           merge: bool = True,
+                           tol: int = 1
+                           ) -> tuple(np.ndarray, Optional(np.ndarray)):
+    """Determine which peaks within the array overlap
 
+    As opposed to `overlapping_peaks`, here two disjoint but adjacent peaks
+    will be considered self-overlapping since then can be merged into one
+    contiguous peak.
 
-def self_overlapping_peaks(peaks, merge=True, tol=1):
+    Parameters
+    ----------
+    peaks : ndarray, shape=(n, m)
+        2D-array, each line corresponds to a peak. A peak is a 1D-array of
+        size m0 = 2 or 3, with format [peak_start, peak_end, *optional_score].
+        `peak_start` and `peak_end` must be indices on the chromosome.
+        Peaks must be disjoint within a 2D-array, meaning that there is no
+        other peak starting or ending between `peak_start` and `peak_end`.
+    merge : bool, default=True
+        True indicates to return an array with overlapping peaks merged. False
+        indicates to not perform this operation, which can be faster
+    tol : int, default=1
+        Maximum difference between peak_end and the next peak_start to
+        consider as an overlap. This value defaults to 1 because unlike slices,
+        peaks include their end points, meaning [1 2] and [3 5] are actually
+        adjacent.
+
+    Returns
+    -------
+    overlap_idx : ndarray
+        Indices of peaks overlapping with the next one in th array in order of
+        increasing start position
+    merged : ndarray, shape=(l, k)
+        Returned only if `merge` was set to True. The array of merged peaks
+        whenever there was an overlap. If no overlaps were found, `peaks` is
+        returned as is. Otherwise if a score field was present in `peaks`, it
+        is not present in the merged array because the score of a peak merging
+        several peaks with different scores is ambiguous.
+
+    See also
+    --------
+    overlapping_peaks : determine overlaps between two arrays of disjoint peaks
+    """
+    # Sort peaks by peak_start, remove score and flatten
     sorted_by_starts = peaks[np.argsort(peaks[:, 0]), :2].ravel()
+    # Group peak_ends and next peak_starts
     gaps = sorted_by_starts[1:-1].reshape(-1, 2)
+    # Compute gap distances and select when it is smaller than the tolerance
     diffs = - np.diff(gaps, axis=1).ravel()
     overlap_idx, = np.where(diffs >= - tol)
     if merge:
         if len(overlap_idx) != 0:
+            # Compute indices for the full flatten array
             delete_idx = np.concatenate((overlap_idx*2 + 1,
                                          overlap_idx*2 + 2))
-            # Remove close ends and starts using boolean mask
+            # Remove overlapping ends and starts using boolean mask
             mask = np.ones(len(sorted_by_starts), dtype=bool)
             mask[delete_idx] = False
+            # Select valid indices and reshape in 2D
             merged = sorted_by_starts[mask].reshape(-1, 2)
         else:
-            merged = None
+            merged = peaks
         return overlap_idx, merged
     return overlap_idx
+
+
+# numpy helper functions
+def is_sorted(array):
+    """Check that a 1D-array is sorted.
+
+    Parameters
+    ----------
+    array : array_like
+        1D-array to be checked.
+
+    Returns
+    -------
+    bool
+        True if `array` is sorted, False otherwise.
+    """
+    return np.all(array[:-1] <= array[1:])
+
+
+def argmax_last(array):
+    """Return index of maximal value in a 1D-array.
+
+    Unlike numpy.argmax, this function returns the last occurence of the
+    maximal value. It only works for 1D-arrays.
+
+    Parameters
+    ----------
+    array : array_like
+        1D-array to find maximal value in.
+
+    Returns
+    -------
+    int
+        Index of the last occurence of the maximal value in `array`.
+    """
+    return len(array) - np.argmax(array[::-1]) - 1
+
+
+def sliding_window_view(x, window_shape, axis=None, *,
+                        subok=False, writeable=False):
+    window_shape = (tuple(window_shape)
+                    if np.iterable(window_shape)
+                    else (window_shape,))
+    # first convert input to array, possibly keeping subclass
+    x = np.array(x, copy=False, subok=subok)
+
+    window_shape_array = np.array(window_shape)
+    if np.any(window_shape_array < 0):
+        raise ValueError('`window_shape` cannot contain negative values')
+
+    if axis is None:
+        axis = tuple(range(x.ndim))
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Since axis is `None`, must provide '
+                             f'window_shape for all dimensions of `x`; '
+                             f'got {len(window_shape)} window_shape elements '
+                             f'and `x.ndim` is {x.ndim}.')
+    else:
+        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Must provide matching length window_shape and '
+                             f'axis; got {len(window_shape)} window_shape '
+                             f'elements and {len(axis)} axes elements.')
+
+    out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
+
+    # note: same axis can be windowed repeatedly
+    x_shape_trimmed = list(x.shape)
+    for ax, dim in zip(axis, window_shape):
+        if x_shape_trimmed[ax] < dim:
+            raise ValueError(
+                'window shape cannot be larger than input array shape')
+        x_shape_trimmed[ax] -= dim - 1
+    out_shape = tuple(x_shape_trimmed) + window_shape
+    return as_strided(x, strides=out_strides, shape=out_shape,
+                      subok=subok, writeable=writeable)
+
+
+def strided_window_view(x, window_shape, stride, out_shape=None,
+                        axis=None, *, subok=False, writeable=False):
+    """Variant of `sliding_window_view` which supports stride parameter."""
+    window_shape = (tuple(window_shape)
+                    if np.iterable(window_shape)
+                    else (window_shape,))
+    # first convert input to array, possibly keeping subclass
+    x = np.array(x, copy=False, subok=subok)
+
+    window_shape_array = np.array(window_shape)
+    if np.any(window_shape_array < 0):
+        raise ValueError('`window_shape` cannot contain negative values')
+
+    if axis is None:
+        axis = tuple(range(x.ndim))
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Since axis is `None`, must provide '
+                             f'window_shape for all dimensions of `x`; '
+                             f'got {len(window_shape)} window_shape elements '
+                             f'and `x.ndim` is {x.ndim}.')
+    else:
+        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Must provide matching length window_shape and '
+                             f'axis; got {len(window_shape)} window_shape '
+                             f'elements and {len(axis)} axes elements.')
+
+    # CHANGED THIS LINE ####
+    # out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
+    # TO ###################
+    out_strides = (x.strides[0]*stride, ) + tuple(x.strides[1:]) + x.strides
+    ########################
+
+    # note: same axis can be windowed repeatedly
+    x_shape_trimmed = list(x.shape)
+    for ax, dim in zip(axis, window_shape):
+        if x_shape_trimmed[ax] < dim:
+            raise ValueError(
+                'window shape cannot be larger than input array shape')
+        # CHANGED THIS LINE ####
+        # x_shape_trimmed[ax] -= dim - 1
+        # TO ###################
+        x_shape_trimmed[ax] = int(np.ceil(
+            (x_shape_trimmed[ax] - dim + 1) / stride))
+        ########################
+    out_shape = tuple(x_shape_trimmed) + window_shape
+    return as_strided(x, strides=out_strides, shape=out_shape,
+                      subok=subok, writeable=writeable)
+
+
+def lineWiseCorrcoef(X: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Compute pearson correlation between `y` and all lines of `X`.
+
+    Parameters
+    ----------
+    X : array_like, shape=(n, m)
+        2D-array with each line corresponding to a 1D signal.
+    y : array_like, shape=(m,)
+        1D-array signal to compute correlation with.
+
+    Returns
+    -------
+    ndarray, shape=(n,)
+        1D-array of pearson correlation coefficients between `y` and each line
+        of `X`.
+
+    Notes
+    -----
+    This function is quite efficient through the use of einstein summation
+
+    References
+    ----------
+    https://stackoverflow.com/questions/19401078/efficient-columnwise-correlation-coefficient-calculation.
+    """
+    # Make copies because arrays will be changed in place
+    X = np.copy(X)
+    y = np.copy(y)
+    n = y.size
+    DX = X - (np.einsum('ij->i', X) / np.double(n)).reshape((-1, 1))
+    y -= (np.einsum('i->', y) / np.double(n))
+    tmp = np.einsum('ij,ij->i', DX, DX)
+    tmp *= np.einsum('i,i->', y, y)
+    return np.dot(DX, y) / np.sqrt(tmp)
+
+
+# Other utils
+def s_plural(value: float) -> str:
+    """Return s if scalar value induces plural"""
+    if value > 1:
+        return 's'
+    else:
+        return ''
+
+
+def ram_usage() -> None:
+    """Print RAM memory usage.
+
+    References
+    ----------
+    https://www.geeksforgeeks.org/how-to-get-current-cpu-and-ram-usage-in-python/
+    """
+    # Getting all memory using os.popen()
+    total_memory, used_memory, free_memory = map(
+        int, os.popen('free -t -m').readlines()[-1].split()[1:])
+    # Memory usage
+    print("RAM memory % used:", round((used_memory/total_memory) * 100, 2))
