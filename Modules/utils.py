@@ -8,13 +8,8 @@ import numpy as np
 from numpy.lib.stride_tricks import as_strided
 from numpy.core.numeric import normalize_axis_tuple
 
-import pandas as pd
-from matplotlib import pyplot as plt
-import seaborn as sns
-
 from sklearn.preprocessing import OneHotEncoder
 from scipy.signal import gaussian, convolve
-from scipy.cluster.hierarchy import linkage, dendrogram
 
 import tensorflow as tf
 from keras.engine import data_adapter
@@ -168,46 +163,6 @@ class DataGenerator(Sequence):
 class DataGeneratorFromFiles(Sequence):
     """
     Build callable generator for Tensorflow model from multiple files
-
-    Parameters
-    ----------
-    dataset_dir: path to dataset directory, containing files in numpy binary
-    format npy or npz. Filenames must be '[split]_[index].[npy or npz]'. For
-    example, the first train file (in npy format) must be named 'train_0.npy'.
-    The directory must not contain unrelated files or globbing might include
-    more files in the dataset.
-    If files are provided in npz format, they will be copied in npy format for
-    faster access during training and prediction. The copy will have same name
-    as the original but with the .npy extension instead of .npz. It will
-    raise an Exception if the file already exists in npy format.
-
-    batch_size: number of samples per batch.
-
-    split: name of the split to generate, must match the dataset filenames
-
-    use_labels: If False, the even index samples are assumed of label 1 and odd
-    index samples of label 0. If True, indicates to use labels in label files.
-    The files must be in the same directory as their data files and with the
-    name labels_[split]_[index].npy. The labels must be an array of same shape
-    as the data.
-
-    class_weight: dictionary mapping labels to class weights values. By
-    default, weights are 1 for each label.
-
-    use_sample_weight: If True, overides class_weight argument and indicates to
-    use weight files. The sample_weight files must be in the same directory as
-    their data files and with the name weights_[split]_[index].npy. The
-    weights must be an array of same shape as the data.
-
-    shuffle: if True, indicates to shuffle file order and content before each
-    iteration, recommended for training. During prediction, set to False for
-    easy matching between data and prediction.
-
-    file_suffix: npy, npz or None. Indicates the suffix of the files to use in
-    the dataset. If None, the suffix is inferred from the presence of a
-    [split]_0.npy file. If not, the file_suffix is assumed to be npz. Due to
-    conversion of npz into npy, an Error will be raised in case of conflicting
-    names.
     """
     def __init__(self,
                  dataset_dir: Path,
@@ -218,6 +173,51 @@ class DataGeneratorFromFiles(Sequence):
                  use_sample_weights: np.ndarray = False,
                  shuffle: bool = True,
                  file_suffix: str = None):
+        """
+        Build callable generator for Tensorflow model from multiple files
+
+        Parameters
+        ----------
+        dataset_dir : Path
+            Path to dataset directory, containing files in numpy binary format
+            npy or npz. Filenames must be '[split]_[index].[npy or npz]'. For
+            example, the first train file (in npy format) must be named
+            'train_0.npy'.
+            The directory must not contain unrelated files or globbing might
+            include more files in the dataset.
+            If files are provided in npz format, they will be copied in npy
+            format for faster access during training and prediction. The copy
+            will have same name as the original but with the .npy extension
+            instead of .npz. It will raise an Exception if the file already
+            exists in npy format.
+        batch_size : int
+            Number of samples per batch.
+        split : str, default='train'
+            Name of the split to generate, must match the dataset filenames
+        use_labels: bool, default=False
+            If False, the even index samples are assumed of label 1 and odd
+            index samples of label 0. If True, indicates to use labels in
+            label files.
+            The files must be in the same directory as their data files and
+            with the name labels_[split]_[index].npy. The labels must be an
+            array of same shape as the data.
+        class_weight: dict[label] -> float, default={0: 1, 1: 1}
+            Dictionary mapping labels to class weights values.
+        use_sample_weight: bool, default=False
+            If True, overides class_weight argument and indicates to use weight
+            files. The sample_weight files must be in the same directory as
+            their data files and with the name weights_[split]_[index].npy.
+            The weights must be an array of same shape as the data.
+        shuffle: bool, default=True
+            If True, indicates to shuffle file order and content before each
+            iteration, recommended for training. During prediction, set to
+            False for easy matching between data and prediction.
+        file_suffix: {'npy', 'npz', 'None'}, default=None
+            Indicates the suffix of the files to use in the dataset. If None,
+            the suffix is inferred from the presence of a [split]_0.npy file.
+            If not, the file_suffix is assumed to be npz. Due to conversion of
+            npz into npy, an Error will be raised in case of conflicting names.
+        """
         self.batch_size = batch_size
         self.use_labels = use_labels
         self.class_weights = class_weights
@@ -568,28 +568,71 @@ def one_hot_decode(one_hot, read_length=101, one_hot_type=bool):
     return seq
 
 
-def one_hot_encoding(array, read_length=101, one_hot_type=bool):
+def one_hot_encoding(array: np.ndarray,
+                     read_length: int = 101,
+                     one_hot_type: type = bool) -> np.ndarray:
+    """
+    Applies one-hot encoding to every read sequence in an array.
+
+    Parameters
+    ----------
+    reads: np.ndarray, shape=(n,)
+        1D-array of n strings
+    read_length : int, default=101
+        length to coerce the strings to. Longer strings will be truncated,
+        while shorter strings will be filled with N bases
+    one_hot_type : type, default=bool
+        Type of the values in the one-hot encoding
+
+    Returns
+    -------
+    new_array: np.ndarray, shape=(n, read_length, 4)
+        3D-array with every letter from replaced by a 4 dimensional vector
+        containing a 1 in the position corresponding to that letter, and 0
+        elsewhere.
+
+    See also
+    --------
+    one_hot_encoding_v1 : implementation used by this function
+    one_hot_encoding_v2 : other implementation, slower
+
+    Notes
+    -----
+    This function calls `one_hot_encoding_v1` which is currently the fastest
+    implementation.
+    """
     return one_hot_encoding_v1(array,
                                read_length=read_length,
                                one_hot_type=one_hot_type)
 
 
-def one_hot_encoding_v1(array, read_length=101, one_hot_type=bool):
+def one_hot_encoding_v1(array: np.ndarray,
+                        read_length: int = 101,
+                        one_hot_type: type = bool) -> np.ndarray:
     """
     Applies one hot encoding to every read sequence in an array.
 
-    If a given read sequence is too short, it is filled with 0 which represent
-    N values. If it is too long, the read is truncated to read_length
-
     Parameters
     ----------
-    array: numpy array containing n reads sequences of same length l
+    reads: np.ndarray, shape=(n,)
+        1D-array of n strings
+    read_length : int, default=101
+        length to coerce the strings to. Longer strings will be truncated,
+        while shorter strings will be filled with N bases
+    one_hot_type : type, default=bool
+        Type of the values in the one-hot encoding
 
     Returns
     -------
-    new_array: numpy array with every letter replaced by a 4 dimensional
-        vector containing a 1 in the position corresponding to that letter,
-        and 0 elsewhere. Output shape is (n,l,4)
+    new_array: np.ndarray, shape=(n, read_length, 4)
+        3D-array with every letter from replaced by a 4 dimensional vector
+        containing a 1 in the position corresponding to that letter, and 0
+        elsewhere.
+
+    See also
+    --------
+    one_hot_encoding : alias for this function
+    one_hot_encoding_v2 : other implementation, slower
     """
     # warning raise in case sequences don't have the appropriate read_length
     new_array = np.zeros((len(array), read_length, 4), dtype=one_hot_type)
@@ -613,26 +656,41 @@ def one_hot_encoding_v1(array, read_length=101, one_hot_type=bool):
     return new_array
 
 
-def one_hot_encoding_v2(reads,
-                        read_length=101,
-                        one_hot_type=bool,
-                        sparse=False):
+def one_hot_encoding_v2(reads: np.ndarray,
+                        read_length: int = 101,
+                        one_hot_type: type = bool,
+                        sparse: bool = False) -> np.ndarray:
     """
     Applies one hot encoding to every read sequence in an array.
 
-    If a given read sequence is too short, it is filled with 0 which represent
-    N values. If it is too long, the read is truncated to read_length.
-    This implementation uses scikit-learn's OneHotEncoder
-
     Parameters
     ----------
-    reads: numpy array containing n reads sequences of same length l
+    reads: np.ndarray, shape=(n,)
+        1D-array of n strings
+    read_length : int, default=101
+        length to coerce the strings to. Longer strings will be truncated,
+        while shorter strings will be filled with N bases
+    one_hot_type : type, default=bool
+        Type of the values in the one-hot encoding
+    sparse : bool, default=False
+        True indicates to return a sparse matrix. False indicates to return a
+        regular numpy array
 
     Returns
     -------
-    new_array: numpy array with every letter replaced by a 4 dimensional
-        vector containing a 1 in the position corresponding to that letter,
-        and 0 elsewhere. Output shape is (n,l,4)
+    new_array: np.ndarray, shape=(n, `read_length`, 4)
+        3D-array with every letter from replaced by a 4 dimensional vector
+        containing a 1 in the position corresponding to that letter, and 0
+        elsewhere.
+
+    See also
+    --------
+    one_hot_encoding : alias for one_hot_encoding_v1
+    one_hot_encoding_v1 : other implementation, faster
+
+    Notes
+    -----
+    This implementation uses scikit-learn's `OneHotEncoder`
     """
     # Change to list of chars for OneHotEncoder
     reads = [[[char] for char in read] for read in reads]
@@ -992,7 +1050,9 @@ def remove_windows_with_N_v3(one_hot_seq, window_size):
 
 
 # Standard file format functions
-def write_fasta(seqs, fasta_file, wrap=None):
+def write_fasta(seqs: dict,
+                fasta_file: str,
+                wrap: int = None) -> None:
     """Write sequences to a fasta file.
 
     Found on https://www.programcreek.com/python/?code=Ecogenomics%2FGTDBTk%
@@ -1000,8 +1060,8 @@ def write_fasta(seqs, fasta_file, wrap=None):
 
     Parameters
     ----------
-    seqs : dict[seq_id] -> seq
-        Sequences indexed by sequence id.
+    seqs : dict[seq_id] -> str
+        Sequences indexed by sequence id, works with any iterable.
     fasta_file : str
         Path to write the sequences to.
     wrap: int
@@ -1073,7 +1133,9 @@ def load_annotation(file, chr_id, window_size, anchor='center'):
     return values
 
 
-def adapt_to_window(values, window_size, anchor='center'):
+def adapt_to_window(values: np.ndarray,
+                    window_size: int,
+                    anchor: str = 'center') -> np.ndarray:
     """Selects a slice from `values` to match a sliding window anchor.
 
     When anchor is 'center', the slice is adapted to match the middle points
@@ -1106,16 +1168,18 @@ def adapt_to_window(values, window_size, anchor='center'):
 
 
 # GC content
-def GC_content(one_hot_reads: np.ndarray):
+def GC_content(one_hot_reads: np.ndarray) -> np.ndarray:
     """Compute GC content on all reads in one-hot format
 
     Parameters
     ----------
-    one_hot_reads: array of reads with shape (nb_reads, read_length, 4)
+    one_hot_reads : np.ndarray, shape=(n, l, 4)
+        3D-array containing n reads of length l one-hot encoded on 4 values
 
     Returns
     -------
-    gc: array of gc content with shape (nb_reads)
+    gc : np.ndarray, shape=(n,)
+        1D-array of gc content for each read
     """
     assert(len(one_hot_reads.shape) == 3 and one_hot_reads.shape[2] == 4)
     # Compute content of each base
@@ -1150,92 +1214,6 @@ def classify_1D(features, y, bins):
 
 
 # Signal manipulation
-def metaplot_over_indices(values,
-                          indices,
-                          window_half_size,
-                          label='values',
-                          compare=None,
-                          anchor='center',
-                          plot='simple',
-                          res_dir=None,
-                          data='unknown_data',
-                          chr='unknown_chr'):
-    if anchor == 'center':
-        window = np.arange(-window_half_size, window_half_size + 1)
-    elif anchor == 'start':
-        window = np.arange(2*window_half_size + 1)
-    elif anchor == 'end':
-        window = np.arange(-2*window_half_size, 1)
-    else:
-        raise NameError("Invalid anchor")
-    # broadcast column of indices and window line
-    indices = np.expand_dims(indices, axis=1) + np.expand_dims(window, axis=0)
-    # compute mean over original indices at each point of the window
-    mean_values = np.mean(values[indices], axis=0)
-    if compare:
-        compare_values, compare_label = compare
-        mean_compare = np.mean(compare_values[indices], axis=0)
-    # Make desired plot
-    prop_cycle = plt.rcParams['axes.prop_cycle']
-    colors = prop_cycle.by_key()['color']
-    if plot == 'simple':
-        fig, ax = plt.subplots()
-        ax.plot(window, mean_values, label=label, color=colors[1])
-        handles, labels = ax.get_legend_handles_labels()
-        if compare:
-            ax2 = ax.twinx()
-            ax2.plot(window, mean_compare, label=compare_label)
-            handles2, labels2 = ax2.get_legend_handles_labels()
-            handles += handles2
-            labels += labels2
-        ax.legend(handles, labels)
-        return_values = tuple()
-    elif plot == 'heatmap':
-        corrs = lineWiseCorrcoef(values[indices], mean_values)
-        new_indices = indices[np.argsort(corrs)[::-1], :]
-        fig, axs = plt.subplots(2, 2, sharex='col', figsize=(9, 11),
-                                gridspec_kw={'width_ratios': [20, 1],
-                                             'height_ratios': [6, 20]})
-        # Average plot
-        ax00 = axs[0, 0]
-        ax00.plot(mean_values, label=label, color=colors[1])
-        ax00.axvline(x=window_half_size+1, color='black', linestyle='--',
-                     label='ENCODE peak center')
-        handles, labels = ax00.get_legend_handles_labels()
-        if compare:
-            ax2 = ax00.twinx()
-            ax2.plot(mean_compare, label=compare_label)
-            handles2, labels2 = ax2.get_legend_handles_labels()
-            handles += handles2
-            labels += labels2
-        ax00.xaxis.set_tick_params(which='both', labelbottom=True)
-        ax00.legend(handles, labels)
-        # remove upper right ax
-        axs[0, 1].remove()
-        # Heatmap
-        df = pd.DataFrame(values[new_indices], columns=window)
-        sns.heatmap(df, center=0, ax=axs[1, 0], cbar_ax=axs[1, 1],
-                    xticklabels=window_half_size, yticklabels=1000,
-                    robust=True, vmin=0, vmax=1)
-        return_values = (corrs,)
-    elif plot == 'clustermap':
-        corr_matrix = np.corrcoef(values[indices])
-        link_matrix = linkage(corr_matrix, method='ward')
-        df = pd.DataFrame(values[indices], columns=window)
-        clust = sns.clustermap(values[indices], center=0,
-                               row_linkage=link_matrix, col_cluster=False,
-                               xticklabels=window_half_size,
-                               yticklabels=1000, robust=True)
-        return_values = (clust,)
-    if res_dir:
-        plt.savefig(os.path.join(res_dir,
-                                 f'metaplot_{data}_{plot}_{chr}_peaks.png'),
-                    bbox_inches='tight')
-    plt.show()
-    plt.close()
-    return return_values + (mean_values, window)
-
-
 def z_score(preds, rel_indices=None):
     if rel_indices is not None:
         rel_preds = preds[rel_indices]
@@ -1262,7 +1240,10 @@ def smooth(values, window_size, mode='linear', sigma=1):
 
 
 # Peak manipulation
-def find_peaks(preds, pred_thres, length_thres=1, tol=1):
+def find_peaks(preds: np.ndarray,
+               pred_thres: float,
+               length_thres: int = 1,
+               tol: int = 1) -> np.ndarray:
     """Determine peaks from prediction signal and threshold.
 
     Identify when `preds` is above the threshold `pred_thres` pointwise,
@@ -1327,7 +1308,9 @@ def find_peaks(preds, pred_thres, length_thres=1, tol=1):
     return peaks
 
 
-def find_peaks_in_window(peaks, window_start, window_end):
+def find_peaks_in_window(peaks: np.ndarray,
+                         window_start: int,
+                         window_end: int) -> np.ndarray:
     """Find peaks overlapping with the window and cut them to fit the window.
 
     Parameters
@@ -1366,7 +1349,7 @@ def find_peaks_in_window(peaks, window_start, window_end):
 
 def overlap(peak0: np.ndarray,
             peak1: np.ndarray,
-            tol: int = 0) -> tuple(bool, bool):
+            tol: int = 0) -> tuple:  # tuple[bool, bool]:
     """Determine whether peaks overlap and which one ends first.
 
     Parameters
@@ -1395,7 +1378,7 @@ def overlap(peak0: np.ndarray,
     return overlaps, end_first
 
 
-def overlapping_peaks(peaks0, peaks1):
+def overlapping_peaks(peaks0: np.ndarray, peaks1: np.ndarray) -> tuple:
     """Determine overlaps between two arrays of disjoint peaks.
 
     Parameters
@@ -1475,7 +1458,8 @@ def overlapping_peaks(peaks0, peaks1):
 def self_overlapping_peaks(peaks: np.ndarray,
                            merge: bool = True,
                            tol: int = 1
-                           ) -> tuple(np.ndarray, Optional(np.ndarray)):
+                           ) -> tuple:
+    # tuple(np.ndarray, Optional(np.ndarray)):
     """Determine which peaks within the array overlap
 
     As opposed to `overlapping_peaks`, here two disjoint but adjacent peaks
@@ -1539,7 +1523,7 @@ def self_overlapping_peaks(peaks: np.ndarray,
 
 
 # numpy helper functions
-def is_sorted(array):
+def is_sorted(array: np.ndarray) -> bool:
     """Check that a 1D-array is sorted.
 
     Parameters
@@ -1555,7 +1539,7 @@ def is_sorted(array):
     return np.all(array[:-1] <= array[1:])
 
 
-def argmax_last(array):
+def argmax_last(array: np.ndarray) -> int:
     """Return index of maximal value in a 1D-array.
 
     Unlike numpy.argmax, this function returns the last occurence of the
@@ -1576,6 +1560,7 @@ def argmax_last(array):
 
 def sliding_window_view(x, window_shape, axis=None, *,
                         subok=False, writeable=False):
+    """Function from the numpy library"""
     window_shape = (tuple(window_shape)
                     if np.iterable(window_shape)
                     else (window_shape,))
