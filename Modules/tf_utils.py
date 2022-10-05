@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import os
 from pathlib import Path
-
 import numpy as np
 
 import tensorflow as tf
@@ -11,8 +10,6 @@ from tensorflow.keras.utils import Sequence
 from tensorflow.keras import Model
 from tensorflow.keras.metrics import binary_crossentropy
 from tensorflow.python.eager import backprop
-
-import pyBigWig
 
 import Modules.utils as utils
 
