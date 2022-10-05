@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Conv1D, MaxPool1D, concatenate, Dropout, \
 from tensorflow.keras.initializers import VarianceScaling
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import Model
-import Modules.utils as utils
+from Modules import tf_utils
 
 
 def build_model(model_name,
@@ -179,11 +179,11 @@ def inception_dna_v1(read_length=101,
                                x,
                                name='inception_dna_v1')
     elif method == 1:
-        model = utils.ReweightingModel(input_layer,
-                                       x,
-                                       T=T,
-                                       start_reweighting=start_reweighting,
-                                       name='inception_dna_v1')
+        model = tf_utils.ReweightingModel(input_layer,
+                                          x,
+                                          T=T,
+                                          start_reweighting=start_reweighting,
+                                          name='inception_dna_v1')
     return model
 
 
@@ -252,11 +252,11 @@ def inception_dna_v2(read_length=101,
                                x,
                                name='inception_dna_v2')
     elif method == 1:
-        model = utils.ReweightingModel(input_layer,
-                                       x,
-                                       T=T,
-                                       start_reweighting=start_reweighting,
-                                       name='inception_dna_v2')
+        model = tf_utils.ReweightingModel(input_layer,
+                                          x,
+                                          T=T,
+                                          start_reweighting=start_reweighting,
+                                          name='inception_dna_v2')
     return model
 
 
@@ -304,11 +304,11 @@ def Yann_original(read_length=101,
                                x,
                                name='Yann_original')
     elif method == 1:
-        model = utils.ReweightingModel(input_layer,
-                                       x,
-                                       T=T,
-                                       start_reweighting=start_reweighting,
-                                       name='Yann_original')
+        model = tf_utils.ReweightingModel(input_layer,
+                                          x,
+                                          T=T,
+                                          start_reweighting=start_reweighting,
+                                          name='Yann_original')
     return model
 
 
@@ -360,11 +360,11 @@ def Yann_with_init(read_length=101,
                                x,
                                name='Yann_with_init')
     elif method == 1:
-        model = utils.ReweightingModel(input_layer,
-                                       x,
-                                       T=T,
-                                       start_reweighting=start_reweighting,
-                                       name='Yann_with_init')
+        model = tf_utils.ReweightingModel(input_layer,
+                                          x,
+                                          T=T,
+                                          start_reweighting=start_reweighting,
+                                          name='Yann_with_init')
     return model
 
 
@@ -418,11 +418,11 @@ def Yann_with_init_and_padding(read_length=101,
                                x,
                                name='Yann_with_init_and_padding')
     elif method == 1:
-        model = utils.ReweightingModel(input_layer,
-                                       x,
-                                       T=T,
-                                       start_reweighting=start_reweighting,
-                                       name='Yann_with_init_and_padding')
+        model = tf_utils.ReweightingModel(input_layer,
+                                          x,
+                                          T=T,
+                                          start_reweighting=start_reweighting,
+                                          name='Yann_with_init_and_padding')
     return model
 
 

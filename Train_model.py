@@ -27,8 +27,7 @@ import sys
 import argparse
 import time
 import json
-from Modules import utils
-import Modules.models as models
+from Modules import utils, tf_utils, models
 from pathlib import Path
 
 
@@ -179,13 +178,13 @@ def train_reweighting_model(model,
         y_train = np.expand_dims(y_train, axis=1)
     sample_weights = utils.create_sample_weights(y_train)
     # Create generators for evaluating train, valid and test sets
-    # ordered_generator_train = utils.DataGenerator(
+    # ordered_generator_train = tf_utils.DataGenerator(
     #     np.arange(len(y_train)),
     #     x_train,
     #     y_train,
     #     batch_size,
     #     shuffle=False)
-    # generator_valid = utils.DataGenerator(
+    # generator_valid = tf_utils.DataGenerator(
     #     np.arange(len(y_valid)),
     #     x_valid,
     #     y_valid,
@@ -203,7 +202,7 @@ def train_reweighting_model(model,
             delta_losses = []
         if eval_epoch:
             preds_ts = []
-            # generator_test = utils.DataGenerator(
+            # generator_test = tf_utils.DataGenerator(
             #     np.arange(len(y_test)),
             #     x_test,
             #     y_test,
@@ -250,17 +249,17 @@ def train_reweighting_model(model,
             loss1 = binary_crossentropy(1, pred_tr)
             loss2 = binary_crossentropy(0, pred_tr)
             delta_loss = loss1 - loss2
-            sample_weights = utils.change_sample_weights(delta_loss, T=T)
+            sample_weights = tf_utils.change_sample_weights(delta_loss, T=T)
         else:
             loss1 = binary_crossentropy(y_train, pred_tr)
             # loss2 = binary_crossentropy(1 - y_train, pred_tr)
             # delta_loss = loss1 - loss2
             sample_weights = tf.where(
                 tf.squeeze(y_train),
-                utils.change_sample_weights(loss1, T=T),
+                tf_utils.change_sample_weights(loss1, T=T),
                 sample_weights
             )
-        sample_weights = utils.balance_classes(sample_weights, y_train)
+        sample_weights = tf_utils.balance_classes(sample_weights, y_train)
         print(f'\n\n\nEnd post_processing, time={time.time()-t0}\n\n\n')
 
         # Save train loss per sample, new labels and metrics on test
@@ -357,10 +356,10 @@ if __name__ == "__main__":
 
     # Load the dataset
     if args.from_files:
-        generator_train = utils.DataGeneratorFromFiles(
+        generator_train = tf_utils.DataGeneratorFromFiles(
             args.dataset,
             args.batch_size)
-        generator_valid = utils.DataGeneratorFromFiles(
+        generator_valid = tf_utils.DataGeneratorFromFiles(
             args.dataset,
             args.batch_size,
             shuffle=False,
@@ -390,13 +389,13 @@ if __name__ == "__main__":
 
         # Build generators for train, valid and test
         weights_train = utils.create_weights(y_train)
-        generator_train = utils.DataGenerator(
+        generator_train = tf_utils.DataGenerator(
             np.arange(len(y_train)),
             x_train,
             y_train,
             args.batch_size,
             weights_train)
-        generator_valid = utils.DataGenerator(
+        generator_valid = tf_utils.DataGenerator(
             np.arange(len(y_valid)),
             x_valid,
             y_valid,
@@ -424,21 +423,21 @@ if __name__ == "__main__":
     # Add optional callback for evaluating after epoch
     if args.eval_epoch:
         if args.from_files:
-            generator_test = utils.DataGeneratorFromFiles(
+            generator_test = tf_utils.DataGeneratorFromFiles(
                 args.dataset,
                 args.batch_size,
                 shuffle=False,
                 split='test')
         else:
-            generator_test = utils.DataGenerator(
+            generator_test = tf_utils.DataGenerator(
                 np.arange(len(y_test)),
                 x_test,
                 y_test,
                 args.batch_size,
                 shuffle=False)
         callbacks_list.append(
-            utils.Eval_after_epoch(args.output,
-                                   generator_test))
+            tf_utils.Eval_after_epoch(args.output,
+                                      generator_test))
     # Train model
     t0 = time.time()
     model.fit(generator_train,

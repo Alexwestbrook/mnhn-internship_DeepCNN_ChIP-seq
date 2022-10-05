@@ -18,7 +18,7 @@ import sys
 import argparse
 import time
 import numpy as np
-import Modules.utils as utils
+from Modules import utils
 
 
 def parsing():

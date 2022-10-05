@@ -3,8 +3,7 @@ import numpy as np
 import os
 import sys
 import argparse
-import Modules.utils as utils
-import Modules.models as models
+from Modules import utils, tf_utils, models
 
 
 def parsing():
@@ -129,7 +128,7 @@ if __name__ == "__main__":
         else:
             labels = np.zeros(len(data), dtype=bool)
         # build a generator
-        generator_chr = utils.DataGenerator(
+        generator_chr = tf_utils.DataGenerator(
             indexes,
             data,
             labels,

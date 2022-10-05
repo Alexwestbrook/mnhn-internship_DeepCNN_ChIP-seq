@@ -3,8 +3,7 @@ import numpy as np
 import os
 import sys
 import argparse
-import Modules.utils as utils
-import Modules.models as models
+from Modules import utils, models
 
 
 def parsing():

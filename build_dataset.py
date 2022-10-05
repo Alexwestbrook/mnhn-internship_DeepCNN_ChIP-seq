@@ -18,7 +18,8 @@ import os
 import sys
 import argparse
 import numpy as np
-import Modules.utils as utils
+from Modules import utils
+
 # from sklearn.preprocessing import OneHotEncoder
 # from sklearn.utils import shuffle
 # import tensorflow as tf
