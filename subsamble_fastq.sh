@@ -4,6 +4,7 @@
 #   subsample_fastq.sh -s sequences_to_subsample.fasta -o output_file_prefix -f "file1.fastq file2.fastq ..." [options]
 # options:
 #   -p  indicates that reads are paired-end, requires number of files to be exactly 2
+# (Paired-end assumes there is one space in id line, and no spaces elsewhere)
 
 paired_end=false
 while getopts "s:o:f:p" option; do
