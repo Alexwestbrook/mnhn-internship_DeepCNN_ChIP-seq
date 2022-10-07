@@ -84,7 +84,7 @@ def parsing():
         action="store_true")
     parser.add_argument(
         "-alt", "--alternate",
-        help="maximum number of reads in s shard, default to 2**24.",
+        help="indicates to read alternatively from all files",
         action="store_true")
     args = parser.parse_args()
     # Check if the input data is valid
@@ -164,7 +164,7 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
         return file_iterator
 
     # Build output directory if needed
-    Path(out_dir).mkdir(parents=True)
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
 
     # Infer read length from first 300 sequences in each file
     if read_length is None:
