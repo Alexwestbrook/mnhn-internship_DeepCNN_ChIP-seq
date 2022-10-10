@@ -1,6 +1,5 @@
 import tensorflow as tf
 import numpy as np
-import os
 import sys
 import argparse
 from pathlib import Path

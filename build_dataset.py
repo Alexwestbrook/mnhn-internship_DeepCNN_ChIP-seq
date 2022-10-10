@@ -14,7 +14,6 @@
 # - path/filename : path of the directory to store the dataset in, and name of
 #       the file to store the dataset in
 
-import os
 import sys
 import argparse
 import numpy as np

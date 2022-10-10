@@ -15,8 +15,8 @@
 #       stored in the same array
 
 import sys
-import os
 import numpy as np
+from pathlib import Path
 
 # Get the arguments from the command line and handle exceptions
 try:

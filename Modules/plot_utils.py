@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os
+from pathlib import Path
 
 import numpy as np
 
@@ -89,8 +89,7 @@ def metaplot_over_indices(values,
                                yticklabels=1000, robust=True)
         return_values = (clust,)
     if res_dir:
-        plt.savefig(os.path.join(res_dir,
-                                 f'metaplot_{data}_{plot}_{chr}_peaks.png'),
+        plt.savefig(Path(res_dir, f'metaplot_{data}_{plot}_{chr}_peaks.png'),
                     bbox_inches='tight')
     plt.show()
     plt.close()

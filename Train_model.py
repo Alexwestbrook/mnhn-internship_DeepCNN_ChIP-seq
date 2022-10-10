@@ -22,7 +22,6 @@ from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping, \
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.metrics import binary_crossentropy
 import numpy as np
-import os
 import sys
 import argparse
 import time
@@ -192,7 +191,7 @@ def train_reweighting_model(model,
     #     shuffle=False)
     # Callbacks
     callbacks_list = [
-        CSVLogger(os.path.join(output, "epoch_data.csv"), append=True)
+        CSVLogger(Path(output, "epoch_data.csv"), append=True)
     ]
     # Initialize sample weights and metrics logs
     if output is not None:
@@ -269,7 +268,7 @@ def train_reweighting_model(model,
             if train_method == 2:
                 delta_losses.append(delta_loss)
             np.save(
-                os.path.join(output, 'sample_weights'),
+                Path(output, 'sample_weights'),
                 np.reshape(all_sample_weights, (-1, len(x_train)))
             )
             if eval_epoch:
@@ -292,25 +291,25 @@ def train_reweighting_model(model,
     if autotune:
         model.set_weights(best_weights)
     # Save trained model
-    model.save(os.path.join(output, "model"))
+    model.save(Path(output, "model"))
     # Save losses and metrics logs
     if output is not None:
         np.save(
-            os.path.join(output, 'preds_tr'),
+            Path(output, 'preds_tr'),
             np.reshape(preds_tr, (epochs, -1))
         )
         np.save(
-            os.path.join(output, 'sample_weights'),
+            Path(output, 'sample_weights'),
             np.reshape(all_sample_weights, (epochs, -1))
         )
         if train_method == 2:
             np.save(
-                os.path.join(output, 'delta_losses'),
+                Path(output, 'delta_losses'),
                 np.reshape(delta_losses, (epochs, -1))
             )
         if eval_epoch:
             np.save(
-                os.path.join(output, 'preds_ts'),
+                Path(output, 'preds_ts'),
                 np.reshape(preds_ts, (epochs, -1))
             )
 

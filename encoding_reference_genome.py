@@ -13,7 +13,6 @@
 #   -b <int>    specify batch size to use for encoding
 #   -oht <type> specify type to use for one_hot_encoding
 
-import os
 import sys
 import argparse
 import time
