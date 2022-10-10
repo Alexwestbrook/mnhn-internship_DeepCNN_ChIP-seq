@@ -5,20 +5,19 @@
 # The dataset in saved into an npz archive in the specified directory
 #
 # To execute this code run
-# build_dataset.py -ip <IP file> -c <Control file> -out <path/filename>
+# build_sharded_dataset.py -ip <IP file> -c <Control file> -out <directory>
 # with other options available
 #
 # parameters :
 # - IP file : npy file containing multiple read sequences from IP
 # - Control file : npy file containing multiple read sequences from Control
-# - path/filename : path of the directory to store the dataset in, and name of
-#       the file to store the dataset in
+# - directory : path of the directory to store the dataset files in
 
 from pathlib import Path
 import sys
 import argparse
 import numpy as np
-from itertools import zip_longest, chain, repeat, islice
+from itertools import chain, repeat, islice
 from more_itertools import grouper, roundrobin
 from Modules import utils
 
@@ -33,14 +32,27 @@ def parsing():
 
     Returns
     -------
-    IP : IP reads file with npz format
-    Control : Control reads file with npz format
-    output: Path to the output directory and file name
-    max_size: maximum number of reads to take from IP or Control. The maximum
-        size of the whole dataset is max_size*2
-    one_hot_type: type to use for one hot encoding
-    train_size: proportion of reads to put in the train set
-    valid_size: proportion of reads to put in the valid set
+    IP : list[str]
+        IP reads file with npz format
+    Control : list[str]
+        Control reads file with npz format
+    output: str
+        Path to the output directory and file name
+    read_length : int
+        Number of bases in reads. If unspecified, the read length is inferred
+        from the maximum length in the first 100 sequences from each file. All
+        reads will be truncated or extended with N values to fit this length.
+    split_sizes : tuple[int], default=[2**23, 2**23]
+        Number of test and valid samples in this order, remaining samples are
+        train samples. Set value to 0 to ignore a split.
+    shard_size : int, default=2**24
+        Number of reads in a shard
+    alternate : bool, default=True
+        True indicates to take reads from each file alternatively. False
+        indicates to process files entirely before moving to the next.
+    kN : bool, default=False
+        If False, reads with N values are discarded, as well as reads shorter
+        than `read_length`.
     """
     # Declaration of expexted arguments
     parser = argparse.ArgumentParser()
@@ -106,25 +118,27 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     ids is an array of string ids in the fastq file and one_hots are the
     corresponding one-hot encoded sequences.
 
-    The read length is infered from the maximum length in the first shard, all
-    reads will be truncated or extended with N values to fit this length.
-
     Parameters
     ----------
-    out_dir (str): name of the output dataset directory, must be empty
-    fastq_files (list of str): list of fastq files to read from
-    shard_size (int): number of reads in a shard
-    alternate (bool): default value True indicates to take reads from each
-    file alternatively, set to False to process files entirely before moving
-    to the next.
-    splits (tuple of int): number of test and valid samples in this order,
-    remaining samples are train samples. Set value to 0 to ignore a split.
-    read_length (int): number of bases in reads, if None, the read length is
-    inferred from the maximum length in the first 100 sequences from each
-    file. All reads will be truncated or extended with N values to fit this
-    length.
-    discardNs (bool): if True, reads with N values are discarded, as well as
-    reads shorter than read_length.
+    out_dir : str
+        Name of the output dataset directory, must be empty
+    fastq_files : list[str]
+        List of fastq files to read from
+    shard_size : int, default=2**24
+        Number of reads in a shard
+    alternate : bool, default=True
+        True indicates to take reads from each file alternatively. False
+        indicates to process files entirely before moving to the next.
+    split_sizes : tuple[int], default=[2**23, 2**23]
+        Number of test and valid samples in this order, remaining samples are
+        train samples. Set value to 0 to ignore a split.
+    read_length : int, default=None
+        Number of bases in reads, if None, the read length is inferred from
+        the maximum length in the first 100 sequences from each file. All
+        reads will be truncated or extended with N values to fit this length.
+    discardNs : bool, default=False
+        if True, reads with N values are discarded, as well as reads shorter
+        than `read_length`.
     """
     # helper functions
     def save_shard():
@@ -168,7 +182,7 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
 
     # Infer read length from first 300 sequences in each file
     if read_length is None:
-        print('read_length is unspecified, inferring read length from files')
+        print('read length is unspecified, inferring read length from files')
         read_length = max(len(seq.rstrip())
                           for file in chain(ip_files, control_files)
                           for seq in islice(open(file), 1, 400, 4))

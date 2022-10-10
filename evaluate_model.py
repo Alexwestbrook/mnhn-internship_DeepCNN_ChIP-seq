@@ -3,7 +3,7 @@ import numpy as np
 import os
 import sys
 import argparse
-from Modules import utils, models
+from Modules import tf_utils, models
 
 
 def parsing():
@@ -32,6 +32,13 @@ def parsing():
         help="dataset file",
         type=str,
         required=True)
+    parser.add_argument(
+        "-ff", "--from_files",
+        help="specifies that the dataset consists of multiple npz archives. "
+        "In this case dataset must the name of the directory contaiing the "
+        "files. Do not store other files in this directory or the data "
+        "generator might try to read them as data.",
+        action='store_true')
     parser.add_argument(
         "-out", "--output",
         help="Path to the output directory and file name.",
@@ -107,22 +114,38 @@ if __name__ == "__main__":
                                    read_length=args.read_length,
                                    method=args.train_method)
         model.load_weights(args.trained_model)
-    # Load the dataset
-    f1 = np.load(args.dataset)
-    if args.data_part == 'test':
-        # load test
-        x_test = f1['x_test']
-        if args.relabeled:
-            f2 = np.load(args.relabeled)
-            y_test = f2['y_test']
-        else:
-            y_test = f1['y_test']
-        # predict on test and save
+    # Load dataset
+    if args.data_part == 'test':  # Load testing samples
+        if args.from_files:  # Load from a sharded dataset
+            x_test = tf_utils.DataGeneratorFromFiles(
+                args.dataset,
+                args.batch_size,
+                use_labels=args.relabeled,
+                shuffle=False,
+                split='test')
+            if args.relabeled:
+                y_test = np.load('labels_test_0.npz')
+            else:
+                y_test = None
+        else:  # Load from a simple dataset
+            f1 = np.load(args.dataset)
+            # load test
+            x_test = f1['x_test']
+            if args.relabeled:
+                f2 = np.load(args.relabeled)
+                y_test = f2['y_test']
+            else:
+                y_test = f1['y_test']
+        # Predict on test and save
         pred = model.predict(x_test, args.batch_size)
         np.savez(args.output,
                  pred=pred)
-
-        # compute accuracy per label
+        # Compute accuracy per label
+        # If labels aren't provided, assume alternating between 1 and 0
+        # This is often the case in the sharded dataset
+        if y_test is None:
+            y_test = np.zeros(len(x_test), dtype=bool)
+            y_test[::2] = 1
         predIP = pred[y_test == 1]
         predControl = pred[y_test == 0]
         IP_accuracy = np.size(predIP[predIP > 0.5]) / np.size(predIP)
@@ -131,18 +154,26 @@ if __name__ == "__main__":
         print('accuracy: ', (IP_accuracy + Control_accuracy) / 2)
         print('IP accuracy: ', IP_accuracy)
         print('Control accuracy: ', Control_accuracy)
-    elif args.data_part == 'train':
-        # load train and valid
-        x_train = f1['x_train']
-        x_valid = f1['x_valid']
-        if args.relabeled:
-            f2 = np.load(args.relabeled)
-            y_train = f2['y_train']
-            y_valid = f2['y_valid']
-        else:
-            y_train = f1['y_train']
-            y_valid = f1['y_valid']
-        # predict on train and valid and save
+    elif args.data_part == 'train':  # Load training samples
+        if args.from_files:  # Load from a sharded dataset
+            x_train = tf_utils.DataGeneratorFromFiles(
+                args.dataset,
+                args.batch_size,
+                use_labels=args.relabeled,
+                shuffle=False,
+                split='train')
+            x_valid = tf_utils.DataGeneratorFromFiles(
+                args.dataset,
+                args.batch_size,
+                use_labels=args.relabeled,
+                shuffle=False,
+                split='valid')
+        else:  # Load from a simple dataset
+            f1 = np.load(args.dataset)
+            # load train and valid
+            x_train = f1['x_train']
+            x_valid = f1['x_valid']
+        # predict on train/valid and save
         pred_train = model.predict(x_train,
                                    batch_size=args.batch_size)
         pred_valid = model.predict(x_valid,
