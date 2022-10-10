@@ -13,11 +13,11 @@
 #   -b <int>    specify batch size to use for encoding
 #   -oht <type> specify type to use for one_hot_encoding
 
-import os
 import sys
 import argparse
 import time
 import numpy as np
+from pathlib import Path
 from Modules import utils
 
 
@@ -77,7 +77,7 @@ def parsing():
     if len(args.genome_files) != len(args.outputs):
         sys.exit("Please specify as many genome files as output files.")
     for genome_file in args.genome_files:
-        if not os.path.isfile(genome_file):
+        if not Path(genome_file).is_file():
             sys.exit(f"{genome_file} does not exist.\n"
                      "Please enter valid genome file paths.")
     if args.method not in {1, 2}:

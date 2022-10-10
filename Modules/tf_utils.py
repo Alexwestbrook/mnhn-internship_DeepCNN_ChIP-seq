@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import os
 from pathlib import Path
 import numpy as np
 
@@ -31,7 +30,7 @@ class Eval_after_epoch(Callback):
         self.epochs += 1
 
     def on_train_end(self, logs=None):
-        np.save(os.path.join(self.model_dir, 'eval_epochs'),
+        np.save(Path(self.model_dir, 'eval_epochs'),
                 np.reshape(self.preds, (self.epochs, -1)))
 
 

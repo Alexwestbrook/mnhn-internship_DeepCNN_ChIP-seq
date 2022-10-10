@@ -1,8 +1,8 @@
 import tensorflow as tf
 import numpy as np
-import os
 import sys
 import argparse
+from pathlib import Path
 from Modules import utils, tf_utils, models
 
 
@@ -77,13 +77,12 @@ def parsing():
     args = parser.parse_args()
     # Check if the input data is valid
     for chr_id in args.chromosomes:
-        if not os.path.isfile(os.path.join(args.genome_dir,
-                                           f'chr{chr_id}.npz')):
+        if not Path(args.genome_dir, f'chr{chr_id}.npz').is_file():
             sys.exit(f"chr{chr_id}.npz does not exist.\n"
                      "Please enter valid genome file path.")
     # If the data was relabeled, check the new label file
     if args.labels:
-        if not os.path.isfile(args.labels):
+        if not Path(args.labels).is_file():
             sys.exit(f"{args.labels} does not exist.\n"
                      "Please enter a valid labels file path.")
     return args
@@ -93,8 +92,7 @@ if __name__ == "__main__":
     # Get arguments
     args = parsing()
     # Maybe create output directory
-    if not os.path.isdir(args.output):
-        os.makedirs(args.output)
+    Path(args.output).mkdir(parents=True, exist_ok=True)
     # Limit gpu memory usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
@@ -118,7 +116,7 @@ if __name__ == "__main__":
     for chr_id in args.chromosomes:
         # Load genomic data and maybe labels (labels aren't currently used)
         indexes, data = utils.load_chr(
-            os.path.join(args.genome_dir, f'chr{chr_id}.npz'),
+            Path(args.genome_dir, f'chr{chr_id}.npz'),
             args.read_length)
         if args.labels:
             with np.load(args.labels) as f:
@@ -137,11 +135,10 @@ if __name__ == "__main__":
         # predict on data and save predictions
         preds = model.predict(generator_chr).ravel()
         if args.multi_file:
-            np.savez_compressed(os.path.join(args.output,
-                                             f"preds_on_chr{chr_id}"),
+            np.savez_compressed(Path(args.output, f"preds_on_chr{chr_id}"),
                                 preds=preds)
         else:
             all_preds[f"chr{chr_id}"] = preds
     if not args.multi_file:
-        np.savez_compressed(os.path.join(args.output, f"preds_on_genome"),
+        np.savez_compressed(Path(args.output, f"preds_on_genome"),
                             **all_preds)

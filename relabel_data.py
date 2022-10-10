@@ -1,8 +1,8 @@
 import tensorflow as tf
 import numpy as np
-import os
 import sys
 import argparse
+from pathlib import Path
 from Modules import utils, models
 
 
@@ -67,7 +67,7 @@ def parsing():
         type=int)
     args = parser.parse_args()
     # Check if the input data is valid
-    if not os.path.isfile(args.dataset):
+    if not Path(args.dataset).is_file():
         sys.exit(f"{args.dataset} does not exist.\n"
                  "Please enter a valid dataset file path.")
     return args
@@ -77,9 +77,7 @@ if __name__ == "__main__":
     # Get arguments
     args = parsing()
     # Maybe build output directory
-    directory = os.path.dirname(args.output)
-    if not os.path.isdir(directory):
-        os.makedirs(directory)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     # Load the dataset
     with np.load(args.dataset) as f:
         x_train = f['x_train']

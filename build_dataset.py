@@ -14,10 +14,10 @@
 # - path/filename : path of the directory to store the dataset in, and name of
 #       the file to store the dataset in
 
-import os
 import sys
 import argparse
 import numpy as np
+from pathlib import Path
 from Modules import utils
 
 # from sklearn.preprocessing import OneHotEncoder
@@ -108,10 +108,10 @@ def parsing():
         type=str)
     args = parser.parse_args()
     # Check if the input data is valid
-    if not os.path.isfile(args.ip_file):
+    if not Path(args.ip_file).is_file():
         sys.exit(f"{args.ip_file} does not exist.\n"
                  "Please enter a valid ip file path.")
-    if not os.path.isfile(args.control_file):
+    if not Path(args.control_file).is_file():
         sys.exit(f"{args.control_file} does not exist.\n"
                  "Please enter a valid control file path.")
     if args.train_size + args.valid_size > 1:
