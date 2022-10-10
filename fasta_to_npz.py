@@ -35,7 +35,7 @@ except IndexError as ie:
 # loop over input files to check if they exist
 cur_arg = 2
 while cur_arg < len(sys.argv):
-    if not os.path.exists(sys.argv[cur_arg]):
+    if not Path(sys.argv[cur_arg]).is_file():
         raise SystemError("Error: File ", sys.argv[cur_arg],
                           " does not exist\n")
     cur_arg += 1

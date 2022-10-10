@@ -3,6 +3,7 @@ import numpy as np
 import os
 import sys
 import argparse
+from pathlib import Path
 from Modules import tf_utils, models
 
 
@@ -77,17 +78,22 @@ def parsing():
         type=str)
     args = parser.parse_args()
     # Check if the input data is valid
-    if not os.path.isfile(args.dataset):
-        sys.exit(f"{args.dataset} does not exist.\n"
-                 "Please enter a valid dataset file path.")
+    if args.from_files:
+        if not Path(args.dataset).is_dir():
+            sys.exit(f"When specifying from_files argument, dataset must be "
+                     "directory, {args.dataset} isn't")
+    else:
+        if not Path(args.dataset).is_file():
+            sys.exit(f"{args.dataset} does not exist.\n"
+                     "Please enter a valid dataset file path.")
+        # If the data was relabeled, check the new label file
+        if args.relabeled:
+            if not Path(args.relabeled).exists():
+                sys.exit(f"{args.relabeled} does not exist.\n"
+                         "Please enter a valid new labels file path.")
     if args.data_part not in ['train', 'test']:
         sys.exit("data should be one of 'train' or 'test',"
                  f"{args.data_part} is invalid")
-    # If the data was relabeled, check the new label file
-    if args.relabeled:
-        if not os.path.isfile(args.relabeled):
-            sys.exit(f"{args.relabeled} does not exist.\n"
-                     "Please enter a valid new labels file path.")
     return args
 
 
@@ -95,9 +101,7 @@ if __name__ == "__main__":
     # Get arguments
     args = parsing()
     # Maybe build output directory
-    directory = os.path.dirname(args.output)
-    if not os.path.isdir(directory):
-        os.makedirs(directory)
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     # Limit gpu memory usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:

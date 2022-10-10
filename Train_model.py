@@ -319,10 +319,9 @@ if __name__ == "__main__":
     # Get arguments
     args = parsing()
     # Maybe build output directory
-    if not os.path.isdir(args.output):
-        os.makedirs(args.output)
+    Path(args.output).mkdir(parents=True, exist_ok=True)
     # Store arguments in file
-    with open(os.path.join(args.output, 'Experiment_info.txt'), 'w') as f:
+    with open(Path(args.output, 'Experiment_info.txt'), 'w') as f:
         json.dump(vars(args), f, indent=4)
         f.write('\n')
 
@@ -403,12 +402,12 @@ if __name__ == "__main__":
             shuffle=False)
     # Create callbacks during training
     callbacks_list = [
-        CSVLogger(os.path.join(args.output, "epoch_data.csv"))
+        CSVLogger(Path(args.output, "epoch_data.csv"))
         ]
     # Add optional autotune callbakcs
     if not args.disable_autotune:
         callbacks_list.append([
-            ModelCheckpoint(filepath=os.path.join(args.output, "Checkpoint"),
+            ModelCheckpoint(filepath=Path(args.output, "Checkpoint"),
                             monitor="val_accuracy",
                             save_best_only=True),
             EarlyStopping(monitor="val_loss",
@@ -447,13 +446,13 @@ if __name__ == "__main__":
               verbose=args.verbose,
               shuffle=False)
     train_time = time.time() - t0
-    with open(os.path.join(args.output, 'Experiment_info.txt'), 'a') as f:
+    with open(Path(args.output, 'Experiment_info.txt'), 'a') as f:
         f.write(f'training time: {train_time}\n')
     # Save trained model
     if args.train_method == 0:
-        model.save(os.path.join(args.output, "model"))
+        model.save(Path(args.output, "model"))
     else:
-        model.save_weights(os.path.join(args.output, "model_weights"))
+        model.save_weights(Path(args.output, "model_weights"))
     # Remove temporary npy files if needed
     for file in Path('../data_test/CTCF_IP_dataset/').glob('train_*.npy'):
         file.unlink()
