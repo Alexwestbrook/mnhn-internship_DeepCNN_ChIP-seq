@@ -18,7 +18,7 @@ while getopts "i:d:w:f:pt:" option; do
             writing_dir=$data_dir;;
         w) # directory in which to write files,
            # if no writing access in data_dir
-            working_dir=$OPTARG;;
+            writing_dir=$OPTARG;;
         f) # prefix of fastq files containing reads to align
             fastq_prefix=$OPTARG;;
         p) # indicate paired-end
@@ -36,7 +36,7 @@ done
 if [ $paired_end = true ]
 then
     out_prefix=$writing_dir/$fastq_prefix'_paired'
-    bowtie2 -p $threads -x $index -1 $data_dir/$fastq_prefix'_1.fastq' -2 $data_dir/$fastq_prefix'_2.fastq' -S $out_prefix.sam
+    bowtie2 -p $threads -x $index -1 $data_dir/$fastq_prefix'.R1.fastq' -2 $data_dir/$fastq_prefix'.R2.fastq' -S $out_prefix.sam
 else
     out_prefix=$writing_dir/$fastq_prefix
     bowtie2 -p $threads -x $index -U $data_dir/$fastq_prefix.fastq -S $out_prefix.sam
