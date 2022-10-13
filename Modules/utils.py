@@ -3,6 +3,8 @@ import os
 from pathlib import Path
 from collections import defaultdict
 from typing import Optional, Union
+import re
+import math
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
@@ -740,6 +742,30 @@ def parse_repeats(repeat_file, window_size=101, header_lines=3):
                 repeats[chr_id][family] = (np.array(repeats[chr_id][family])
                                            - window_size // 2)
     return repeats
+
+
+def parse_sam(sam_file: str, verbose=True) -> None:
+    with open(sam_file, 'r') as f:
+        chr_coord = defaultdict(list)
+        header_regexp = re.compile('^@(HD|SQ|RG|PG|CO)')
+        rejected_count = 0
+        total_count = 0
+        for line in f:
+            if header_regexp.match(line):  # ignore header
+                continue
+            # Readline and convert some entries to int    
+            _, _, rname, pos, _, _, _, pnext, tlen, seq, *_ = line.split('\t')
+            tlen, pos, pnext = (int(v) for v in (tlen, pos, pnext))
+            # Record only the leftmost read of each pair
+            if tlen > 0:
+                # middle = math.floor((pos + pnext + len(seq)) / 2)
+                chr_coord[rname].append([pos, pnext + len(seq)])
+            else:
+                rejected_count += 1
+            total_count += 1
+    if verbose:
+        print(f'{rejected_count}/{total_count} paired reads rejected')
+    return chr_coord
 
 
 def load_annotation(file, chr_id, window_size, anchor='center'):
