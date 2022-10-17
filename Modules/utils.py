@@ -753,13 +753,13 @@ def parse_sam(sam_file: str, verbose=True) -> None:
         for line in f:
             if header_regexp.match(line):  # ignore header
                 continue
-            # Readline and convert some entries to int    
-            _, _, rname, pos, _, _, _, pnext, tlen, seq, *_ = line.split('\t')
-            tlen, pos, pnext = (int(v) for v in (tlen, pos, pnext))
+            # Readline and convert some entries to int
+            _, _, rname, pos, _, _, _, _, tlen, *_ = line.split('\t')
+            tlen, pos = (int(v) for v in (tlen, pos))
             # Record only the leftmost read of each pair
             if tlen > 0:
                 # middle = math.floor((pos + pnext + len(seq)) / 2)
-                chr_coord[rname].append([pos, pnext + len(seq)])
+                chr_coord[rname].append([pos, pos + tlen])
             else:
                 rejected_count += 1
             total_count += 1
