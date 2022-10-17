@@ -28,6 +28,7 @@ import time
 import json
 from Modules import utils, tf_utils, models
 from pathlib import Path
+import tempfile
 
 
 def parsing():
@@ -53,17 +54,18 @@ def parsing():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-arch", "--architecture",
-        help='name of the model architecture in "models.py".',
+        help='Name of the model architecture in "models.py".',
         type=str,
         required=True)
     parser.add_argument(
-        "-d", "--dataset", help="Input dataset file with npz format.",
+        "-d", "--dataset",
+        help="Input dataset file with npz format.",
         type=str,
         required=True)
     parser.add_argument(
         "-ff", "--from_files",
         help="specifies that the dataset consists of multiple npz archives. "
-        "In this case dataset must the name of the directory contaiing the "
+        "In this case dataset must be the name of the directory contaiing the "
         "files. Do not store other files in this directory or the data "
         "generator might try to read them as data.",
         action='store_true')
@@ -96,7 +98,7 @@ def parsing():
     parser.add_argument(
         "-da", "--disable_autotune",
         action='store_true',
-        help="indicates not to use earlystopping.")
+        help="Indicates not to use earlystopping.")
     parser.add_argument(
         "-p", "--patience",
         help="Number of epochs without improvement to wait before stopping "
@@ -110,7 +112,7 @@ def parsing():
     parser.add_argument(
         "-dist", "--distribute",
         action='store_true',
-        help="indicates to use both GPUs with MirrorStrategy.")
+        help="Indicates to use both GPUs with MirrorStrategy.")
     parser.add_argument(
         "-rel", "--relabeled",
         help="New labels for input dataset file with npz format.",
@@ -354,12 +356,18 @@ if __name__ == "__main__":
 
     # Load the dataset
     if args.from_files:
+        if not Path(args.dataset, 'train_0.npy').is_file():
+            temp_dir = tempfile.TemporaryDirectory()
+        else:
+            temp_dir = None
         generator_train = tf_utils.DataGeneratorFromFiles(
             args.dataset,
-            args.batch_size)
+            args.batch_size,
+            temp_dir=temp_dir)
         generator_valid = tf_utils.DataGeneratorFromFiles(
             args.dataset,
             args.batch_size,
+            temp_dir=temp_dir,
             shuffle=False,
             split='valid')
     else:
@@ -424,6 +432,7 @@ if __name__ == "__main__":
             generator_test = tf_utils.DataGeneratorFromFiles(
                 args.dataset,
                 args.batch_size,
+                temp_dir=temp_dir,
                 shuffle=False,
                 split='test')
         else:
@@ -453,7 +462,5 @@ if __name__ == "__main__":
     else:
         model.save_weights(Path(args.output, "model_weights"))
     # Remove temporary npy files if needed
-    for file in Path('../data_test/CTCF_IP_dataset/').glob('train_*.npy'):
-        file.unlink()
-    for file in Path('../data_test/CTCF_IP_dataset/').glob('valid_*.npy'):
-        file.unlink()
+    if args.from_files and temp_dir is not None:
+        temp_dir.cleanup()

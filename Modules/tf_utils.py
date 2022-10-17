@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from pathlib import Path
+import tempfile
 import numpy as np
 
 import tensorflow as tf
@@ -158,6 +159,7 @@ class DataGeneratorFromFiles(Sequence):
     def __init__(self,
                  dataset_dir: Path,
                  batch_size: int,
+                 temp_dir: Path = None,
                  split: str = 'train',
                  use_labels: bool = False,
                  class_weights: dict = {0: 1, 1: 1},
@@ -222,12 +224,15 @@ class DataGeneratorFromFiles(Sequence):
         self.files_idx = []
         self.contents_idx = []
         self.dim = None
+        self.temp_dir = temp_dir
         # Check if first .npy file exists, if not assume data is in .npz
         if file_suffix is None:
             if Path(dataset_dir, split + '_0.npy').exists():
                 file_suffix = '.npy'
             else:
                 file_suffix = '.npz'
+                if self.temp_dir is None:
+                    self.temp_dir = tempfile.TemporaryDirectory()
         for file in Path(dataset_dir).glob(split + '_*' + file_suffix):
             # Get file information, if npz, make a npy copy for faster reading
             if file_suffix == '.npy':
@@ -236,7 +241,7 @@ class DataGeneratorFromFiles(Sequence):
             elif file_suffix == '.npz':
                 with np.load(file) as f:
                     data = f['one_hots']
-                new_file = Path(file.parent, file.stem + '.npy')
+                new_file = Path(self.temp_dir.name, file.stem + '.npy')
                 if new_file.exists():
                     raise FileExistsError(
                         f"{file} could not be converted to npy because "
