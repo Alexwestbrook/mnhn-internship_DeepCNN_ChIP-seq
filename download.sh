@@ -49,13 +49,13 @@
 # # IP
 # prefetch SRR9603955
 # fasterq-dump SRR9603955 --outdir ../shared_folder/A549G4/raw_data/IP/
-prefetch SRR9603953
-fasterq-dump SRR9603953 --outdir ../shared_folder/A549G4/raw_data/IP/
-# Control (Input)
-prefetch SRR9603956
-fasterq-dump SRR9603956 --outdir ../shared_folder/A549G4/raw_data/Control/
-prefetch SRR9603954
-fasterq-dump SRR9603954 --outdir ../shared_folder/A549G4/raw_data/Control/
+# prefetch SRR9603953
+# fasterq-dump SRR9603953 --outdir ../shared_folder/A549G4/raw_data/IP/
+# # Control (Input)
+# prefetch SRR9603956
+# fasterq-dump SRR9603956 --outdir ../shared_folder/A549G4/raw_data/Control/
+# prefetch SRR9603954
+# fasterq-dump SRR9603954 --outdir ../shared_folder/A549G4/raw_data/Control/
 
 #### HEK293-ZFAT
 # # IP
@@ -72,3 +72,20 @@ fasterq-dump SRR9603954 --outdir ../shared_folder/A549G4/raw_data/Control/
 # # Control
 # wget https://www.encodeproject.org/files/ENCFF002DUF/@@download/ENCFF002DUF.fastq.gz
 # wget https://www.encodeproject.org/files/ENCFF002EGX/@@download/ENCFF002EGX.fastq.gz
+
+#### H3K9me3-GSM4977045
+# prefetch SRR13259858
+# fasterq-dump SRR13259858 --outdir ../shared_folder/H3K9me3-GSM4977045/raw_data/
+
+#### H3K9me3-GSM4977045
+for i in {330..337}
+do
+    echo SRR14678$i
+    prefetch SRR14678$i
+    fasterq-dump SRR14678$i --outdir ../shared_folder/H3K9me3-GSE175752/raw_data/Control/
+done
+for i in {338..345}
+do
+    prefetch SRR14678$i
+    fasterq-dump SRR14678$i --outdir ../shared_folder/H3K9me3-GSE175752/raw_data/IP/
+done
