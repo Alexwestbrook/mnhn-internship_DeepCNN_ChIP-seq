@@ -78,14 +78,14 @@
 # fasterq-dump SRR13259858 --outdir ../shared_folder/H3K9me3-GSM4977045/raw_data/
 
 #### H3K9me3-GSM4977045
-for i in {330..337}
-do
-    echo SRR14678$i
-    prefetch SRR14678$i
-    fasterq-dump SRR14678$i --outdir ../shared_folder/H3K9me3-GSE175752/raw_data/Control/
-done
-for i in {338..345}
-do
-    prefetch SRR14678$i
-    fasterq-dump SRR14678$i --outdir ../shared_folder/H3K9me3-GSE175752/raw_data/IP/
-done
+# for i in {330..337}
+# do
+#     echo SRR14678$i
+#     prefetch SRR14678$i
+#     fasterq-dump SRR14678$i --outdir ../shared_folder/H3K9me3-GSE175752/raw_data/Control/
+# done
+# for i in {338..345}
+# do
+#     prefetch SRR14678$i
+#     fasterq-dump SRR14678$i --outdir ../shared_folder/H3K9me3-GSE175752/raw_data/IP/
+# done
