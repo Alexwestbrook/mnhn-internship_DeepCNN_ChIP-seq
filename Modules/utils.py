@@ -4,7 +4,6 @@ from pathlib import Path
 from collections import defaultdict
 from typing import Optional, Union
 import re
-import math
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
@@ -12,6 +11,7 @@ from numpy.core.numeric import normalize_axis_tuple
 
 from sklearn.preprocessing import OneHotEncoder
 from scipy.signal import gaussian, convolve
+from scipy.sparse import coo_matrix
 
 import pyBigWig
 
@@ -882,6 +882,71 @@ def smooth(values, window_size, mode='linear', sigma=1):
     return convolve(values, box, mode='same')
 
 
+def binned_alignment_signal_from_coord(coord: np.ndarray,
+                                       bins: int = 100) -> np.ndarray:
+    """
+    Build alignment signal from read coordinates.
+
+    The signal is binned to a specified resolution on the genome. This
+    function will build the signal from mid points, resulting in very noisy
+    and potentially inaccurate signal for high resolution (low bins).
+
+    Parameters
+    ----------
+    coord : ndarray, shape=(nb_reads, 2)
+        2D-array of coordinates for start and end of each fragment.
+    bins : int, default=100
+        Length of bins, in bases, to divide the signal into.
+
+    Returns
+    -------
+    binned_signal : ndarray
+        1D-array of read count in each bin along the genome.
+
+    Note
+    ----
+    Very fast implementation through the use of scipy.sparse's matrix creation
+    and conversion.
+    """
+    binned_mid = np.floor(np.mean(coord, axis=1) // bins)
+    binned_mid = np.array(binned_mid, dtype=int)
+    binned_signal = coo_matrix(
+        (np.ones(len(coord), dtype=int),
+         (binned_mid, np.zeros(len(coord), dtype=int))),
+        shape=(np.max(binned_mid) + 1, 1)
+    ).toarray().ravel()
+    return binned_signal
+
+
+def exact_alignment_signal_from_coord(coord: np.ndarray) -> np.ndarray:
+    """
+    Build alignment signal from read coordinates.
+
+    Parameters
+    ----------
+    coord : ndarray, shape=(nb_reads, 2)
+        2D-array of coordinates for start and end of each fragment.
+
+    Returns
+    -------
+    signal : ndarray
+        1D-array of read count for each position along the genome.
+    """
+    # Insert +1 at fragment start and -1 after fragment end
+    data = np.ones(2*len(coord), dtype=int)
+    data[1::2] = -1
+    # Get coordinate of first bp after fragment end
+    coord[:, 1] = coord[:, 1] + 1
+    # Insert using scipy.sparse implementation
+    start_ends = coo_matrix(
+        (data, (coord.ravel(), np.zeros(2*len(coord), dtype=int))),
+        shape=(np.max(coord)+1, 1)
+    ).toarray().ravel()
+    # Cumulative sum to propagate full fragments
+    signal = np.cumsum(start_ends)
+    return signal
+
+
 # Peak manipulation
 def find_peaks(preds: np.ndarray,
                pred_thres: float,
@@ -1199,6 +1264,27 @@ def argmax_last(array: np.ndarray) -> int:
         Index of the last occurence of the maximal value in `array`.
     """
     return len(array) - np.argmax(array[::-1]) - 1
+
+
+def adjust_length(x: np.ndarray, y: np.ndarray) -> tuple:
+    """
+    Append 0s to the shortest array to adjust their lengths
+
+    Parameters
+    ----------
+    x, y : ndarray
+        1D-arrays of potentially different lengths
+
+    Returns
+    -------
+    x, y : ndarray
+        1D-arrays of same length
+    """
+    if len(x) < len(y):
+        x = np.append(x, np.zeros(len(y) - len(x), dtype=x.dtype))
+    else:
+        y = np.append(y, np.zeros(len(x) - len(y), dtype=y.dtype))
+    return x, y
 
 
 def sliding_window_view(x, window_shape, axis=None, *,
