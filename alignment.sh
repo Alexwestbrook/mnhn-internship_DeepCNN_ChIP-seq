@@ -4,7 +4,7 @@
 #   alignment.sh -i path_to_index_prefix -d data_directory -f fastq_prefix [options]
 # options
 #   -w  writing directory, if data_directory cannot be written in
-#   -p  indicates paired-end reads, fastq files must be fastq_prefix_1.fastq and fastq_prefix_2.fastq
+#   -p  indicates paired-end reads, fastq files must be fastq_prefix.R1.fastq and fastq_prefix.R2.fastq
 #   -t  number of threads to use to speed up computation
 
 paired_end=false
@@ -31,7 +31,7 @@ while getopts "i:d:w:f:pt:" option; do
     esac
 done
 
-# aligning sequences to human genome
+# aligning sequences to genome
 
 if [ $paired_end = true ]
 then

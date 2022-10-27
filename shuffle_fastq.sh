@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# usage:
+#   shuffle_fastq.sh -o output_fastq_file -f input_fastq_file
+
 while getopts "o:f:" option; do
     case $option in
         o) # output file prefix
