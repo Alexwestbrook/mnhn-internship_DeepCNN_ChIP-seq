@@ -144,7 +144,7 @@ def parsing():
     if args.from_files:
         if not Path(args.dataset).is_dir():
             sys.exit(f"When specifying from_files argument, dataset must be "
-                     "directory, {args.dataset} isn't")
+                     f"directory, {args.dataset} isn't")
     else:
         if not Path(args.dataset).is_file():
             sys.exit(f"{args.dataset} does not exist.\n"
