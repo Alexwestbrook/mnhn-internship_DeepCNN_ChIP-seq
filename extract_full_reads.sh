@@ -45,7 +45,7 @@ else
     # merge and linearize fastq files
     awk 'NR%4==1 {printf("%s%s\t",(N>0?"\n":""),$0);N++;next;} {printf("%s\t",$0);} END {printf("\n")}' $fastq_files > $final_name'_tmp'
     # extract fastq lines with sequence of correct length
-    awk -v l=$length -F '\t' '(length($2)==l && index($2, "N")==0) {printf("%s\n%s\n%s\n%s\n",$1,$2,$3,$4); }' $final_name'_tmp' | shuf > $final_name.fastq
+    awk -v l=$length -F '\t' '(length($2)==l && index($2, "N")==0) {printf("%s\n%s\n%s\n%s\n",$1,$2,$3,$4); }' $final_name'_tmp' | shuf > $final_name
     rm $final_name'_tmp'
 fi
 echo 'done'
