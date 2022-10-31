@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # usage:
-#   alignment.sh -i path_to_index_prefix -d data_directory -f fastq_prefix [options]
+#   alignment.sh -i <path_to_index_prefix> -d <data_directory> -f <fastq_prefix> [options]
 # options
-#   -w  writing directory, if data_directory cannot be written in
+#   -w <writing directory>   writing directory, if data_directory cannot be written in
 #   -p  indicates paired-end reads, fastq files must be fastq_prefix.R1.fastq and fastq_prefix.R2.fastq
-#   -t  number of threads to use to speed up computation
+#   -t <threads>  number of threads to use to speed up computation
 
 paired_end=false
 threads=1

@@ -78,7 +78,7 @@ def parsing():
     args = parser.parse_args()
     # Check if the input data is valid
     for chr_id in args.chromosomes:
-        if not Path(args.genome_dir, f'chr{chr_id}.npz').is_file():
+        if not Path(args.genome, f'chr{chr_id}.npz').is_file():
             sys.exit(f"chr{chr_id}.npz does not exist.\n"
                      "Please enter valid genome file path.")
     # If the data was relabeled, check the new label file
