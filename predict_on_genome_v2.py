@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 import sys
 import argparse
+import warnings
 from pathlib import Path
 from Modules import utils, tf_utils, models
 
@@ -77,10 +78,9 @@ def parsing():
     )
     args = parser.parse_args()
     # Check if the input data is valid
-    for chr_id in args.chromosomes:
-        if not Path(args.genome_dir, f'chr{chr_id}.npz').is_file():
-            sys.exit(f"chr{chr_id}.npz does not exist.\n"
-                     "Please enter valid genome file path.")
+    if not Path(args.genome).is_file():
+        sys.exit(f"{args.genome} does not exist.\n"
+                 "Please enter valid genome file path.")
     # If the data was relabeled, check the new label file
     if args.labels:
         if not Path(args.labels).is_file():
@@ -117,7 +117,13 @@ if __name__ == "__main__":
     with np.load(Path(args.genome)) as genome:
         for chr_id in args.chromosomes:
             # Load genomic data and maybe labels (labels aren't currently used)
-            one_hot_chr = genome[chr_id]
+            try:
+                one_hot_chr = genome[chr_id]
+            except KeyError:
+                warnings.warn(Warning(
+                    f"{chr_id} is not a valid chromosome ID in {args.genome}, "
+                    "skipping..."))
+                continue
             indexes, data = utils.chunk_chr(
                 one_hot_chr,
                 args.read_length)
@@ -143,5 +149,5 @@ if __name__ == "__main__":
             else:
                 all_preds[f"chr{chr_id}"] = preds
         if not args.multi_file:
-            np.savez_compressed(Path(args.output, f"preds_on_genome"),
+            np.savez_compressed(Path(args.output, f"preds_on_{args.genome}"),
                                 **all_preds)
