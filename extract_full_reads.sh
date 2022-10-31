@@ -30,8 +30,8 @@ then
     fastq_1=${fastq_files[0]}
     fastq_2=${fastq_files[1]}
     # linearize both fastq files
-    awk 'NR%4==1 {printf("%s%s\t",(N>0?"\n":""),$0);N++;next;} {printf("%s\t",$0);} END {printf("\n")}' $fastq_1 > $fastq_1'_tmp'
-    awk 'NR%4==1 {printf("%s%s\t",(N>0?"\n":""),$0);N++;next;} {printf("%s\t",$0);} END {printf("\n")}' $fastq_2 > $fastq_2'_tmp'
+    awk 'FNR%4==1 {printf("%s%s\t",(N>0?"\n":""),$0);N++;next;} {printf("%s\t",$0);} END {printf("\n")}' $fastq_1 > $fastq_1'_tmp'
+    awk 'FNR%4==1 {printf("%s%s\t",(N>0?"\n":""),$0);N++;next;} {printf("%s\t",$0);} END {printf("\n")}' $fastq_2 > $fastq_2'_tmp'
     # extract ids of reads matching subsampled sequence from at least one end
     awk -v l=$length -F ' |\t' '(length($3)==l && index($3, "N")==0) {if (FNR==NR) {ids1[$1];next;} if ($1 in ids1) {ids2[$1]}} END {for (id in ids) {print id}}' $fastq_1'_tmp' $fastq_2'_tmp' > $sequences'_ids'
     # extract fastq lines with corresponding ids in each file
@@ -43,9 +43,9 @@ then
 else
     echo 'processing as single-end...'
     # merge and linearize fastq files
-    awk 'NR%4==1 {printf("%s%s\t",(N>0?"\n":""),$0);N++;next;} {printf("%s\t",$0);} END {printf("\n")}' $fastq_files > $final_name'_tmp'
+    awk 'FNR%4==1 {printf("%s%s\t",(N>0?"\n":""),$0);N++;next;} {printf("%s\t",$0);} END {printf("\n")}' $fastq_files > $final_name'_tmp'
     # extract fastq lines with sequence of correct length
-    awk -v l=$length -F '\t' '(length($2)==l && index($2, "N")==0) {printf("%s\n%s\n%s\n%s\n",$1,$2,$3,$4); }' $final_name'_tmp' | shuf > $final_name
+    awk -v l=$length -F '\t' '(length($2)==l && index($2, "N")==0) {printf("%s\n%s\n%s\n%s\n",$1,$2,$3,$4); }' $final_name'_tmp' > $final_name
     rm $final_name'_tmp'
 fi
 echo 'done'
