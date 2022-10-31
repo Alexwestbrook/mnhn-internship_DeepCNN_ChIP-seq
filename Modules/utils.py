@@ -80,6 +80,13 @@ def load_chr(chr_file, window_size, remove_Ns=False):
     """
     with np.load(chr_file) as f:
         one_hot_chr = f['one_hot_genome']
+    return chunk_chr(one_hot_chr, window_size, remove_Ns=remove_Ns)
+
+
+def chunk_chr(one_hot_chr, window_size, remove_Ns=False):
+    """
+    Load all sliding windows of a chromosome
+    """
     sliding_window = sliding_window_view(
         one_hot_chr,
         (window_size, 4),
