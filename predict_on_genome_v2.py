@@ -149,5 +149,5 @@ if __name__ == "__main__":
             else:
                 all_preds[f"chr{chr_id}"] = preds
         if not args.multi_file:
-            np.savez_compressed(Path(args.output, f"preds_on_{args.genome}"),
+            np.savez_compressed(Path(args.output, f"preds_on_{Path(args.genome).name}"),
                                 **all_preds)
