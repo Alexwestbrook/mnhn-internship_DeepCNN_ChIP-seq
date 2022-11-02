@@ -14,6 +14,7 @@ from scipy.signal import gaussian, convolve
 from scipy.sparse import coo_matrix
 
 import pyBigWig
+import pysam
 
 
 def data_generation(IDs, reads, labels, class_weights):
@@ -766,6 +767,25 @@ def parse_sam(sam_file: str, verbose=True) -> None:
             # Record only the leftmost read of each pair
             if tlen > 0:
                 # middle = math.floor((pos + pnext + len(seq)) / 2)
+                chr_coord[rname].append([pos, pos + tlen])
+            else:
+                rejected_count += 1
+            total_count += 1
+    if verbose:
+        print(f'{rejected_count}/{total_count} paired reads rejected')
+    return chr_coord
+
+
+def parse_bam(sam_file: str, verbose=True) -> None:
+    with pysam.AlignmentFile(sam_file, 'rb') as f:
+        chr_coord = defaultdict(list)
+        rejected_count = 0
+        total_count = 0
+        for read in f.fetch():
+            tlen = read.template_length
+            if tlen > 0:
+                rname = read.reference_name
+                pos = read.reference_start
                 chr_coord[rname].append([pos, pos + tlen])
             else:
                 rejected_count += 1
