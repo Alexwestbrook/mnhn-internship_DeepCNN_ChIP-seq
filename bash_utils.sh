@@ -1,5 +1,6 @@
 # find recursively files with specific name
-find . -mindepth 2 -type f -name "*.fastq"
+find . -mindepth 1 -type f -name "*.fastq"
+find . -mindepth 1 -type f -name "*.sam" -exec du -ch {} +
 
 # bash arithmetic on wc
 expr `wc -l < file` / 4
