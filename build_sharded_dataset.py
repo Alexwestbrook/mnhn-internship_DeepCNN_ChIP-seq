@@ -200,14 +200,16 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     cur_shard = 0
     ids, shard = [], []
     # Read files
-    for read in chain(*zip(ip_iter, control_iter)):
-        # Get id and sequence
-        id, seq, *_ = read
-        if not keepNs and (len(seq.rstrip()) < read_length
-                           or 'N' in seq):
-            continue
-        ids.append(id.rstrip())
-        shard.append(seq.rstrip())
+    # chain(*zip(ip_iter, control_iter))
+    for reads in zip(ip_iter, control_iter):
+        for read in reads:
+            # Get id and sequence
+            id, seq, *_ = read
+            if not keepNs and (len(seq.rstrip()) < read_length
+                            or 'N' in seq):
+                continue
+            ids.append(id.rstrip())
+            shard.append(seq.rstrip())
         # When shard is full, save it
         if len(shard) == cur_shard_size:
             save_shard()
