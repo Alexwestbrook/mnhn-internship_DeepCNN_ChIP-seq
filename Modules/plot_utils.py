@@ -94,3 +94,37 @@ def metaplot_over_indices(values,
     plt.show()
     plt.close()
     return return_values + (mean_values, window)
+
+
+def add_legend(axes):
+    handles, labels = [], []
+    for ax in axes:
+        handle, label = ax.get_legend_handles_labels()
+        handles += handle
+        labels += label
+    return handles, labels
+
+
+def binned_plot(values, ax, start, end, bins, **kwargs):
+    bin_start = (start // bins) * bins + bins // 2
+    bin_end = (end // bins) * bins + bins // 2
+    ax.plot(
+        np.arange(bin_start, bin_end, bins),
+        values[start//bins:end//bins],
+        **kwargs)
+
+
+def compare_binned_plots(values_list, label_list, start, end, bins, **kwargs):
+    prop_cycle = plt.rcParams['axes.prop_cycle']
+    colors = prop_cycle.by_key()['color']
+    axes = []
+    for i, values in enumerate(values_list):
+        if i == 0:
+            axes.append(plt.subplot())
+        else:
+            axes.append(axes[i-1].twinx())
+        binned_plot(values, axes[i], start, end, bins,
+                    label=label_list[i], color=colors[i], **kwargs)
+    handles, labels = add_legend(axes)
+    plt.legend(handles, labels, fontsize=16)
+    return axes

@@ -910,7 +910,8 @@ def smooth(values, window_size, mode='linear', sigma=1):
 
 
 def binned_alignment_signal_from_coord(coord: np.ndarray,
-                                       bins: int = 100) -> np.ndarray:
+                                       bins: int = 100,
+                                       length: int = None) -> np.ndarray:
     """
     Build alignment signal from read coordinates.
 
@@ -924,6 +925,8 @@ def binned_alignment_signal_from_coord(coord: np.ndarray,
         2D-array of coordinates for start and end of each fragment.
     bins : int, default=100
         Length of bins, in bases, to divide the signal into.
+    length : int, optional
+        Length of the full chromosome
 
     Returns
     -------
@@ -937,10 +940,16 @@ def binned_alignment_signal_from_coord(coord: np.ndarray,
     """
     binned_mid = np.floor(np.mean(coord, axis=1) // bins)
     binned_mid = np.array(binned_mid, dtype=int)
+    if length is None:
+        length = np.max(binned_mid) + 1
+    else:
+        length = length // bins + 1
+        if length < np.max(binned_mid) + 1:
+            raise ValueError("coordinates go beyond the specified length")
     binned_signal = coo_matrix(
         (np.ones(len(coord), dtype=int),
          (binned_mid, np.zeros(len(coord), dtype=int))),
-        shape=(np.max(binned_mid) + 1, 1)
+        shape=(length, 1)
     ).toarray().ravel()
     return binned_signal
 
@@ -1438,6 +1447,12 @@ def lineWiseCorrcoef(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     tmp = np.einsum('ij,ij->i', DX, DX)
     tmp *= np.einsum('i,i->', y, y)
     return np.dot(DX, y) / np.sqrt(tmp)
+
+
+def moving_average(x, n=2):
+    ret = np.cumsum(x)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:] / n
 
 
 # Other utils
