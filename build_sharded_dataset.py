@@ -206,7 +206,7 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
             # Get id and sequence
             id, seq, *_ = read
             if not keepNs and (len(seq.rstrip()) < read_length
-                            or 'N' in seq):
+                               or 'N' in seq):
                 continue
             ids.append(id.rstrip())
             shard.append(seq.rstrip())
