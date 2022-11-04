@@ -1464,6 +1464,25 @@ def s_plural(value: float) -> str:
         return ''
 
 
+def safe_filename(file: Path) -> Path:
+    """Make sure file can be build without overriding an other.
+
+    If file already exists, returns a new filename with a number in between
+    parenthesis.
+    """
+    # Build parent directories if needed
+    Path(file.parent).mkdir(parents=True, exist_ok=True)
+    # Change filename if it already exists
+    file_dups = 0
+    original_stem = file.stem
+    while file.exists():
+        file_dups += 1
+        file = Path(file.parent,
+                    original_stem + f'({file_dups})' + file.suffix)
+        # in python 3.9, use file.with_stem(original_stem + f'({file_dups})')
+    return file
+
+
 def ram_usage() -> None:
     """Print RAM memory usage.
 
