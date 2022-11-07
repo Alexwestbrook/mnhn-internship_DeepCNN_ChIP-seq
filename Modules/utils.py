@@ -776,7 +776,7 @@ def parse_sam(sam_file: str, verbose=True) -> None:
     return chr_coord
 
 
-def parse_bam(sam_file: str, verbose=True) -> None:
+def parse_bam(sam_file: str, mapq_thres=None, verbose=True) -> None:
     with pysam.AlignmentFile(sam_file, 'rb') as f:
         chr_coord = defaultdict(list)
         rejected_count = 0
@@ -786,7 +786,14 @@ def parse_bam(sam_file: str, verbose=True) -> None:
             if tlen > 0:
                 rname = read.reference_name
                 pos = read.reference_start
-                chr_coord[rname].append([pos, pos + tlen])
+                if mapq_thres is None:
+                    chr_coord[rname].append([pos, pos + tlen])
+                else:
+                    mapq = read.mapping_quality
+                    if mapq >= mapq_thres:
+                        chr_coord[rname].append([pos, pos + tlen])
+                    else:
+                        rejected_count += 1
             else:
                 rejected_count += 1
             total_count += 1
@@ -1453,6 +1460,11 @@ def moving_average(x, n=2):
     ret = np.cumsum(x)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
+
+
+def clip_to_nonzero_min(array):
+    array[array == 0] = array[array != 0].min()
+    return array
 
 
 # Other utils
