@@ -126,5 +126,7 @@ def compare_binned_plots(values_list, label_list, start, end, bins, **kwargs):
         binned_plot(values, axes[i], start, end, bins,
                     label=label_list[i], color=colors[i], **kwargs)
     handles, labels = add_legend(axes)
-    plt.legend(handles, labels, fontsize=16)
+    leg = plt.legend(handles, labels, fontsize=16)
+    for line in leg.get_lines():
+        line.set_linewidth(2)
     return axes
