@@ -42,6 +42,7 @@ else
     bowtie2 -p $threads -x $index -U $data_dir/$fastq_prefix.fastq -S $out_prefix.sam
 fi
 samtools view -bS $out_prefix.sam > $out_prefix.bam
+rm $out_prefix.sam
 samtools sort $out_prefix.bam -o $out_prefix.sorted.bam
 samtools index $out_prefix.sorted.bam
 
