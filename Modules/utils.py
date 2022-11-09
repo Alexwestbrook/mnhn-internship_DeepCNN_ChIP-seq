@@ -786,8 +786,6 @@ def parse_bam(bam_file: str, mapq_thres=None, verbose=True, paired=True,
             if paired:
                 tlen = read.template_length
                 if tlen <= 0:
-                    rejected_count += 1
-                    total_count += 1
                     continue
             else:
                 tlen = fragment_length
@@ -803,7 +801,7 @@ def parse_bam(bam_file: str, mapq_thres=None, verbose=True, paired=True,
                     rejected_count += 1
             total_count += 1
     if verbose:
-        print(f'{rejected_count}/{total_count} paired reads rejected')
+        print(f'{rejected_count}/{total_count} reads rejected')
     return chr_coord
 
 
