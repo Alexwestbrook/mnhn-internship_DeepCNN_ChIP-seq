@@ -776,26 +776,31 @@ def parse_sam(sam_file: str, verbose=True) -> None:
     return chr_coord
 
 
-def parse_bam(sam_file: str, mapq_thres=None, verbose=True) -> None:
-    with pysam.AlignmentFile(sam_file, 'rb') as f:
+def parse_bam(bam_file: str, mapq_thres=None, verbose=True, paired=True,
+              fragment_length=None) -> None:
+    with pysam.AlignmentFile(bam_file, 'rb') as f:
         chr_coord = defaultdict(list)
         rejected_count = 0
         total_count = 0
         for read in f.fetch():
-            tlen = read.template_length
-            if tlen > 0:
-                rname = read.reference_name
-                pos = read.reference_start
-                if mapq_thres is None:
+            if paired:
+                tlen = read.template_length
+                if tlen <= 0:
+                    rejected_count += 1
+                    total_count += 1
+                    continue
+            else:
+                tlen = fragment_length
+            rname = read.reference_name
+            pos = read.reference_start
+            if mapq_thres is None:
+                chr_coord[rname].append([pos, pos + tlen])
+            else:
+                mapq = read.mapping_quality
+                if mapq >= mapq_thres:
                     chr_coord[rname].append([pos, pos + tlen])
                 else:
-                    mapq = read.mapping_quality
-                    if mapq >= mapq_thres:
-                        chr_coord[rname].append([pos, pos + tlen])
-                    else:
-                        rejected_count += 1
-            else:
-                rejected_count += 1
+                    rejected_count += 1
             total_count += 1
     if verbose:
         print(f'{rejected_count}/{total_count} paired reads rejected')
