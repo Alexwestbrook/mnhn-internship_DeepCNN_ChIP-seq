@@ -20,7 +20,9 @@ def metaplot_over_indices(values,
                           plot='simple',
                           res_dir=None,
                           data='unknown_data',
-                          chr='unknown_chr'):
+                          chr='unknown_chr',
+                          vmin=None,
+                          vmax=None):
     if anchor == 'center':
         window = np.arange(-window_half_size, window_half_size + 1)
     elif anchor == 'start':
@@ -61,7 +63,7 @@ def metaplot_over_indices(values,
         ax00 = axs[0, 0]
         ax00.plot(mean_values, label=label, color=colors[1])
         ax00.axvline(x=window_half_size+1, color='black', linestyle='--',
-                     label='ENCODE peak center')
+                     label='peak center')
         handles, labels = ax00.get_legend_handles_labels()
         if compare:
             ax2 = ax00.twinx()
@@ -77,7 +79,7 @@ def metaplot_over_indices(values,
         df = pd.DataFrame(values[new_indices], columns=window)
         sns.heatmap(df, center=0, ax=axs[1, 0], cbar_ax=axs[1, 1],
                     xticklabels=window_half_size, yticklabels=1000,
-                    robust=True, vmin=0, vmax=1)
+                    robust=False, vmin=vmin, vmax=vmax)
         return_values = (corrs,)
     elif plot == 'clustermap':
         corr_matrix = np.corrcoef(values[indices])
@@ -86,7 +88,7 @@ def metaplot_over_indices(values,
         clust = sns.clustermap(values[indices], center=0,
                                row_linkage=link_matrix, col_cluster=False,
                                xticklabels=window_half_size,
-                               yticklabels=1000, robust=True)
+                               yticklabels=1000, robust=False)
         return_values = (clust,)
     if res_dir:
         plt.savefig(Path(res_dir, f'metaplot_{data}_{plot}_{chr}_peaks.png'),
