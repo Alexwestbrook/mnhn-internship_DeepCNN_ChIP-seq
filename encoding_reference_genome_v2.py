@@ -151,9 +151,9 @@ with open(args.genome_file, 'r') as f:
     genome_bases = sum([(len(batches)-1)*batch_size + len(batches[-1])
                         for batches in genome.values()])
     nb_batches = sum(len(batches) for batches in genome.values())
-    print(f'Processing {n_seqs} sequence{utils.s_plural(n_seqs)} '
-          f'with {genome_bases} base{utils.s_plural(genome_bases)} '
-          f'into {nb_batches} batche{utils.s_plural(nb_batches)}')
+    print(f'Processing {n_seqs} sequences '
+          f'with {genome_bases} bases '
+          f'into {nb_batches} batches')
 if args.timing:
     times['parsing'] = time.time() - t0
 
