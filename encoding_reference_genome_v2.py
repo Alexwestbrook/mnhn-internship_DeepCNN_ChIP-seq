@@ -102,6 +102,7 @@ with open(args.genome_file, 'r') as f:
     genome = {}
     n_seqs = 0
     sequence = ''
+    skip = False
     for line in f:
         if line[0] == '>':  # First line header, discard this line
             # Save remaining sequence of previous chromosome
@@ -112,11 +113,18 @@ with open(args.genome_file, 'r') as f:
             id, *_ = line.split()
             id = id[1:]
             # Maybe convert to input key names
-            if args.key_names and (id in args.key_names.keys()):
-                id = args.key_names[id]
+            if args.key_names:
+                if id in args.key_names.keys():
+                    id = args.key_names[id]
+                    skip = False
+                else:
+                    skip = True
+                    continue
             genome[id] = []
             n_seqs += 1
         else:
+            if skip:
+                continue
             sequence += line.rstrip()
             # split sequence into batches
             batches = [sequence[start:start+batch_size]
