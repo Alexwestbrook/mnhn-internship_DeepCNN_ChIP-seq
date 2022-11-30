@@ -886,7 +886,7 @@ def parse_sam(sam_file: str, verbose=True) -> None:
 
 
 def parse_bam(bam_file: str, mapq_thres=None, verbose=True, paired=True,
-              fragment_length=None) -> None:
+              fragment_length=None, max_fragment_len=None) -> None:
     with pysam.AlignmentFile(bam_file, 'rb') as f:
         chr_coord = defaultdict(list)
         rejected_count = 0
@@ -896,19 +896,24 @@ def parse_bam(bam_file: str, mapq_thres=None, verbose=True, paired=True,
                 tlen = read.template_length
                 if tlen <= 0:
                     continue
+                if max_fragment_len is not None and tlen > max_fragment_len:
+                    rejected_count += 1
+                    total_count += 1
+                    continue
             else:
                 tlen = fragment_length
-            rname = read.reference_name
-            pos = read.reference_start
-            if mapq_thres is None:
-                chr_coord[rname].append([pos, pos + tlen])
-            else:
-                mapq = read.mapping_quality
-                if mapq >= mapq_thres:
-                    chr_coord[rname].append([pos, pos + tlen])
-                else:
-                    rejected_count += 1
             total_count += 1
+            if ((mapq_thres is not None
+                 and read.mapping_quality < mapq_thres)
+                or (max_fragment_len is not None
+                    and tlen > max_fragment_len)):
+                # reject the read
+                rejected_count += 1
+                continue
+            else:
+                rname = read.reference_name
+                pos = read.reference_start
+                chr_coord[rname].append([pos, pos + tlen])
     if verbose:
         print(f'{rejected_count}/{total_count} reads rejected')
     return chr_coord
@@ -1163,7 +1168,7 @@ def enrichment_analysis(signal, ctrl, verbose=True, data='signal'):
 
 def merging_full_genome(data,
                         genome,
-                        threshold,
+                        max_fragment_len,
                         bins,
                         access='',
                         verbose=True,
@@ -1183,8 +1188,8 @@ def merging_full_genome(data,
     for i, chr_id in enumerate(chr_ids.keys()):
         df = pd.read_csv(
             Path(data_dir, data, 'results', 'alignments', genome,
-                 f'{data}{access}_{genome}_chr{chr_id}_thres_{threshold}'
-                 f'_binned_{bins}.csv'),
+                 f'{data}{access}_{genome}_chr{chr_id}_'
+                 f'thres_{max_fragment_len}_binned_{bins}.csv'),
             index_col=0)
         if i == 0:
             full_genome = pd.DataFrame(
@@ -1711,6 +1716,15 @@ def lineWiseCorrcoef(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     tmp = np.einsum('ij,ij->i', DX, DX)
     tmp *= np.einsum('i,i->', y, y)
     return np.dot(DX, y) / np.sqrt(tmp)
+
+
+def vcorrcoef(X, Y):
+    Xm = np.reshape(np.mean(X, axis=1), (X.shape[0], 1))
+    Ym = np.reshape(np.mean(Y, axis=1), (Y.shape[0], 1))
+    r_num = np.sum((X-Xm)*(Y-Ym), axis=1)
+    r_den = np.sqrt(np.sum((X-Xm)**2, axis=1)*np.sum((Y-Ym)**2, axis=1))
+    r = r_num/r_den
+    return r
 
 
 def moving_average(x, n=2):
