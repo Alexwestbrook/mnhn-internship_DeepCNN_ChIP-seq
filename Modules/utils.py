@@ -885,8 +885,16 @@ def parse_sam(sam_file: str, verbose=True) -> None:
     return chr_coord
 
 
-def parse_bam(bam_file: str, mapq_thres=None, verbose=True, paired=True,
-              fragment_length=None, max_fragment_len=None) -> None:
+def parse_bam(bam_file: str,
+              mapq_thres=None,
+              verbose=True,
+              paired=True,
+              fragment_length=None,
+              max_fragment_len=None,
+              id_file=None) -> None:
+    if id_file:
+        with open(id_file) as f_id:
+            ids_set = {x.strip() for x in f_id}
     with pysam.AlignmentFile(bam_file, 'rb') as f:
         chr_coord = defaultdict(list)
         rejected_count = 0
@@ -906,7 +914,9 @@ def parse_bam(bam_file: str, mapq_thres=None, verbose=True, paired=True,
             if ((mapq_thres is not None
                  and read.mapping_quality < mapq_thres)
                 or (max_fragment_len is not None
-                    and tlen > max_fragment_len)):
+                    and tlen > max_fragment_len)
+                or (id_file is not None
+                    and read.query_name not in ids_set)):
                 # reject the read
                 rejected_count += 1
                 continue
