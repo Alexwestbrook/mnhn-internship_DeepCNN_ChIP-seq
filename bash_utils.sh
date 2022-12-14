@@ -16,3 +16,9 @@ awk 'BEGIN {RS=">";FS="\n";OFS=""} NR>1 {print ">"$1; $1=""; print}' $fasta > $n
 
 # count base occurence in fasta
 awk '/^>/ {next} {for(i=1;i<=length($0);i++) {array[substr($1,i,1)]++}} END {for(key in array) {print key ": " array[key]}}' $fasta
+
+# get ids in fastq
+awk 'NR%4 == 1 {print $1}' $fastq > $id_file
+
+# subsample ids
+shuf $id_file | awk 'NR <= num {print $0}' > $sub_id_file
