@@ -175,7 +175,8 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
         print('read length is', read_length)
 
     # Handle file iteration
-    file_iter = build_file_iterator(ip_files + control_files)
+    file_iters = zip(
+        build_file_iterator(file) for file in ip_files + control_files)
 
     # Handle train-valid-test splits
     splits = zip(['test', 'valid', 'train'], get_split_iterators())
@@ -184,24 +185,26 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     cur_shard_size = next(cur_split_shards)
     cur_shard = 0
     ids, shard = [], []
-    even = True
+
     cpt = 0
     # Read files
-    for read in file_iter:
-        # Get id and sequence
-        id, seq, *_ = read
-        if cpt <= 10:
-            print(cpt, id, ids)
-            cpt += 1
-        if not keepNs and (len(seq.rstrip()) < read_length
-                           or 'N' in seq):
-            continue
-        if even:
-            ids.append(id.rstrip())
-            even = False
-        else:
-            even = True
-        shard.append(seq.rstrip())
+    for reads in file_iters:
+        even = True
+        for read in reads:
+            # Get id and sequence
+            id, seq, *_ = read
+            if cpt <= 10:
+                print(cpt, id, ids)
+                cpt += 1
+            # if not keepNs and (len(seq.rstrip()) < read_length
+            #                 or 'N' in seq):
+            #     continue
+            if even:
+                ids.append(id.rstrip())
+                even = False
+            else:
+                even = True
+            shard.append(seq.rstrip())
         # When shard is full, save it
         if len(shard) == cur_shard_size:
             save_shard()
