@@ -894,7 +894,7 @@ def parse_bam(bam_file: str,
               id_file=None) -> None:
     if id_file:
         with open(id_file) as f_id:
-            ids_set = {x.strip() for x in f_id}
+            ids_set = {x.split()[0][1:] for x in f_id}
     with pysam.AlignmentFile(bam_file, 'rb') as f:
         chr_coord = defaultdict(list)
         rejected_count = 0
@@ -1180,9 +1180,11 @@ def merging_full_genome(data,
                         genome,
                         max_fragment_len,
                         bins,
+                        downsamples=[1],
+                        reverse=False,
                         access='',
                         verbose=True,
-                        data_dir='shared_folder'):
+                        data_dir='../shared_folder'):
     if genome == 'T2T-CHM13v2.0':
         lengths = T2T_lengths
         chr_ids = T2T_chr_ids
@@ -1217,23 +1219,112 @@ def merging_full_genome(data,
                                           + sums["ctrl_binned_signal"])
     n_binom = (full_genome["ip_binned_signal"]
                + full_genome["ctrl_binned_signal"])
-    full_genome['binom_p_value_complete'] = clip_to_nonzero_min(
-        1 - scipy.stats.binom.cdf(full_genome["ip_binned_signal"] - 1,
-                                  n_binom, p_binom))
-    reject, q_value, *_ = multitest.multipletests(
-        full_genome["binom_p_value_complete"], method='fdr_bh')
-    full_genome['binom_q_value_complete'] = q_value
-    full_genome['-log(qvalue_complete)'] = -np.log10(q_value)
-    full_genome['-log(pvalue_complete)'] = -np.log10(
-        full_genome["binom_p_value_complete"])
-    full_genome['significantly_enriched'] = reject
+    for div in downsamples:
+        n = n_binom / div
+        full_genome[f'pvalue_divby{div}'] = clip_to_nonzero_min(
+            1 - scipy.stats.binom.cdf(
+                full_genome["ip_binned_signal"] / div - 1, n, p_binom))
+        reject, q_value, *_ = multitest.multipletests(
+            full_genome[f"pvalue_divby{div}"], method='fdr_bh')
+        full_genome[f'qvalue_divby{div}'] = q_value
+        full_genome[f'-log(qvalue_divby{div})'] = -np.log10(q_value)
+        full_genome[f'-log(pvalue_divby{div})'] = -np.log10(
+            full_genome[f"pvalue_divby{div}"])
+        full_genome[f'significant_divby{div}'] = reject
+        if verbose:
+            print(f'{np.sum(reject)}/{len(reject)} significantly '
+                  f'enriched bins in {data}{access} downsampled by {div}')
+        if reverse:
+            full_genome[f'rev_pvalue_divby{div}'] = clip_to_nonzero_min(
+                1 - scipy.stats.binom.cdf(
+                    full_genome["ctrl_binned_signal"] / div - 1, n, p_binom))
+            reject, q_value, *_ = multitest.multipletests(
+                full_genome[f"rev_pvalue_divby{div}"], method='fdr_bh')
+            full_genome[f'rev_qvalue_divby{div}'] = q_value
+            full_genome[f'-log(rev_qvalue_divby{div})'] = -np.log10(q_value)
+            full_genome[f'-log(rev_pvalue_divby{div})'] = -np.log10(
+                full_genome[f"rev_pvalue_divby{div}"])
+            full_genome[f'rev_significant_divby{div}'] = reject
+            if verbose:
+                print(f'{np.sum(reject)}/{len(reject)} significantly '
+                      f'control bins in {data}{access} downsampled by {div}')
     if verbose:
-        print(f'{np.sum(reject)}/{len(reject)} '
-              f'significantly enriched bins in {data}{access}')
         print(f'{np.sum(full_genome["binom_q_value"]<0.05)}/{len(reject)} '
-              f'significantly enriched bins in {data}{access} when chromosome '
-              'local')
+              f'significantly enriched bins in {data}{access} when '
+              'chromosome local')
     return full_genome, seperators
+
+
+def downsample_enrichment_analysis(data,
+                                   genome,
+                                   max_fragment_len,
+                                   bins_list=[1000],
+                                   div_list=[1],
+                                   reverse=True,
+                                   data_dir='../shared_folder'):
+    mindex = pd.MultiIndex.from_product([bins_list, div_list])
+    if reverse:
+        res = pd.DataFrame(index=mindex,
+                           columns=['IP', 'Undetermined', 'Ctrl'])
+    else:
+        res = pd.DataFrame(index=mindex, columns=['IP', 'Undetermined'])
+    if genome == 'T2T-CHM13v2.0':
+        lengths = T2T_lengths
+        chr_ids = T2T_chr_ids
+    elif genome == 'GRCh38':
+        lengths = GRCh38_lengths
+        chr_ids = hg38_chr_ids
+    # merging chromosomes
+    for bins in bins_list:
+        binned_lengths = np.array([x // bins + 1 for x in lengths.values()])
+        seperators = np.cumsum(binned_lengths)
+        total_length = seperators[-1]
+        for i, chr_id in enumerate(chr_ids.keys()):
+            df = pd.read_csv(
+                Path(data_dir, data, 'results', 'alignments', genome,
+                     f'{data}_{genome}_chr{chr_id}_'
+                     f'thres_{max_fragment_len}_binned_{bins}.csv'),
+                index_col=0)
+            if i == 0:
+                full_genome = pd.DataFrame(
+                    np.zeros((total_length, len(df.columns))),
+                    columns=df.columns)
+            full_genome.iloc[seperators[i]-len(df):seperators[i], :] = df
+        # normalizing
+        sums = full_genome.sum(axis=0)
+        full_genome['norm_ip_cov'] = (full_genome['ip_binned_signal']
+                                      / sums['ip_binned_signal'])
+        full_genome['norm_ctrl_cov'] = (full_genome['ctrl_binned_signal']
+                                        / sums['ctrl_binned_signal'])
+        # computing p_value and q_value
+        p_binom = sums["ip_binned_signal"] / (sums["ip_binned_signal"]
+                                              + sums["ctrl_binned_signal"])
+        n_binom = (full_genome["ip_binned_signal"]
+                   + full_genome["ctrl_binned_signal"])
+        for div in div_list:
+            n = n_binom / div
+            full_genome[f'pvalue_divby{div}'] = clip_to_nonzero_min(
+                1 - scipy.stats.binom.cdf(
+                    full_genome["ip_binned_signal"] / div - 1, n, p_binom))
+            reject, *_ = multitest.multipletests(
+                full_genome[f"pvalue_divby{div}"], method='fdr_bh')
+            n_reject = np.sum(reject)
+            tot = len(reject)
+            if reverse:
+                full_genome[f'rev_pvalue_divby{div}'] = clip_to_nonzero_min(
+                    1 - scipy.stats.binom.cdf(
+                        full_genome["ctrl_binned_signal"] / div - 1,
+                        n, p_binom))
+                reject_rev, *_ = multitest.multipletests(
+                    full_genome[f"rev_pvalue_divby{div}"], method='fdr_bh')
+                n_reject_rev = np.sum(reject_rev)
+                res.loc[bins, div] = [n_reject,
+                                      tot - n_reject - n_reject_rev,
+                                      n_reject_rev]
+            else:
+                res.loc[bins, div] = [n_reject,
+                                      tot - n_reject]
+    return res
 
 
 def pool_experiments(dfs, verbose=True):
