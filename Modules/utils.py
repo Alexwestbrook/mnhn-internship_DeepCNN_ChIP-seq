@@ -306,7 +306,8 @@ def one_hot_decode(one_hot, read_length=101, one_hot_type=bool):
 
 def one_hot_encoding(array: np.ndarray,
                      read_length: int = 101,
-                     one_hot_type: type = bool) -> np.ndarray:
+                     one_hot_type: type = bool,
+                     order: str = 'ACGT') -> np.ndarray:
     """
     Applies one-hot encoding to every read sequence in an array.
 
@@ -339,12 +340,14 @@ def one_hot_encoding(array: np.ndarray,
     """
     return one_hot_encoding_v1(array,
                                read_length=read_length,
-                               one_hot_type=one_hot_type)
+                               one_hot_type=one_hot_type,
+                               order=order)
 
 
 def one_hot_encoding_v1(array: np.ndarray,
                         read_length: int = 101,
-                        one_hot_type: type = bool) -> np.ndarray:
+                        one_hot_type: type = bool,
+                        order: str = 'ACGT') -> np.ndarray:
     """
     Applies one hot encoding to every read sequence in an array.
 
@@ -378,13 +381,13 @@ def one_hot_encoding_v1(array: np.ndarray,
             unmatched_lengths += 1
         for j in range(min(len(seq), read_length)):
             base = seq[j].upper()
-            if base == 'A':
+            if base == order[0]:
                 new_array[i, j, 0] = 1
-            elif base == 'C':
+            elif base == order[1]:
                 new_array[i, j, 1] = 1
-            elif base == 'G':
+            elif base == order[2]:
                 new_array[i, j, 2] = 1
-            elif base == 'T':
+            elif base == order[3]:
                 new_array[i, j, 3] = 1
     if unmatched_lengths != 0:
         print(f"Warning: {unmatched_lengths} sequences don't have the "
