@@ -72,6 +72,11 @@ def parsing():
         default=1,
         type=int)
     parser.add_argument(
+        "-ord", "--order",
+        help="order of bases for one-hot encoding",
+        default='ACGT',
+        type=str)
+    parser.add_argument(
         "-time", "--timing",
         action="store_true",
         help="indicates to time operations")
@@ -86,6 +91,8 @@ def parsing():
                  "Please enter a valid genome file path.")
     if args.method not in {1, 2}:
         sys.exit(f"{args.method} is not a valid method.")
+    if len(args.order) != 4 or set(args.order) != set('ACGT'):
+        sys.exit(f"order must contain each base ACGT once and only once.")
     return args
 
 
@@ -102,6 +109,7 @@ with open(args.genome_file, 'r') as f:
     genome = {}
     n_seqs = 0
     sequence = ''
+    skip = False
     for line in f:
         if line[0] == '>':  # First line header, discard this line
             # Save remaining sequence of previous chromosome
@@ -112,11 +120,18 @@ with open(args.genome_file, 'r') as f:
             id, *_ = line.split()
             id = id[1:]
             # Maybe convert to input key names
-            if args.key_names and (id in args.key_names.keys()):
-                id = args.key_names[id]
+            if args.key_names:
+                if id in args.key_names.keys():
+                    id = args.key_names[id]
+                    skip = False
+                else:
+                    skip = True
+                    continue
             genome[id] = []
             n_seqs += 1
         else:
+            if skip:
+                continue
             sequence += line.rstrip()
             # split sequence into batches
             batches = [sequence[start:start+batch_size]
@@ -143,9 +158,9 @@ with open(args.genome_file, 'r') as f:
     genome_bases = sum([(len(batches)-1)*batch_size + len(batches[-1])
                         for batches in genome.values()])
     nb_batches = sum(len(batches) for batches in genome.values())
-    print(f'Processing {n_seqs} sequence{utils.s_plural(n_seqs)} '
-          f'with {genome_bases} base{utils.s_plural(genome_bases)} '
-          f'into {nb_batches} batche{utils.s_plural(nb_batches)}')
+    print(f'Processing {n_seqs} sequences '
+          f'with {genome_bases} bases '
+          f'into {nb_batches} batches')
 if args.timing:
     times['parsing'] = time.time() - t0
 
@@ -157,7 +172,8 @@ if args.method == 0:
         one_hot_batches = utils.one_hot_encoding(
             batches,
             read_length=batch_size,
-            one_hot_type=args.one_hot_type)
+            one_hot_type=args.one_hot_type,
+            order=args.order)
         # reshape into a single genome
         one_hot_genome[id] = one_hot_batches.reshape(
             (len(batches)*batch_size, 4))
@@ -171,13 +187,15 @@ elif args.method == 1:
             one_hot_batch = utils.one_hot_encoding(
                 [batch],
                 read_length=batch_size,
-                one_hot_type=args.one_hot_type)[0]
+                one_hot_type=args.one_hot_type,
+                order=args.order)[0]
             one_hot_batches[i*batch_size:(i+1)*batch_size] = one_hot_batch
         # process last batch seperately as it can have different length
         one_hot_batch = utils.one_hot_encoding(
             [batches[-1]],
             read_length=len(batches[-1]),
-            one_hot_type=args.one_hot_type)[0]
+            one_hot_type=args.one_hot_type,
+            order=args.order)[0]
         one_hot_batches[(len(batches)-1)*batch_size:] = one_hot_batch
         one_hot_genome[id] = one_hot_batches
 else:

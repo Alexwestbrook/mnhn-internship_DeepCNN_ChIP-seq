@@ -8,13 +8,122 @@ import re
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 from numpy.core.numeric import normalize_axis_tuple
+import pandas as pd
 
 from sklearn.preprocessing import OneHotEncoder
+import scipy
 from scipy.signal import gaussian, convolve
 from scipy.sparse import coo_matrix
 
+from statsmodels.stats import multitest
+
 import pyBigWig
 import pysam
+
+
+# Constants
+hg38_chr_ids = {
+    1: 'NC_000001.11',
+    2: 'NC_000002.12',
+    3: 'NC_000003.12',
+    4: 'NC_000004.12',
+    5: 'NC_000005.10',
+    6: 'NC_000006.12',
+    7: 'NC_000007.14',
+    8: 'NC_000008.11',
+    9: 'NC_000009.12',
+    10: 'NC_000010.11',
+    11: 'NC_000011.10',
+    12: 'NC_000012.12',
+    13: 'NC_000013.11',
+    14: 'NC_000014.9',
+    15: 'NC_000015.10',
+    16: 'NC_000016.10',
+    17: 'NC_000017.11',
+    18: 'NC_000018.10',
+    19: 'NC_000019.10',
+    20: 'NC_000020.11',
+    21: 'NC_000021.9',
+    22: 'NC_000022.11',
+    'X': 'NC_000023.11',
+    'Y': 'NC_000024.10'}
+T2T_chr_ids = {
+    '1': 'NC_060925.1',
+    '2': 'NC_060926.1',
+    '3': 'NC_060927.1',
+    '4': 'NC_060928.1',
+    '5': 'NC_060929.1',
+    '6': 'NC_060930.1',
+    '7': 'NC_060931.1',
+    '8': 'NC_060932.1',
+    '9': 'NC_060933.1',
+    '10': 'NC_060934.1',
+    '11': 'NC_060935.1',
+    '12': 'NC_060936.1',
+    '13': 'NC_060937.1',
+    '14': 'NC_060938.1',
+    '15': 'NC_060939.1',
+    '16': 'NC_060940.1',
+    '17': 'NC_060941.1',
+    '18': 'NC_060942.1',
+    '19': 'NC_060943.1',
+    '20': 'NC_060944.1',
+    '21': 'NC_060945.1',
+    '22': 'NC_060946.1',
+    'X': 'NC_060947.1',
+    'Y': 'NC_060948.1', }
+GRCh38_header = [
+    ("chr1", 248956422),
+    ("chr2", 242193529),
+    ("chr3", 198295559),
+    ("chr4", 190214555),
+    ("chr5", 181538259),
+    ("chr6", 170805979),
+    ("chr7", 159345973),
+    ("chr8", 145138636),
+    ("chr9", 138394717),
+    ("chr10", 133797422),
+    ("chr11", 135086622),
+    ("chr12", 133275309),
+    ("chr13", 114364328),
+    ("chr14", 107043718),
+    ("chr15", 101991189),
+    ("chr16", 90338345),
+    ("chr17", 83257441),
+    ("chr18", 80373285),
+    ("chr19", 58617616),
+    ("chr20", 64444167),
+    ("chr21", 46709983),
+    ("chr22", 50818468),
+    ("chrX", 156040895),
+    ("chrY", 57227415)]
+GRCh38_lengths = dict(GRCh38_header)
+T2T_header = [
+    ("chr1", 248387328),
+    ("chr2", 242696752),
+    ("chr3", 201105948),
+    ("chr4", 193574945),
+    ("chr5", 182045439),
+    ("chr6", 172126628),
+    ("chr7", 160567428),
+    ("chr8", 146259331),
+    ("chr9", 150617247),
+    ("chr10", 134758134),
+    ("chr11", 135127769),
+    ("chr12", 133324548),
+    ("chr13", 113566686),
+    ("chr14", 101161492),
+    ("chr15", 99753195),
+    ("chr16", 96330374),
+    ("chr17", 84276897),
+    ("chr18", 80542538),
+    ("chr19", 61707364),
+    ("chr20", 66210255),
+    ("chr21", 45090682),
+    ("chr22", 51324926),
+    ("chrX", 154259566),
+    ("chrY", 62460029)]
+T2T_lengths = dict(T2T_header)
 
 
 def data_generation(IDs, reads, labels, class_weights):
@@ -197,7 +306,8 @@ def one_hot_decode(one_hot, read_length=101, one_hot_type=bool):
 
 def one_hot_encoding(array: np.ndarray,
                      read_length: int = 101,
-                     one_hot_type: type = bool) -> np.ndarray:
+                     one_hot_type: type = bool,
+                     order: str = 'ACGT') -> np.ndarray:
     """
     Applies one-hot encoding to every read sequence in an array.
 
@@ -210,6 +320,8 @@ def one_hot_encoding(array: np.ndarray,
         while shorter strings will be filled with N bases
     one_hot_type : type, default=bool
         Type of the values in the one-hot encoding
+    order : str, default='ACGT'
+        Order of bases to use for one-hot encoding
 
     Returns
     -------
@@ -230,12 +342,14 @@ def one_hot_encoding(array: np.ndarray,
     """
     return one_hot_encoding_v1(array,
                                read_length=read_length,
-                               one_hot_type=one_hot_type)
+                               one_hot_type=one_hot_type,
+                               order=order)
 
 
 def one_hot_encoding_v1(array: np.ndarray,
                         read_length: int = 101,
-                        one_hot_type: type = bool) -> np.ndarray:
+                        one_hot_type: type = bool,
+                        order: str = 'ACGT') -> np.ndarray:
     """
     Applies one hot encoding to every read sequence in an array.
 
@@ -248,6 +362,8 @@ def one_hot_encoding_v1(array: np.ndarray,
         while shorter strings will be filled with N bases
     one_hot_type : type, default=bool
         Type of the values in the one-hot encoding
+    order : str, default='ACGT'
+        Order of bases to use for one-hot encoding
 
     Returns
     -------
@@ -269,13 +385,13 @@ def one_hot_encoding_v1(array: np.ndarray,
             unmatched_lengths += 1
         for j in range(min(len(seq), read_length)):
             base = seq[j].upper()
-            if base == 'A':
+            if base == order[0]:
                 new_array[i, j, 0] = 1
-            elif base == 'C':
+            elif base == order[1]:
                 new_array[i, j, 1] = 1
-            elif base == 'G':
+            elif base == order[2]:
                 new_array[i, j, 2] = 1
-            elif base == 'T':
+            elif base == order[3]:
                 new_array[i, j, 3] = 1
     if unmatched_lengths != 0:
         print(f"Warning: {unmatched_lengths} sequences don't have the "
@@ -710,7 +826,7 @@ def parse_bed_peaks(bed_file, window_size=101, merge=True):
         for line in f:
             line = line.rstrip()
             chr_id, start, end, _, score, *_ = line.split('\t')
-            chr_id = chr_id[3:]
+            # chr_id = chr_id[3:]
             start, end, score = tuple(
                 int(item) for item in (start, end, score))
             if chr_id in chr_peaks.keys():
@@ -776,29 +892,47 @@ def parse_sam(sam_file: str, verbose=True) -> None:
     return chr_coord
 
 
-def parse_bam(sam_file: str, mapq_thres=None, verbose=True) -> None:
-    with pysam.AlignmentFile(sam_file, 'rb') as f:
+def parse_bam(bam_file: str,
+              mapq_thres=None,
+              verbose=True,
+              paired=True,
+              fragment_length=None,
+              max_fragment_len=None,
+              id_file=None) -> None:
+    if id_file:
+        with open(id_file) as f_id:
+            ids_set = {x.split()[0][1:] for x in f_id}
+    with pysam.AlignmentFile(bam_file, 'rb') as f:
         chr_coord = defaultdict(list)
         rejected_count = 0
         total_count = 0
         for read in f.fetch():
-            tlen = read.template_length
-            if tlen > 0:
+            if paired:
+                tlen = read.template_length
+                if tlen <= 0:
+                    continue
+                if max_fragment_len is not None and tlen > max_fragment_len:
+                    rejected_count += 1
+                    total_count += 1
+                    continue
+            else:
+                tlen = fragment_length
+            total_count += 1
+            if ((mapq_thres is not None
+                 and read.mapping_quality < mapq_thres)
+                or (max_fragment_len is not None
+                    and tlen > max_fragment_len)
+                or (id_file is not None
+                    and read.query_name not in ids_set)):
+                # reject the read
+                rejected_count += 1
+                continue
+            else:
                 rname = read.reference_name
                 pos = read.reference_start
-                if mapq_thres is None:
-                    chr_coord[rname].append([pos, pos + tlen])
-                else:
-                    mapq = read.mapping_quality
-                    if mapq >= mapq_thres:
-                        chr_coord[rname].append([pos, pos + tlen])
-                    else:
-                        rejected_count += 1
-            else:
-                rejected_count += 1
-            total_count += 1
+                chr_coord[rname].append([pos, pos + tlen])
     if verbose:
-        print(f'{rejected_count}/{total_count} paired reads rejected')
+        print(f'{rejected_count}/{total_count} reads rejected')
     return chr_coord
 
 
@@ -990,6 +1124,242 @@ def exact_alignment_signal_from_coord(coord: np.ndarray) -> np.ndarray:
     return signal
 
 
+def bin_preds(preds, bins):
+    if len(preds) % bins == 0:
+        binned_preds = np.mean(strided_window_view(preds, bins, bins), axis=1)
+    else:
+        binned_preds = np.append(
+            np.mean(strided_window_view(preds, bins, bins), axis=1),
+            np.mean(preds[-(len(preds) % bins):]))
+    return binned_preds
+
+
+def full_genome_binned_preds(data,
+                             genome,
+                             model_name,
+                             bins,
+                             data_dir='shared_folder'):
+    if genome == 'T2T-CHM13v2.0':
+        lengths = T2T_lengths
+        chr_ids = T2T_chr_ids
+    elif genome == 'GRCh38':
+        lengths = GRCh38_lengths
+        chr_ids = hg38_chr_ids
+    # merging chromosomes
+    binned_lengths = np.array([x // bins + 1 for x in lengths.values()])
+    seperators = np.cumsum(binned_lengths)
+    total_length = seperators[-1]
+    full = np.zeros(total_length)
+    for i, chr_id in enumerate(chr_ids.keys()):
+        with np.load(Path(data_dir,
+                          data,
+                          'results',
+                          model_name,
+                          f'preds_on_{genome}.npz')) as f:
+            preds = f[f'chr{chr_id}']
+        binned_preds = bin_preds(preds, bins)
+        full[seperators[i]-len(binned_preds):seperators[i]] = binned_preds
+    return full, seperators
+
+
+def enrichment_analysis(signal, ctrl, verbose=True, data='signal'):
+    n_binom = signal + ctrl
+    p_binom = np.sum(signal) / np.sum(n_binom)
+    binom_pvalue = clip_to_nonzero_min(
+        1 - scipy.stats.binom.cdf(signal - 1, n_binom, p_binom))
+    reject, qvalue, *_ = multitest.multipletests(binom_pvalue, method='fdr_bh')
+    binom_qvalue = qvalue
+    neg_log_qvalue = -np.log10(qvalue)
+    neg_log_pvalue = -np.log10(binom_pvalue)
+    significantly_enriched = reject
+    if verbose:
+        print(f'{np.sum(reject)}/{len(reject)} '
+              f'significantly enriched bins in {data}')
+    return pd.DataFrame({
+        "binom_p_value_complete": binom_pvalue,
+        "binom_q_value_complete": binom_qvalue,
+        "-log(pvalue_complete)": neg_log_pvalue,
+        "-log(qvalue_complete)": neg_log_qvalue,
+        "significantly_enriched": significantly_enriched})
+
+
+def merging_full_genome(data,
+                        genome,
+                        max_fragment_len,
+                        bins,
+                        downsamples=[1],
+                        reverse=False,
+                        access='',
+                        verbose=True,
+                        data_dir='../shared_folder'):
+    if genome == 'T2T-CHM13v2.0':
+        lengths = T2T_lengths
+        chr_ids = T2T_chr_ids
+    elif genome == 'GRCh38':
+        lengths = GRCh38_lengths
+        chr_ids = hg38_chr_ids
+    if access != '':
+        access = '_' + access
+    # merging chromosomes
+    binned_lengths = np.array([x // bins + 1 for x in lengths.values()])
+    seperators = np.cumsum(binned_lengths)
+    total_length = seperators[-1]
+    for i, chr_id in enumerate(chr_ids.keys()):
+        df = pd.read_csv(
+            Path(data_dir, data, 'results', 'alignments', genome,
+                 f'{data}{access}_{genome}_chr{chr_id}_'
+                 f'thres_{max_fragment_len}_binned_{bins}.csv'),
+            index_col=0)
+        if i == 0:
+            full_genome = pd.DataFrame(
+                np.zeros((total_length, len(df.columns))),
+                columns=df.columns)
+        full_genome.iloc[seperators[i]-len(df):seperators[i], :] = df
+    # normalizing
+    sums = full_genome.sum(axis=0)
+    full_genome['norm_ip_cov'] = (full_genome['ip_binned_signal']
+                                  / sums['ip_binned_signal'])
+    full_genome['norm_ctrl_cov'] = (full_genome['ctrl_binned_signal']
+                                    / sums['ctrl_binned_signal'])
+    # computing p_value and q_value
+    p_binom = sums["ip_binned_signal"] / (sums["ip_binned_signal"]
+                                          + sums["ctrl_binned_signal"])
+    n_binom = (full_genome["ip_binned_signal"]
+               + full_genome["ctrl_binned_signal"])
+    for div in downsamples:
+        n = n_binom / div
+        full_genome[f'pvalue_divby{div}'] = clip_to_nonzero_min(
+            1 - scipy.stats.binom.cdf(
+                full_genome["ip_binned_signal"] / div - 1, n, p_binom))
+        reject, q_value, *_ = multitest.multipletests(
+            full_genome[f"pvalue_divby{div}"], method='fdr_bh')
+        full_genome[f'qvalue_divby{div}'] = q_value
+        full_genome[f'-log(qvalue_divby{div})'] = -np.log10(q_value)
+        full_genome[f'-log(pvalue_divby{div})'] = -np.log10(
+            full_genome[f"pvalue_divby{div}"])
+        full_genome[f'significant_divby{div}'] = reject
+        if verbose:
+            print(f'{np.sum(reject)}/{len(reject)} significantly '
+                  f'enriched bins in {data}{access} downsampled by {div}')
+        if reverse:
+            full_genome[f'rev_pvalue_divby{div}'] = clip_to_nonzero_min(
+                1 - scipy.stats.binom.cdf(
+                    full_genome["ctrl_binned_signal"] / div - 1, n, p_binom))
+            reject, q_value, *_ = multitest.multipletests(
+                full_genome[f"rev_pvalue_divby{div}"], method='fdr_bh')
+            full_genome[f'rev_qvalue_divby{div}'] = q_value
+            full_genome[f'-log(rev_qvalue_divby{div})'] = -np.log10(q_value)
+            full_genome[f'-log(rev_pvalue_divby{div})'] = -np.log10(
+                full_genome[f"rev_pvalue_divby{div}"])
+            full_genome[f'rev_significant_divby{div}'] = reject
+            if verbose:
+                print(f'{np.sum(reject)}/{len(reject)} significantly '
+                      f'control bins in {data}{access} downsampled by {div}')
+    if verbose:
+        print(f'{np.sum(full_genome["binom_q_value"]<0.05)}/{len(reject)} '
+              f'significantly enriched bins in {data}{access} when '
+              'chromosome local')
+    return full_genome, seperators
+
+
+def downsample_enrichment_analysis(data,
+                                   genome,
+                                   max_fragment_len,
+                                   bins_list=[1000],
+                                   div_list=[1],
+                                   reverse=True,
+                                   data_dir='../shared_folder'):
+    mindex = pd.MultiIndex.from_product([bins_list, div_list])
+    if reverse:
+        res = pd.DataFrame(index=mindex,
+                           columns=['IP', 'Undetermined', 'Ctrl'])
+    else:
+        res = pd.DataFrame(index=mindex, columns=['IP', 'Undetermined'])
+    if genome == 'T2T-CHM13v2.0':
+        lengths = T2T_lengths
+        chr_ids = T2T_chr_ids
+    elif genome == 'GRCh38':
+        lengths = GRCh38_lengths
+        chr_ids = hg38_chr_ids
+    # merging chromosomes
+    for bins in bins_list:
+        binned_lengths = np.array([x // bins + 1 for x in lengths.values()])
+        seperators = np.cumsum(binned_lengths)
+        total_length = seperators[-1]
+        for i, chr_id in enumerate(chr_ids.keys()):
+            df = pd.read_csv(
+                Path(data_dir, data, 'results', 'alignments', genome,
+                     f'{data}_{genome}_chr{chr_id}_'
+                     f'thres_{max_fragment_len}_binned_{bins}.csv'),
+                index_col=0)
+            if i == 0:
+                full_genome = pd.DataFrame(
+                    np.zeros((total_length, len(df.columns))),
+                    columns=df.columns)
+            full_genome.iloc[seperators[i]-len(df):seperators[i], :] = df
+        # normalizing
+        sums = full_genome.sum(axis=0)
+        full_genome['norm_ip_cov'] = (full_genome['ip_binned_signal']
+                                      / sums['ip_binned_signal'])
+        full_genome['norm_ctrl_cov'] = (full_genome['ctrl_binned_signal']
+                                        / sums['ctrl_binned_signal'])
+        # computing p_value and q_value
+        p_binom = sums["ip_binned_signal"] / (sums["ip_binned_signal"]
+                                              + sums["ctrl_binned_signal"])
+        n_binom = (full_genome["ip_binned_signal"]
+                   + full_genome["ctrl_binned_signal"])
+        for div in div_list:
+            n = n_binom / div
+            full_genome[f'pvalue_divby{div}'] = clip_to_nonzero_min(
+                1 - scipy.stats.binom.cdf(
+                    full_genome["ip_binned_signal"] / div - 1, n, p_binom))
+            reject, *_ = multitest.multipletests(
+                full_genome[f"pvalue_divby{div}"], method='fdr_bh')
+            n_reject = np.sum(reject)
+            tot = len(reject)
+            if reverse:
+                full_genome[f'rev_pvalue_divby{div}'] = clip_to_nonzero_min(
+                    1 - scipy.stats.binom.cdf(
+                        full_genome["ctrl_binned_signal"] / div - 1,
+                        n, p_binom))
+                reject_rev, *_ = multitest.multipletests(
+                    full_genome[f"rev_pvalue_divby{div}"], method='fdr_bh')
+                n_reject_rev = np.sum(reject_rev)
+                res.loc[bins, div] = [n_reject,
+                                      tot - n_reject - n_reject_rev,
+                                      n_reject_rev]
+            else:
+                res.loc[bins, div] = [n_reject,
+                                      tot - n_reject]
+    return res
+
+
+def pool_experiments(dfs, verbose=True):
+    cols_to_take = ['ip_binned_signal', 'ctrl_binned_signal']
+    df_pooled = dfs[0][['pos'] + cols_to_take].copy()
+    for df in dfs[1:]:
+        df_pooled[cols_to_take] += df[cols_to_take]
+    # computing p_value and q_value
+    sums = df_pooled.sum(axis=0)
+    p_binom = sums["ip_binned_signal"] / (sums["ip_binned_signal"]
+                                          + sums["ctrl_binned_signal"])
+    n_binom = df_pooled["ip_binned_signal"] + df_pooled["ctrl_binned_signal"]
+    df_pooled['binom_p_value_complete'] = clip_to_nonzero_min(
+        1 - scipy.stats.binom.cdf(df_pooled["ip_binned_signal"] - 1,
+                                  n_binom, p_binom))
+    reject, q_value, *_ = multitest.multipletests(
+        df_pooled["binom_p_value_complete"], method='fdr_bh')
+    df_pooled['binom_q_value_complete'] = q_value
+    df_pooled['-log(qvalue_complete)'] = -np.log10(q_value)
+    df_pooled['-log(pvalue_complete)'] = -np.log10(
+        df_pooled["binom_p_value_complete"])
+    df_pooled['significantly_enriched'] = reject
+    if verbose:
+        print(f'{np.sum(reject)}/{len(reject)} '
+              f'significantly enriched bins in dataframe')
+    return df_pooled
+
+
 # Peak manipulation
 def find_peaks(preds: np.ndarray,
                pred_thres: float,
@@ -1013,8 +1383,8 @@ def find_peaks(preds: np.ndarray,
         Distance between consecutive peaks under which the peaks are merged
         into one. Can be set higher to get a single peak when signal is
         fluctuating too much. Unlike slices, peaks include their end points,
-        meaning [1 2] and [4 5] actually contain a gap of one base, even
-        but the distance is 2 (4-2). The dafault value of 1 means that no
+        meaning [1 2] and [4 5] actually contain a gap of one base,
+        but the distance is 2 (4-2). The default value of 1 means that no
         peaks will be merged.
 
     Returns
@@ -1454,6 +1824,15 @@ def lineWiseCorrcoef(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     tmp = np.einsum('ij,ij->i', DX, DX)
     tmp *= np.einsum('i,i->', y, y)
     return np.dot(DX, y) / np.sqrt(tmp)
+
+
+def vcorrcoef(X, Y):
+    Xm = np.reshape(np.mean(X, axis=1), (X.shape[0], 1))
+    Ym = np.reshape(np.mean(Y, axis=1), (Y.shape[0], 1))
+    r_num = np.sum((X-Xm)*(Y-Ym), axis=1)
+    r_den = np.sqrt(np.sum((X-Xm)**2, axis=1)*np.sum((Y-Ym)**2, axis=1))
+    r = r_num/r_den
+    return r
 
 
 def moving_average(x, n=2):

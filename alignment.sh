@@ -9,7 +9,7 @@
 
 paired_end=false
 threads=1
-while getopts "i:d:w:f:pt:" option; do
+while getopts "i:d:w:f:o:pt:" option; do
     case $option in
         i) # index of reference genome
             index=$OPTARG;;
@@ -21,6 +21,8 @@ while getopts "i:d:w:f:pt:" option; do
             writing_dir=$OPTARG;;
         f) # prefix of fastq files containing reads to align
             fastq_prefix=$OPTARG;;
+        o) # prefix of fastq files containing reads to align
+            out_prefix=$OPTARG;;
         p) # indicate paired-end
             paired_end=true;;
         t) # number of threads to use
@@ -35,10 +37,9 @@ done
 
 if [ $paired_end = true ]
 then
-    out_prefix=$writing_dir/$fastq_prefix'_paired'
+    out_prefix=$out_prefix'_paired'
     bowtie2 -p $threads -x $index -1 $data_dir/$fastq_prefix'.R1.fastq' -2 $data_dir/$fastq_prefix'.R2.fastq' -S $out_prefix.sam
 else
-    out_prefix=$writing_dir/$fastq_prefix
     bowtie2 -p $threads -x $index -U $data_dir/$fastq_prefix.fastq -S $out_prefix.sam
 fi
 samtools view -bS $out_prefix.sam > $out_prefix.bam

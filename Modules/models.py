@@ -20,6 +20,7 @@ def build_model(model_name,
     model_dict = {
         'inception_dna_v1': inception_dna_v1,
         'inception_dna_v2': inception_dna_v2,
+        'inception_dna_paired_v1': inception_dna_paired_v1,
         'Yann_original': Yann_original,
         'Yann_with_init': Yann_with_init,
         'Yann_with_init_and_padding': Yann_with_init_and_padding
@@ -257,6 +258,95 @@ def inception_dna_v2(read_length=101,
                                           T=T,
                                           start_reweighting=start_reweighting,
                                           name='inception_dna_v2')
+    return model
+
+
+def siamese_module(input_shape):
+    """
+    Builds a siamese module similar to inception_dna_v1
+
+    Arguments
+    ---------
+    (optional) read_length: the sequence length of reads given as input
+
+    Returns
+    -------
+    The model
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    inputs = Input(input_shape)
+
+    x = simple_inception_module(inputs,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_1')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_1')(x)
+    x = Dropout(0.2)(x)
+    x = simple_inception_module(x,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_2')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_2')(x)
+    x = Dropout(0.2)(x)
+    outputs = Flatten()(x)
+    return Model(inputs, outputs)
+
+
+def inception_dna_paired_v1(read_length=101,
+                            method=0,
+                            T=1,
+                            start_reweighting=2000):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) read_length: the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    read1 = Input(shape=(read_length, 4))
+    read2 = Input(shape=(read_length, 4))
+    conv_module = siamese_module((read_length, 4))
+    x1 = conv_module(read1)
+    x2 = conv_module(read2)
+    x = concatenate([x1, x2],
+                    axis=1,
+                    name='concatenate')
+    x = Dense(units=128,
+              activation='relu',
+              name='dense_1')(x)
+    x = Dense(units=1,
+              activation='sigmoid',
+              name='dense_out')(x)
+    if method == 0:
+        model = tf.keras.Model([read1, read2],
+                               x,
+                               name='inception_dna_paired_v1')
+    elif method == 1:
+        model = tf_utils.ReweightingModel([read1, read2],
+                                          x,
+                                          T=T,
+                                          start_reweighting=start_reweighting,
+                                          name='inception_dna_paired_v1')
     return model
 
 
