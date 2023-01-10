@@ -44,6 +44,7 @@ fi
 samtools view -bS $out_prefix.sam > $out_prefix.bam
 rm $out_prefix.sam
 samtools sort $out_prefix.bam -o $out_prefix.sorted.bam
+rm $out_prefix.bam
 samtools index $out_prefix.sorted.bam
 
 
