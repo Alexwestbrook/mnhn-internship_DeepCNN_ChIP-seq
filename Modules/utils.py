@@ -1268,13 +1268,18 @@ def downsample_enrichment_analysis(data,
                                    bins_list=[1000],
                                    div_list=[1],
                                    reverse=True,
-                                   data_dir='../shared_folder'):
+                                   data_dir='../shared_folder',
+                                   use_fdr=True):
     mindex = pd.MultiIndex.from_product([bins_list, div_list])
     if reverse:
-        res = pd.DataFrame(index=mindex,
-                           columns=['IP', 'Undetermined', 'Ctrl'])
+        res = pd.DataFrame(
+            index=mindex,
+            columns=['IP', 'IP_clust', 'Undetermined', 'Ctrl', 'Ctrl_clust',
+                     'total_cov'])
     else:
-        res = pd.DataFrame(index=mindex, columns=['IP', 'Undetermined'])
+        res = pd.DataFrame(
+            index=mindex,
+            columns=['IP', 'IP_clust', 'Undetermined', 'total_cov'])
     if genome == 'T2T-CHM13v2.0':
         lengths = T2T_lengths
         chr_ids = T2T_chr_ids
@@ -1297,40 +1302,53 @@ def downsample_enrichment_analysis(data,
                     np.zeros((total_length, len(df.columns))),
                     columns=df.columns)
             full_genome.iloc[seperators[i]-len(df):seperators[i], :] = df
-        # normalizing
-        sums = full_genome.sum(axis=0)
-        full_genome['norm_ip_cov'] = (full_genome['ip_binned_signal']
-                                      / sums['ip_binned_signal'])
-        full_genome['norm_ctrl_cov'] = (full_genome['ctrl_binned_signal']
-                                        / sums['ctrl_binned_signal'])
         # computing p_value and q_value
-        p_binom = sums["ip_binned_signal"] / (sums["ip_binned_signal"]
-                                              + sums["ctrl_binned_signal"])
-        n_binom = (full_genome["ip_binned_signal"]
-                   + full_genome["ctrl_binned_signal"])
         for div in div_list:
-            n = n_binom / div
+            rounded_IP = random_rounding(full_genome["ip_binned_signal"] / div)
+            rounded_Ctrl = random_rounding(
+                full_genome["ctrl_binned_signal"] / div)
+            n = rounded_IP + rounded_Ctrl
+            cov = np.sum(n)
+            p_binom = np.sum(rounded_IP) / cov
             full_genome[f'pvalue_divby{div}'] = clip_to_nonzero_min(
                 1 - scipy.stats.binom.cdf(
-                    full_genome["ip_binned_signal"] / div - 1, n, p_binom))
-            reject, *_ = multitest.multipletests(
-                full_genome[f"pvalue_divby{div}"], method='fdr_bh')
-            n_reject = np.sum(reject)
-            tot = len(reject)
+                    rounded_IP - 1, n, p_binom))
+            if use_fdr:
+                valid_bins = (n != 0)
+                signif_IP = np.zeros(len(full_genome), dtype=bool)
+                signif_IP[valid_bins], *_ = multitest.multipletests(
+                    full_genome[f"pvalue_divby{div}"][valid_bins],
+                    method='fdr_bh')
+            else:
+                signif_IP = np.array(full_genome[f'pvalue_divby{div}'] < 0.05)
+            n_signif_IP = np.sum(signif_IP)
+            n_signif_IP_clust = nb_boolean_true_clusters(signif_IP)
+            tot = len(signif_IP)
             if reverse:
                 full_genome[f'rev_pvalue_divby{div}'] = clip_to_nonzero_min(
                     1 - scipy.stats.binom.cdf(
-                        full_genome["ctrl_binned_signal"] / div - 1,
-                        n, p_binom))
-                reject_rev, *_ = multitest.multipletests(
-                    full_genome[f"rev_pvalue_divby{div}"], method='fdr_bh')
-                n_reject_rev = np.sum(reject_rev)
-                res.loc[bins, div] = [n_reject,
-                                      tot - n_reject - n_reject_rev,
-                                      n_reject_rev]
+                        rounded_Ctrl - 1, n, 1 - p_binom))
+                if use_fdr:
+                    signif_Ctrl = np.zeros(len(full_genome), dtype=bool)
+                    signif_Ctrl[valid_bins], *_ = multitest.multipletests(
+                        full_genome[f"rev_pvalue_divby{div}"][valid_bins],
+                        method='fdr_bh')
+                else:
+                    signif_Ctrl = np.array(
+                        full_genome[f'rev_pvalue_divby{div}'] < 0.05)
+                n_signif_Ctrl = np.sum(signif_Ctrl)
+                n_signif_Ctrl_clust = nb_boolean_true_clusters(signif_Ctrl)
+                res.loc[bins, div] = [n_signif_IP,
+                                      n_signif_IP_clust,
+                                      tot - n_signif_IP - n_signif_Ctrl,
+                                      n_signif_Ctrl,
+                                      n_signif_Ctrl_clust,
+                                      cov]
             else:
-                res.loc[bins, div] = [n_reject,
-                                      tot - n_reject]
+                res.loc[bins, div] = [n_signif_IP,
+                                      n_signif_IP_clust,
+                                      tot - n_signif_IP,
+                                      cov]
     return res
 
 
@@ -1844,6 +1862,32 @@ def moving_average(x, n=2):
 def clip_to_nonzero_min(array):
     array[array == 0] = array[array != 0].min()
     return array
+
+
+def nb_boolean_true_clusters(array: np.array) -> int:
+    """Compute the number of clusters or True values in array.
+
+    Parameters
+    ----------
+    array : array_like
+        1D-array or boolean values.
+
+    Returns
+    -------
+    int
+        number of clusters of True values
+    """
+    res = np.sum(np.diff(array)) // 2
+    if array[0] or array[-1]:
+        res += 1
+    return res
+
+
+def random_rounding(array: np.array) -> np.array:
+    rounded = np.floor(array)
+    decimal = array - rounded
+    rounded += (np.random.rand(len(decimal)) <= decimal)
+    return rounded
 
 
 # Other utils
