@@ -4,6 +4,7 @@ from pathlib import Path
 from collections import defaultdict
 from typing import Optional, Union
 import re
+import json
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
@@ -1050,11 +1051,11 @@ def smooth(values, window_size, mode='linear', sigma=1):
     return convolve(values, box, mode='same')
 
 
-def binned_alignment_signal_from_coord(coord: np.ndarray,
-                                       bins: int = 100,
-                                       length: int = None) -> np.ndarray:
+def binned_alignment_count_from_coord(coord: np.ndarray,
+                                      binsize: int = 100,
+                                      length: int = None) -> np.ndarray:
     """
-    Build alignment signal from read coordinates.
+    Build alignment count signal from read coordinates on a single chromosome.
 
     The signal is binned to a specified resolution on the genome. This
     function will build the signal from mid points, resulting in very noisy
@@ -1071,33 +1072,32 @@ def binned_alignment_signal_from_coord(coord: np.ndarray,
 
     Returns
     -------
-    binned_signal : ndarray
-        1D-array of read count in each bin along the genome.
+    ndarray
+        1D-array of read count in each bin along the chromosome.
 
     Note
     ----
     Very fast implementation through the use of scipy.sparse's matrix creation
     and conversion.
     """
-    binned_mid = np.floor(np.mean(coord, axis=1) // bins)
+    binned_mid = np.floor(np.mean(coord, axis=1) // binsize)
     binned_mid = np.array(binned_mid, dtype=int)
     if length is None:
         length = np.max(binned_mid) + 1
     else:
-        length = length // bins + 1
+        length = length // binsize + 1
         if length < np.max(binned_mid) + 1:
             raise ValueError("coordinates go beyond the specified length")
-    binned_signal = coo_matrix(
+    return coo_matrix(
         (np.ones(len(coord), dtype=int),
          (binned_mid, np.zeros(len(coord), dtype=int))),
         shape=(length, 1)
     ).toarray().ravel()
-    return binned_signal
 
 
-def exact_alignment_signal_from_coord(coord: np.ndarray) -> np.ndarray:
+def exact_alignment_count_from_coord(coord: np.ndarray) -> np.ndarray:
     """
-    Build alignment signal from read coordinates.
+    Build alignment count signal from read coordinates on a single chromosome.
 
     Parameters
     ----------
@@ -1106,8 +1106,8 @@ def exact_alignment_signal_from_coord(coord: np.ndarray) -> np.ndarray:
 
     Returns
     -------
-    signal : ndarray
-        1D-array of read count for each position along the genome.
+    ndarray
+        1D-array of read count for each position along the chromosome.
     """
     # Insert +1 at fragment start and -1 after fragment end
     data = np.ones(2*len(coord), dtype=int)
@@ -1120,8 +1120,7 @@ def exact_alignment_signal_from_coord(coord: np.ndarray) -> np.ndarray:
         shape=(np.max(coord)+1, 1)
     ).toarray().ravel()
     # Cumulative sum to propagate full fragments
-    signal = np.cumsum(start_ends)
-    return signal
+    return np.cumsum(start_ends)
 
 
 def bin_preds(preds, bins):
@@ -1183,94 +1182,77 @@ def enrichment_analysis(signal, ctrl, verbose=True, data='signal'):
         "significantly_enriched": significantly_enriched})
 
 
-def merging_full_genome(data,
-                        genome,
-                        max_fragment_len,
-                        bins,
-                        downsamples=[1],
-                        reverse=False,
-                        access='',
-                        verbose=True,
-                        data_dir='../shared_folder'):
-    if genome == 'T2T-CHM13v2.0':
-        lengths = T2T_lengths
-        chr_ids = T2T_chr_ids
-    elif genome == 'GRCh38':
-        lengths = GRCh38_lengths
-        chr_ids = hg38_chr_ids
-    if access != '':
-        access = '_' + access
-    # merging chromosomes
-    binned_lengths = np.array([x // bins + 1 for x in lengths.values()])
-    seperators = np.cumsum(binned_lengths)
-    total_length = seperators[-1]
-    for i, chr_id in enumerate(chr_ids.keys()):
-        df = pd.read_csv(
-            Path(data_dir, data, 'results', 'alignments', genome,
-                 f'{data}{access}_{genome}_chr{chr_id}_'
-                 f'thres_{max_fragment_len}_binned_{bins}.csv'),
-            index_col=0)
-        if i == 0:
-            full_genome = pd.DataFrame(
-                np.zeros((total_length, len(df.columns))),
-                columns=df.columns)
-        full_genome.iloc[seperators[i]-len(df):seperators[i], :] = df
-    # normalizing
-    sums = full_genome.sum(axis=0)
-    full_genome['norm_ip_cov'] = (full_genome['ip_binned_signal']
-                                  / sums['ip_binned_signal'])
-    full_genome['norm_ctrl_cov'] = (full_genome['ctrl_binned_signal']
-                                    / sums['ctrl_binned_signal'])
-    # computing p_value and q_value
-    p_binom = sums["ip_binned_signal"] / (sums["ip_binned_signal"]
-                                          + sums["ctrl_binned_signal"])
-    n_binom = (full_genome["ip_binned_signal"]
-               + full_genome["ctrl_binned_signal"])
-    for div in downsamples:
-        n = n_binom / div
-        full_genome[f'pvalue_divby{div}'] = clip_to_nonzero_min(
-            1 - scipy.stats.binom.cdf(
-                full_genome["ip_binned_signal"] / div - 1, n, p_binom))
-        reject, q_value, *_ = multitest.multipletests(
-            full_genome[f"pvalue_divby{div}"], method='fdr_bh')
-        full_genome[f'qvalue_divby{div}'] = q_value
-        full_genome[f'-log(qvalue_divby{div})'] = -np.log10(q_value)
-        full_genome[f'-log(pvalue_divby{div})'] = -np.log10(
-            full_genome[f"pvalue_divby{div}"])
-        full_genome[f'significant_divby{div}'] = reject
+def genome_enrichment(ip_coord_file,
+                      ctrl_coord_file,
+                      chr_sizes_file,
+                      out_file,
+                      max_frag_len=500,
+                      binsize=200,
+                      verbose=True):
+    # Log parameters
+    wdir = Path(out_file).parent()
+    log_file = Path(wdir, 'alignment_analysis_log.txt')
+    log_file = safe_filename(log_file)
+    with open(log_file, 'w') as f:
+        f.write(f'chromosome sizes file: {chr_sizes_file}\n'
+                f'max fragment length: {max_frag_len}\n'
+                f'bin size: {binsize}\n\n')
+    # Get chromosome lengths
+    chr_lens = json.load(chr_sizes_file)
+    binned_chr_lens = np.array([x // binsize + 1 for x in chr_lens.values()])
+    chr_seps = np.cumsum(binned_chr_lens)
+    total_length = chr_seps[-1]
+    # Build DataFrame
+    columns = ['pos', 'ip_count', 'ctrl_count', 'pval', 'qval']
+    df = pd.DataFrame(np.zeros((total_length, len(columns))), columns=columns)
+    # Loop over chromosomes
+    for i, chr_id in enumerate(chr_lens.keys()):
         if verbose:
-            print(f'{np.sum(reject)}/{len(reject)} significantly '
-                  f'enriched bins in {data}{access} downsampled by {div}')
-        if reverse:
-            full_genome[f'rev_pvalue_divby{div}'] = clip_to_nonzero_min(
-                1 - scipy.stats.binom.cdf(
-                    full_genome["ctrl_binned_signal"] / div - 1, n, p_binom))
-            reject, q_value, *_ = multitest.multipletests(
-                full_genome[f"rev_pvalue_divby{div}"], method='fdr_bh')
-            full_genome[f'rev_qvalue_divby{div}'] = q_value
-            full_genome[f'-log(rev_qvalue_divby{div})'] = -np.log10(q_value)
-            full_genome[f'-log(rev_pvalue_divby{div})'] = -np.log10(
-                full_genome[f"rev_pvalue_divby{div}"])
-            full_genome[f'rev_significant_divby{div}'] = reject
-            if verbose:
-                print(f'{np.sum(reject)}/{len(reject)} significantly '
-                      f'control bins in {data}{access} downsampled by {div}')
-    if verbose:
-        print(f'{np.sum(full_genome["binom_q_value"]<0.05)}/{len(reject)} '
-              f'significantly enriched bins in {data}{access} when '
-              'chromosome local')
-    return full_genome, seperators
+            print(f"Processing chr {chr_id}...")
+        # Load chromosome fragment coordinates
+        with np.load(ip_coord_file) as f:
+            ip_coord_chr = f[chr_id]
+        with np.load(ctrl_coord_file) as f:
+            ctrl_coord_chr = f[chr_id]
+        # Filter out fragments too long
+        ip_frag_lens_chr = np.diff(ip_coord_chr, axis=1).ravel()
+        ctrl_frag_lens_chr = np.diff(ctrl_coord_chr, axis=1).ravel()
+        ip_coord_chr = ip_coord_chr[ip_frag_lens_chr <= max_frag_len, :]
+        ctrl_coord_chr = ctrl_coord_chr[ctrl_frag_lens_chr <= max_frag_len, :]
+        # Get binned middle alignment
+        ip_count_chr = binned_alignment_count_from_coord(
+            ip_coord_chr, binsize=binsize, length=chr_lens[chr_id])
+        ctrl_count_chr = binned_alignment_count_from_coord(
+            ctrl_coord_chr, binsize=binsize, length=chr_lens[chr_id])
+        # Insert in DataFrame
+        df.iloc[chr_seps[i]-len(ip_count_chr):chr_seps[i], :3] = np.transpose(
+            np.vstack((np.arange(0, len(ip_count_chr)*binsize, binsize),
+                       ip_count_chr,
+                       ctrl_count_chr)))
+        # Write log info
+        with open(log_file, 'a') as f:
+            f.write(f'Processing chr {chr_id}...\n'
+                    f'{np.sum(ip_frag_lens_chr >= max_frag_len)} fragments '
+                    'longer than {max_frag_len}bp in IP\n'
+                    f'{np.sum(ctrl_frag_lens_chr >= max_frag_len)} fragments '
+                    'longer than {max_frag_len}bp in Control\n')
+    # Save final DataFrame
+    out_file = safe_filename(out_file)
+    df.to_csv(out_file)
 
 
 def downsample_enrichment_analysis(data,
                                    genome,
                                    max_fragment_len,
                                    bins_list=[1000],
-                                   div_list=[1],
+                                   frac_list=[1],
+                                   div_list=None,
                                    reverse=True,
                                    data_dir='../shared_folder',
                                    use_fdr=True):
-    mindex = pd.MultiIndex.from_product([bins_list, div_list])
+    if div_list is not None:
+        frac_list = 1 / np.array(frac_list)
+    mindex = pd.MultiIndex.from_product([bins_list, frac_list])
     if reverse:
         res = pd.DataFrame(
             index=mindex,
@@ -1303,52 +1285,48 @@ def downsample_enrichment_analysis(data,
                     columns=df.columns)
             full_genome.iloc[seperators[i]-len(df):seperators[i], :] = df
         # computing p_value and q_value
-        for div in div_list:
-            rounded_IP = random_rounding(full_genome["ip_binned_signal"] / div)
-            rounded_Ctrl = random_rounding(
-                full_genome["ctrl_binned_signal"] / div)
-            n = rounded_IP + rounded_Ctrl
+        for frac in frac_list:
+            frac_IP = integer_histogram_sample(
+                full_genome["ip_binned_signal"], frac)
+            frac_Ctrl = integer_histogram_sample(
+                full_genome["ctrl_binned_signal"], frac)
+            n = frac_IP + frac_Ctrl
             cov = np.sum(n)
-            p_binom = np.sum(rounded_IP) / cov
-            full_genome[f'pvalue_divby{div}'] = clip_to_nonzero_min(
-                1 - scipy.stats.binom.cdf(
-                    rounded_IP - 1, n, p_binom))
+            p_binom = np.sum(frac_IP) / cov
+            p_values = clip_to_nonzero_min(
+                1 - scipy.stats.binom.cdf(frac_IP - 1, n, p_binom))
             if use_fdr:
                 valid_bins = (n != 0)
                 signif_IP = np.zeros(len(full_genome), dtype=bool)
                 signif_IP[valid_bins], *_ = multitest.multipletests(
-                    full_genome[f"pvalue_divby{div}"][valid_bins],
-                    method='fdr_bh')
+                    p_values[valid_bins], method='fdr_bh')
             else:
-                signif_IP = np.array(full_genome[f'pvalue_divby{div}'] < 0.05)
+                signif_IP = np.array(p_values < 0.05)
             n_signif_IP = np.sum(signif_IP)
             n_signif_IP_clust = nb_boolean_true_clusters(signif_IP)
             tot = len(signif_IP)
             if reverse:
-                full_genome[f'rev_pvalue_divby{div}'] = clip_to_nonzero_min(
-                    1 - scipy.stats.binom.cdf(
-                        rounded_Ctrl - 1, n, 1 - p_binom))
+                rev_p_values = clip_to_nonzero_min(
+                    1 - scipy.stats.binom.cdf(frac_Ctrl - 1, n, 1 - p_binom))
                 if use_fdr:
                     signif_Ctrl = np.zeros(len(full_genome), dtype=bool)
                     signif_Ctrl[valid_bins], *_ = multitest.multipletests(
-                        full_genome[f"rev_pvalue_divby{div}"][valid_bins],
-                        method='fdr_bh')
+                        rev_p_values[valid_bins], method='fdr_bh')
                 else:
-                    signif_Ctrl = np.array(
-                        full_genome[f'rev_pvalue_divby{div}'] < 0.05)
+                    signif_Ctrl = np.array(rev_p_values < 0.05)
                 n_signif_Ctrl = np.sum(signif_Ctrl)
                 n_signif_Ctrl_clust = nb_boolean_true_clusters(signif_Ctrl)
-                res.loc[bins, div] = [n_signif_IP,
-                                      n_signif_IP_clust,
-                                      tot - n_signif_IP - n_signif_Ctrl,
-                                      n_signif_Ctrl,
-                                      n_signif_Ctrl_clust,
-                                      cov]
+                res.loc[bins, frac] = [n_signif_IP,
+                                       n_signif_IP_clust,
+                                       tot - n_signif_IP - n_signif_Ctrl,
+                                       n_signif_Ctrl,
+                                       n_signif_Ctrl_clust,
+                                       cov]
             else:
-                res.loc[bins, div] = [n_signif_IP,
-                                      n_signif_IP_clust,
-                                      tot - n_signif_IP,
-                                      cov]
+                res.loc[bins, frac] = [n_signif_IP,
+                                       n_signif_IP_clust,
+                                       tot - n_signif_IP,
+                                       cov]
     return res
 
 
@@ -1864,13 +1842,13 @@ def clip_to_nonzero_min(array):
     return array
 
 
-def nb_boolean_true_clusters(array: np.array) -> int:
+def nb_boolean_true_clusters(array: np.ndarray) -> int:
     """Compute the number of clusters or True values in array.
 
     Parameters
     ----------
     array : array_like
-        1D-array or boolean values.
+        1D-array of boolean values.
 
     Returns
     -------
@@ -1883,11 +1861,95 @@ def nb_boolean_true_clusters(array: np.array) -> int:
     return res
 
 
-def random_rounding(array: np.array) -> np.array:
+def random_rounding(array: np.ndarray) -> np.ndarray:
     rounded = np.floor(array)
     decimal = array - rounded
     rounded += (np.random.rand(len(decimal)) <= decimal)
     return rounded
+
+
+def integer_histogram_sample(array: np.ndarray, frac: float) -> np.ndarray:
+    """Sample a random fraction of a histogram with integer-only values.
+
+    The sampled histogram is a an array of integers of same shape as the
+    original histogram, with all values smaller of equal to original histogram
+    values.
+
+    Parameters
+    ----------
+    array : array_like
+        1D-array of integer values.
+    frac : float
+        fraction of the histogram to sample, the cumulative sum of the sampled
+        histogram will be the rounded fraction of the original one
+
+    Returns
+    -------
+    np.ndarray
+        1D-array of same length as `array`, containing the sampled histogram
+        values
+    """
+    positions = np.repeat(np.arange(array.size, dtype=int), array)
+    rng = np.random.default_rng()
+    if frac <= 0.5:
+        sampled_pos = rng.choice(
+            positions, size=round(len(positions)*frac), replace=False)
+        histogram = coo_matrix(
+            (np.ones(len(sampled_pos), dtype=int),
+             (sampled_pos, np.zeros(len(sampled_pos), dtype=int))),
+            shape=(len(array), 1)
+        ).toarray().ravel()
+        return histogram
+    else:
+        sampled_pos = rng.choice(
+            positions, size=round(len(positions)*(1-frac)), replace=False)
+        histogram = coo_matrix(
+            (np.ones(len(sampled_pos), dtype=int),
+             (sampled_pos, np.zeros(len(sampled_pos), dtype=int))),
+            shape=(len(array), 1)
+        ).toarray().ravel()
+        return array - histogram
+
+
+def integer_histogram_sample_vect(array: np.ndarray,
+                                  frac: np.ndarray) -> np.ndarray:
+    """Sample random fractions of a histogram with integer-only values.
+
+    The sampled histogram is a an array of integers of same shape as the
+    original histogram, with all values smaller of equal to original histogram
+    values.
+    This functions supports an array of fractions as input for some vectorized
+    speed-ups. It seems 2x faster.
+
+    Parameters
+    ----------
+    array : array_like, shape=(n,)
+        1D-array of integer values.
+    frac : np.ndarray, shape=(m,)
+        1D-array of fractions of the histogram to sample, the cumulative sum
+        of the sampled histograms will be the rounded fractions of the
+        original one
+
+    Returns
+    -------
+    np.ndarray, shape=(m, n)
+        2D-array where each line is a sampled histogram with given fraction,
+        and columns represent bins
+    """
+    positions = np.repeat(np.arange(array.size, dtype=int), array)
+    rng = np.random.default_rng()
+    sizes = np.array(np.round(len(positions)*frac), dtype=int)
+    cumsizes = np.insert(np.cumsum(sizes), 0, 0)
+    sampled_pos = np.zeros(cumsizes[-1], dtype=int)
+    for i in range(len(frac)):
+        sampled_pos[cumsizes[i]:cumsizes[i+1]] = rng.choice(
+            positions, size=sizes[i], replace=False)
+    histogram = coo_matrix(
+        (np.ones(len(sampled_pos), dtype=int),
+         (np.repeat(np.arange(len(frac)), sizes), sampled_pos)),
+        shape=(len(frac), len(array))
+    ).toarray()
+    return histogram
 
 
 # Other utils
