@@ -22,111 +22,6 @@ import pyBigWig
 import pysam
 
 
-# Constants
-hg38_chr_ids = {
-    1: 'NC_000001.11',
-    2: 'NC_000002.12',
-    3: 'NC_000003.12',
-    4: 'NC_000004.12',
-    5: 'NC_000005.10',
-    6: 'NC_000006.12',
-    7: 'NC_000007.14',
-    8: 'NC_000008.11',
-    9: 'NC_000009.12',
-    10: 'NC_000010.11',
-    11: 'NC_000011.10',
-    12: 'NC_000012.12',
-    13: 'NC_000013.11',
-    14: 'NC_000014.9',
-    15: 'NC_000015.10',
-    16: 'NC_000016.10',
-    17: 'NC_000017.11',
-    18: 'NC_000018.10',
-    19: 'NC_000019.10',
-    20: 'NC_000020.11',
-    21: 'NC_000021.9',
-    22: 'NC_000022.11',
-    'X': 'NC_000023.11',
-    'Y': 'NC_000024.10'}
-T2T_chr_ids = {
-    '1': 'NC_060925.1',
-    '2': 'NC_060926.1',
-    '3': 'NC_060927.1',
-    '4': 'NC_060928.1',
-    '5': 'NC_060929.1',
-    '6': 'NC_060930.1',
-    '7': 'NC_060931.1',
-    '8': 'NC_060932.1',
-    '9': 'NC_060933.1',
-    '10': 'NC_060934.1',
-    '11': 'NC_060935.1',
-    '12': 'NC_060936.1',
-    '13': 'NC_060937.1',
-    '14': 'NC_060938.1',
-    '15': 'NC_060939.1',
-    '16': 'NC_060940.1',
-    '17': 'NC_060941.1',
-    '18': 'NC_060942.1',
-    '19': 'NC_060943.1',
-    '20': 'NC_060944.1',
-    '21': 'NC_060945.1',
-    '22': 'NC_060946.1',
-    'X': 'NC_060947.1',
-    'Y': 'NC_060948.1', }
-GRCh38_header = [
-    ("chr1", 248956422),
-    ("chr2", 242193529),
-    ("chr3", 198295559),
-    ("chr4", 190214555),
-    ("chr5", 181538259),
-    ("chr6", 170805979),
-    ("chr7", 159345973),
-    ("chr8", 145138636),
-    ("chr9", 138394717),
-    ("chr10", 133797422),
-    ("chr11", 135086622),
-    ("chr12", 133275309),
-    ("chr13", 114364328),
-    ("chr14", 107043718),
-    ("chr15", 101991189),
-    ("chr16", 90338345),
-    ("chr17", 83257441),
-    ("chr18", 80373285),
-    ("chr19", 58617616),
-    ("chr20", 64444167),
-    ("chr21", 46709983),
-    ("chr22", 50818468),
-    ("chrX", 156040895),
-    ("chrY", 57227415)]
-GRCh38_lengths = dict(GRCh38_header)
-T2T_header = [
-    ("chr1", 248387328),
-    ("chr2", 242696752),
-    ("chr3", 201105948),
-    ("chr4", 193574945),
-    ("chr5", 182045439),
-    ("chr6", 172126628),
-    ("chr7", 160567428),
-    ("chr8", 146259331),
-    ("chr9", 150617247),
-    ("chr10", 134758134),
-    ("chr11", 135127769),
-    ("chr12", 133324548),
-    ("chr13", 113566686),
-    ("chr14", 101161492),
-    ("chr15", 99753195),
-    ("chr16", 96330374),
-    ("chr17", 84276897),
-    ("chr18", 80542538),
-    ("chr19", 61707364),
-    ("chr20", 66210255),
-    ("chr21", 45090682),
-    ("chr22", 51324926),
-    ("chrX", 154259566),
-    ("chrY", 62460029)]
-T2T_lengths = dict(T2T_header)
-
-
 def data_generation(IDs, reads, labels, class_weights):
     X = np.empty((len(IDs), *reads[0].shape), dtype='bool')
     Y = np.empty((len(IDs), 1), dtype='bool')
@@ -1133,53 +1028,41 @@ def bin_preds(preds, bins):
     return binned_preds
 
 
-def full_genome_binned_preds(data,
-                             genome,
-                             model_name,
-                             bins,
-                             data_dir='shared_folder'):
-    if genome == 'T2T-CHM13v2.0':
-        lengths = T2T_lengths
-        chr_ids = T2T_chr_ids
-    elif genome == 'GRCh38':
-        lengths = GRCh38_lengths
-        chr_ids = hg38_chr_ids
+def full_genome_binned_preds(pred_file,
+                             chr_sizes_file,
+                             binsize,
+                             chr_ids):
+    with open(chr_sizes_file, 'r') as f:
+        chr_lens = json.load(f)
+    binned_lengths = np.array([x // binsize + 1 for x in chr_lens.values()])
+    separators = np.cumsum(binned_lengths)
+    df = np.zeros(separators[-1])
     # merging chromosomes
-    binned_lengths = np.array([x // bins + 1 for x in lengths.values()])
-    seperators = np.cumsum(binned_lengths)
-    total_length = seperators[-1]
-    full = np.zeros(total_length)
     for i, chr_id in enumerate(chr_ids.keys()):
-        with np.load(Path(data_dir,
-                          data,
-                          'results',
-                          model_name,
-                          f'preds_on_{genome}.npz')) as f:
+        with np.load(pred_file) as f:
             preds = f[f'chr{chr_id}']
-        binned_preds = bin_preds(preds, bins)
-        full[seperators[i]-len(binned_preds):seperators[i]] = binned_preds
-    return full, seperators
+        binned_preds = bin_preds(preds, binsize)
+        df[separators[i]-len(binned_preds):separators[i]] = binned_preds
+    return df, separators
 
 
 def enrichment_analysis(signal, ctrl, verbose=True, data='signal'):
     n_binom = signal + ctrl
     p_binom = np.sum(signal) / np.sum(n_binom)
-    binom_pvalue = clip_to_nonzero_min(
+    binom_pval = clip_to_nonzero_min(
         1 - scipy.stats.binom.cdf(signal - 1, n_binom, p_binom))
-    reject, qvalue, *_ = multitest.multipletests(binom_pvalue, method='fdr_bh')
-    binom_qvalue = qvalue
-    neg_log_qvalue = -np.log10(qvalue)
-    neg_log_pvalue = -np.log10(binom_pvalue)
-    significantly_enriched = reject
+    reject, binom_qval, *_ = multitest.multipletests(
+        binom_pval, method='fdr_bh')
+    signif_qval = reject
     if verbose:
         print(f'{np.sum(reject)}/{len(reject)} '
               f'significantly enriched bins in {data}')
     return pd.DataFrame({
-        "binom_p_value_complete": binom_pvalue,
-        "binom_q_value_complete": binom_qvalue,
-        "-log(pvalue_complete)": neg_log_pvalue,
-        "-log(qvalue_complete)": neg_log_qvalue,
-        "significantly_enriched": significantly_enriched})
+        "pval": binom_pval,
+        "qval": binom_qval,
+        "-log_pval": -np.log10(binom_pval),
+        "-log_qval": -np.log10(binom_qval),
+        "signif_qval": signif_qval})
 
 
 def genome_enrichment(ip_coord_file,
@@ -1187,18 +1070,21 @@ def genome_enrichment(ip_coord_file,
                       chr_sizes_file,
                       out_file,
                       max_frag_len=500,
-                      binsize=200,
-                      verbose=True):
+                      binsize=200):
     # Log parameters
-    wdir = Path(out_file).parent()
+    wdir = Path(out_file).parent
     log_file = Path(wdir, 'alignment_analysis_log.txt')
     log_file = safe_filename(log_file)
     with open(log_file, 'w') as f:
-        f.write(f'chromosome sizes file: {chr_sizes_file}\n'
+        f.write(f'IP coordinates file: {ip_coord_file}\n'
+                f'Control coordinates file: {ctrl_coord_file}\n'
+                f'chromosome sizes file: {chr_sizes_file}\n'
+                f'output file: {out_file}\n'
                 f'max fragment length: {max_frag_len}\n'
                 f'bin size: {binsize}\n\n')
     # Get chromosome lengths
-    chr_lens = json.load(chr_sizes_file)
+    with open(chr_sizes_file, 'r') as f:
+        chr_lens = json.load(f)
     binned_chr_lens = np.array([x // binsize + 1 for x in chr_lens.values()])
     chr_seps = np.cumsum(binned_chr_lens)
     total_length = chr_seps[-1]
@@ -1207,8 +1093,6 @@ def genome_enrichment(ip_coord_file,
     df = pd.DataFrame(np.zeros((total_length, len(columns))), columns=columns)
     # Loop over chromosomes
     for i, chr_id in enumerate(chr_lens.keys()):
-        if verbose:
-            print(f"Processing chr {chr_id}...")
         # Load chromosome fragment coordinates
         with np.load(ip_coord_file) as f:
             ip_coord_chr = f[chr_id]
@@ -1233,9 +1117,15 @@ def genome_enrichment(ip_coord_file,
         with open(log_file, 'a') as f:
             f.write(f'Processing chr {chr_id}...\n'
                     f'{np.sum(ip_frag_lens_chr >= max_frag_len)} fragments '
-                    'longer than {max_frag_len}bp in IP\n'
+                    f'longer than {max_frag_len}bp in IP\n'
                     f'{np.sum(ctrl_frag_lens_chr >= max_frag_len)} fragments '
-                    'longer than {max_frag_len}bp in Control\n')
+                    f'longer than {max_frag_len}bp in Control\n')
+    # Compute p-values and q-values
+    n_binom = df['ip_count'] + df['ctrl_count']
+    p_binom = np.sum(df['ip_count']) / np.sum(n_binom)
+    df['pval'] = clip_to_nonzero_min(
+        1 - scipy.stats.binom.cdf(df['ip_count'] - 1, n_binom, p_binom))
+    _, df['qval'], *_ = multitest.multipletests(df['pval'], method='fdr_bh')
     # Save final DataFrame
     out_file = safe_filename(out_file)
     df.to_csv(out_file)
@@ -1243,16 +1133,18 @@ def genome_enrichment(ip_coord_file,
 
 def downsample_enrichment_analysis(data,
                                    genome,
-                                   max_fragment_len,
-                                   bins_list=[1000],
-                                   frac_list=[1],
-                                   div_list=None,
+                                   max_frag_len,
+                                   binsizes=[1000],
+                                   fracs=[1],
+                                   divs=None,
                                    reverse=True,
                                    data_dir='../shared_folder',
                                    use_fdr=True):
-    if div_list is not None:
-        frac_list = 1 / np.array(frac_list)
-    mindex = pd.MultiIndex.from_product([bins_list, frac_list])
+    # Convert divs to fracs
+    if divs is not None:
+        fracs = 1 / np.array(fracs)
+    # Build resulting DataFrame
+    mindex = pd.MultiIndex.from_product([binsizes, fracs])
     if reverse:
         res = pd.DataFrame(
             index=mindex,
@@ -1262,94 +1154,81 @@ def downsample_enrichment_analysis(data,
         res = pd.DataFrame(
             index=mindex,
             columns=['IP', 'IP_clust', 'Undetermined', 'total_cov'])
-    if genome == 'T2T-CHM13v2.0':
-        lengths = T2T_lengths
-        chr_ids = T2T_chr_ids
-    elif genome == 'GRCh38':
-        lengths = GRCh38_lengths
-        chr_ids = hg38_chr_ids
-    # merging chromosomes
-    for bins in bins_list:
-        binned_lengths = np.array([x // bins + 1 for x in lengths.values()])
-        seperators = np.cumsum(binned_lengths)
-        total_length = seperators[-1]
-        for i, chr_id in enumerate(chr_ids.keys()):
-            df = pd.read_csv(
-                Path(data_dir, data, 'results', 'alignments', genome,
-                     f'{data}_{genome}_chr{chr_id}_'
-                     f'thres_{max_fragment_len}_binned_{bins}.csv'),
-                index_col=0)
-            if i == 0:
-                full_genome = pd.DataFrame(
-                    np.zeros((total_length, len(df.columns))),
-                    columns=df.columns)
-            full_genome.iloc[seperators[i]-len(df):seperators[i], :] = df
-        # computing p_value and q_value
-        for frac in frac_list:
-            frac_IP = integer_histogram_sample(
-                full_genome["ip_binned_signal"], frac)
-            frac_Ctrl = integer_histogram_sample(
-                full_genome["ctrl_binned_signal"], frac)
+    # Start analysis
+    for binsize in binsizes:
+        # Load alignment data
+        df = pd.read_csv(
+            Path(data_dir, data, 'results', 'alignments', genome,
+                 f'{data}_{genome}_maxfraglen_{max_frag_len}_'
+                 f'binsize_{binsize}.csv'),
+            index_col=0)
+        for frac in fracs:
+            # Randomly sample alignment histogram
+            frac_IP = integer_histogram_sample(df["ip_count"], frac)
+            frac_Ctrl = integer_histogram_sample(df["ctrl_count"], frac)
+            # Compute p-values
             n = frac_IP + frac_Ctrl
             cov = np.sum(n)
             p_binom = np.sum(frac_IP) / cov
-            p_values = clip_to_nonzero_min(
+            pval = clip_to_nonzero_min(
                 1 - scipy.stats.binom.cdf(frac_IP - 1, n, p_binom))
+            # Extract significant IP bins
             if use_fdr:
+                # correct with q-value on non-empty bins
                 valid_bins = (n != 0)
-                signif_IP = np.zeros(len(full_genome), dtype=bool)
+                signif_IP = np.zeros(len(df), dtype=bool)
                 signif_IP[valid_bins], *_ = multitest.multipletests(
-                    p_values[valid_bins], method='fdr_bh')
+                    pval[valid_bins], method='fdr_bh')
             else:
-                signif_IP = np.array(p_values < 0.05)
+                signif_IP = np.array(pval < 0.05)
             n_signif_IP = np.sum(signif_IP)
             n_signif_IP_clust = nb_boolean_true_clusters(signif_IP)
-            tot = len(signif_IP)
+            # Extract significant Ctrl bins too
             if reverse:
-                rev_p_values = clip_to_nonzero_min(
+                rev_pval = clip_to_nonzero_min(
                     1 - scipy.stats.binom.cdf(frac_Ctrl - 1, n, 1 - p_binom))
                 if use_fdr:
-                    signif_Ctrl = np.zeros(len(full_genome), dtype=bool)
+                    signif_Ctrl = np.zeros(len(df), dtype=bool)
                     signif_Ctrl[valid_bins], *_ = multitest.multipletests(
-                        rev_p_values[valid_bins], method='fdr_bh')
+                        rev_pval[valid_bins], method='fdr_bh')
                 else:
-                    signif_Ctrl = np.array(rev_p_values < 0.05)
+                    signif_Ctrl = np.array(rev_pval < 0.05)
                 n_signif_Ctrl = np.sum(signif_Ctrl)
                 n_signif_Ctrl_clust = nb_boolean_true_clusters(signif_Ctrl)
-                res.loc[bins, frac] = [n_signif_IP,
-                                       n_signif_IP_clust,
-                                       tot - n_signif_IP - n_signif_Ctrl,
-                                       n_signif_Ctrl,
-                                       n_signif_Ctrl_clust,
-                                       cov]
+            # Save results
+            if reverse:
+                res.loc[binsize, frac] = [
+                    n_signif_IP,
+                    n_signif_IP_clust,
+                    len(df) - n_signif_IP - n_signif_Ctrl,
+                    n_signif_Ctrl,
+                    n_signif_Ctrl_clust,
+                    cov]
             else:
-                res.loc[bins, frac] = [n_signif_IP,
-                                       n_signif_IP_clust,
-                                       tot - n_signif_IP,
-                                       cov]
+                res.loc[binsize, frac] = [
+                    n_signif_IP,
+                    n_signif_IP_clust,
+                    len(df) - n_signif_IP,
+                    cov]
     return res
 
 
 def pool_experiments(dfs, verbose=True):
-    cols_to_take = ['ip_binned_signal', 'ctrl_binned_signal']
+    cols_to_take = ['ip_count', 'ctrl_count']
     df_pooled = dfs[0][['pos'] + cols_to_take].copy()
     for df in dfs[1:]:
         df_pooled[cols_to_take] += df[cols_to_take]
     # computing p_value and q_value
     sums = df_pooled.sum(axis=0)
-    p_binom = sums["ip_binned_signal"] / (sums["ip_binned_signal"]
-                                          + sums["ctrl_binned_signal"])
-    n_binom = df_pooled["ip_binned_signal"] + df_pooled["ctrl_binned_signal"]
-    df_pooled['binom_p_value_complete'] = clip_to_nonzero_min(
-        1 - scipy.stats.binom.cdf(df_pooled["ip_binned_signal"] - 1,
-                                  n_binom, p_binom))
-    reject, q_value, *_ = multitest.multipletests(
-        df_pooled["binom_p_value_complete"], method='fdr_bh')
-    df_pooled['binom_q_value_complete'] = q_value
-    df_pooled['-log(qvalue_complete)'] = -np.log10(q_value)
-    df_pooled['-log(pvalue_complete)'] = -np.log10(
-        df_pooled["binom_p_value_complete"])
-    df_pooled['significantly_enriched'] = reject
+    p_binom = sums["ip_count"] / (sums["ip_count"] + sums["ctrl_count"])
+    n_binom = df_pooled["ip_count"] + df_pooled["ctrl_count"]
+    df_pooled['pval'] = clip_to_nonzero_min(
+        1 - scipy.stats.binom.cdf(df_pooled["ip_count"] - 1, n_binom, p_binom))
+    reject, df_pooled['qval'], *_ = multitest.multipletests(
+        df_pooled["pval"], method='fdr_bh')
+    df_pooled['-log_qval'] = -np.log10(df_pooled['qval'])
+    df_pooled['-log_pval'] = -np.log10(df_pooled["pval"])
+    df_pooled['signif_qval'] = reject
     if verbose:
         print(f'{np.sum(reject)}/{len(reject)} '
               f'significantly enriched bins in dataframe')
