@@ -1139,6 +1139,7 @@ def downsample_enrichment_analysis(data,
                                    divs=None,
                                    reverse=True,
                                    data_dir='../shared_folder',
+                                   basename='',
                                    use_fdr=True):
     # Convert divs to fracs
     if divs is not None:
@@ -1159,7 +1160,7 @@ def downsample_enrichment_analysis(data,
         # Load alignment data
         df = pd.read_csv(
             Path(data_dir, data, 'results', 'alignments', genome,
-                 f'{data}_{genome}_maxfraglen_{max_frag_len}_'
+                 f'{data}_{genome}_{basename}maxfraglen_{max_frag_len}_'
                  f'binsize_{binsize}.csv'),
             index_col=0)
         for frac in fracs:
