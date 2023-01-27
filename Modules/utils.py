@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 from collections import defaultdict
+import warnings
 from typing import Optional, Union
 import re
 import json
@@ -1075,6 +1076,7 @@ def genome_enrichment(ip_coord_file,
     wdir = Path(out_file).parent
     log_file = Path(wdir, 'alignment_analysis_log.txt')
     log_file = safe_filename(log_file)
+    out_file = safe_filename(out_file)
     with open(log_file, 'w') as f:
         f.write(f'IP coordinates file: {ip_coord_file}\n'
                 f'Control coordinates file: {ctrl_coord_file}\n'
@@ -1085,14 +1087,17 @@ def genome_enrichment(ip_coord_file,
     # Get chromosome lengths
     with open(chr_sizes_file, 'r') as f:
         chr_lens = json.load(f)
-    binned_chr_lens = np.array([x // binsize + 1 for x in chr_lens.values()])
-    chr_seps = np.cumsum(binned_chr_lens)
-    total_length = chr_seps[-1]
     # Build DataFrame
-    columns = ['pos', 'ip_count', 'ctrl_count', 'pval', 'qval']
-    df = pd.DataFrame(np.zeros((total_length, len(columns))), columns=columns)
+    mindex = pd.MultiIndex.from_tuples(
+        [(chr_id, pos)
+         for chr_id in chr_lens.keys()
+         for pos in np.arange(0, chr_lens[chr_id], binsize)],
+        names=['chr', 'pos']
+    )
+    columns = ['ip_count', 'ctrl_count', 'pval', 'qval']
+    df = pd.DataFrame(0, index=mindex, columns=columns)
     # Loop over chromosomes
-    for i, chr_id in enumerate(chr_lens.keys()):
+    for chr_id in chr_lens.keys():
         # Load chromosome fragment coordinates
         with np.load(ip_coord_file) as f:
             ip_coord_chr = f[chr_id]
@@ -1109,10 +1114,8 @@ def genome_enrichment(ip_coord_file,
         ctrl_count_chr = binned_alignment_count_from_coord(
             ctrl_coord_chr, binsize=binsize, length=chr_lens[chr_id])
         # Insert in DataFrame
-        df.iloc[chr_seps[i]-len(ip_count_chr):chr_seps[i], :3] = np.transpose(
-            np.vstack((np.arange(0, len(ip_count_chr)*binsize, binsize),
-                       ip_count_chr,
-                       ctrl_count_chr)))
+        df.loc[chr_id, :'ctrl_count'] = np.transpose(
+            np.vstack((ip_count_chr, ctrl_count_chr)))
         # Write log info
         with open(log_file, 'a') as f:
             f.write(f'Processing chr {chr_id}...\n'
@@ -1127,7 +1130,6 @@ def genome_enrichment(ip_coord_file,
         1 - scipy.stats.binom.cdf(df['ip_count'] - 1, n_binom, p_binom))
     _, df['qval'], *_ = multitest.multipletests(df['pval'], method='fdr_bh')
     # Save final DataFrame
-    out_file = safe_filename(out_file)
     df.to_csv(out_file)
 
 
@@ -1234,6 +1236,74 @@ def pool_experiments(dfs, verbose=True):
         print(f'{np.sum(reject)}/{len(reject)} '
               f'significantly enriched bins in dataframe')
     return df_pooled
+
+
+def adapt_to_bins(df, df_ref):
+    """
+    Assign df values to each corresponding bin of df_ref.
+
+    df's binsize must be an integer multiple of df_ref's
+    """
+    # Input checks
+    for _df in [df, df_ref]:
+        try:
+            assert isinstance(_df, pd.DataFrame)
+            assert isinstance(_df.index, pd.MultiIndex)
+            assert _df.index.nlevels == 2
+            assert _df.index.levels[1].size > 1
+        except AssertionError:
+            print("Arguments must be DataFrames using MultiIndex with 2 "
+                  "levels, and second level must have at least 2 values")
+            raise
+    try:
+        assert np.all(df.index.levels[0] == df_ref.index.levels[0])
+    except AssertionError:
+        print("Both DataFrames must have the same first levels")
+        raise
+    # Get and check binsizes
+    binsize = df.index.levels[1][1]
+    binsize_ref = df_ref.index.levels[1][1]
+    try:
+        assert binsize >= binsize_ref
+        assert binsize % binsize_ref == 0
+    except AssertionError:
+        print("df's binsize must be an integer multiple of df_ref's")
+        raise
+    # repeat df `scale` times
+    scale = binsize // binsize_ref
+    newdf = df.reindex(df.index.repeat(scale))
+    # reset indices with binsize_ref intervals
+    newdf.index = pd.MultiIndex.from_tuples(
+        [(chr_id, pos)
+         for chr_id in df.index.levels[0]
+         for pos in range(0, df.loc[chr_id].index.max()+binsize, binsize_ref)],
+        names=['chr', 'pos']
+    )
+    # reindex according to df_ref to discard unnecessary trailing indices
+    return newdf.reindex(df_ref.index)
+
+
+def adapt_to_bins_old(df, df_ref, binsize, binsize_ref):
+    """
+    The two DataFrames must be of the same genome with same number of
+    chromosomes so that the scaled separators match within `scale` indices.
+    Binsizes must be integer multiples of each other.
+    """
+    # get separators
+    seps = np.append(np.where(df['pos'] == 0)[0], len(df))
+    seps_ref = np.append(np.where(df_ref['pos'] == 0)[0], len(df_ref))
+    # get binsize scale
+    scale = binsize // binsize_ref
+    # repeat df2 `scale` times and reset indices
+    subdf = df.reindex(df.index.repeat(scale))
+    subdf = subdf.reset_index().drop('index', axis=1)
+    # cut chromosome edges to conform to df1
+    cumul = 0
+    for i in range(1, len(seps_ref)):
+        subdf.drop(range(seps_ref[i] + cumul, seps[i] * scale), inplace=True)
+        cumul = seps[i]*scale - seps_ref[i]
+    # reset indices again
+    return subdf.reset_index().drop('index', axis=1)
 
 
 # Peak manipulation
@@ -1845,7 +1915,7 @@ def safe_filename(file: Path) -> Path:
     """Make sure file can be build without overriding an other.
 
     If file already exists, returns a new filename with a number in between
-    parenthesis.
+    parenthesis. If the parent to the file doesn't exist, it is created.
     """
     # Build parent directories if needed
     Path(file.parent).mkdir(parents=True, exist_ok=True)
@@ -1872,3 +1942,43 @@ def ram_usage() -> None:
         int, os.popen('free -t -m').readlines()[-1].split()[1:])
     # Memory usage
     print("RAM memory % used:", round((used_memory/total_memory) * 100, 2))
+
+
+def roman_to_int(str):
+    sym_values = {'I': 1, 'V': 5, 'X': 10, 'L': 50,
+                  'C': 100, 'D': 500, 'M': 1000}
+    res = 0
+    i = 0
+    while (i < len(str)):
+        # Get value of current symbol
+        s1 = sym_values[str[i]]
+        if (i + 1 < len(str)):
+            # Get value of next symbol
+            s2 = sym_values[str[i + 1]]
+            if (s1 >= s2):
+                res = res + s1
+                i = i + 1
+            else:
+                res = res + s2 - s1
+                i = i + 2
+        else:
+            res = res + s1
+            i = i + 1
+    return res
+
+
+def int_to_roman(number):
+    num = [1, 4, 5, 9, 10, 40, 50, 90,
+           100, 400, 500, 900, 1000]
+    sym = ["I", "IV", "V", "IX", "X", "XL",
+           "L", "XC", "C", "CD", "D", "CM", "M"]
+    i = 12
+    res = ''
+    while number:
+        div = number // num[i]
+        number %= num[i]
+        while div:
+            res += sym[i]
+            div -= 1
+        i -= 1
+    return res
