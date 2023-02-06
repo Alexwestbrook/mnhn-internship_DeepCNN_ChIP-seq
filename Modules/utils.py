@@ -708,39 +708,53 @@ def write_fasta(seqs: dict,
         Number of bases before the line is wrapped.
     """
     with open(fasta_file, 'w') as f:
-        for id, seq in enumerate(seqs):
-            f.write('>{}\n'.format(id))
+        if isinstance(seqs, dict):
+            iterable = seqs.items()
+        else:
+            iterable = enumerate(seqs)
+        for id, seq in iterable:
+            f.write(f'>{id}\n')
             if wrap is not None:
                 for i in range(0, len(seq), wrap):
-                    f.write('{}\n'.format(seq[i:i + wrap]))
+                    f.write(f'{seq[i:i + wrap]}\n')
             else:
-                f.write('{}\n'.format(seq))
+                f.write(f'{seq}\n')
 
 
-def parse_bed_peaks(bed_file, window_size=101, merge=True):
+def parse_bed_peaks(bed_file,
+                    window_size=None,
+                    remove_duplicates=False,
+                    based1=False):
+    # compute offset to adjust 1-based bed indices to 0-based chromosome
+    # indices, or predictions with given window
+    offset = 0
+    if based1:
+        offset += 1
+    if window_size is not None:
+        offset += window_size // 2
     with open(bed_file, 'r') as f:
         chr_peaks = {}
         for line in f:
             line = line.rstrip()
             chr_id, start, end, _, score, *_ = line.split('\t')
-            # chr_id = chr_id[3:]
-            start, end, score = tuple(
-                int(item) for item in (start, end, score))
+            start, end, score = int(start), int(end), int(score)
             if chr_id in chr_peaks.keys():
                 chr_peaks[chr_id].append(np.array([start, end, score]))
             else:
                 chr_peaks[chr_id] = [np.array([start, end, score])]
         for key in chr_peaks.keys():
-            # convert to array, remove duplicates and adjust indices to window
-            chr_peaks[key] = (np.unique(np.array(chr_peaks[key]), axis=0)
-                              - np.array([1, 1, 0]) * window_size // 2)
+            # convert to array, remove duplicates
+            if remove_duplicates:
+                chr_peaks[key] = np.unique(np.array(chr_peaks[key]), axis=0)
+            # Adjust indices
+            chr_peaks[key] = (np.asarray(chr_peaks[key])
+                              - np.array([1, 1, 0]) * offset)
             try:
                 # Check if some peaks overlap
-                overlaps, _ = self_overlapping_peaks(chr_peaks[key],
-                                                     merge=merge)
+                overlaps = self_overlapping_peaks(chr_peaks[key])
                 assert len(overlaps) == 0
             except AssertionError:
-                print(f'Warning: some peaks overlap in chr{key}')
+                print(f'Warning: some peaks overlap in {key}')
     return chr_peaks
 
 
@@ -831,6 +845,14 @@ def parse_bam(bam_file: str,
     if verbose:
         print(f'{rejected_count}/{total_count} reads rejected')
     return chr_coord
+
+
+def inspect_bam_mapq(bam_file):
+    mapqs = defaultdict(int)
+    with pysam.AlignmentFile(bam_file, 'rb') as f:
+        for read in f.fetch():
+            mapqs[read.mapping_quality] += 1
+    return dict(sorted(mapqs.items()))
 
 
 def load_annotation(file, chr_id, window_size, anchor='center'):
@@ -960,7 +982,7 @@ def binned_alignment_count_from_coord(coord: np.ndarray,
     Parameters
     ----------
     coord : ndarray, shape=(nb_reads, 2)
-        2D-array of coordinates for start and end of each fragment.
+        2D-array of coordinates for start and end (included) of each fragment.
     bins : int, default=100
         Length of bins, in bases, to divide the signal into.
     length : int, optional
@@ -991,32 +1013,37 @@ def binned_alignment_count_from_coord(coord: np.ndarray,
     ).toarray().ravel()
 
 
-def exact_alignment_count_from_coord(coord: np.ndarray) -> np.ndarray:
+def exact_alignment_count_from_coord(coord: np.ndarray,
+                                     length: int = None) -> np.ndarray:
     """
     Build alignment count signal from read coordinates on a single chromosome.
 
     Parameters
     ----------
     coord : ndarray, shape=(nb_reads, 2)
-        2D-array of coordinates for start and end of each fragment.
+        2D-array of coordinates for start and end (included) of each fragment.
 
     Returns
     -------
     ndarray
         1D-array of read count for each position along the chromosome.
     """
+    # Get coordinate of first bp after fragment end
+    coord = coord.copy()
+    coord[:, 1] += 1
+    if length is None:
+        length = np.max(coord)
     # Insert +1 at fragment start and -1 after fragment end
     data = np.ones(2*len(coord), dtype=int)
     data[1::2] = -1
-    # Get coordinate of first bp after fragment end
-    coord[:, 1] = coord[:, 1] + 1
     # Insert using scipy.sparse implementation
     start_ends = coo_matrix(
         (data, (coord.ravel(), np.zeros(2*len(coord), dtype=int))),
-        shape=(np.max(coord)+1, 1)
+        shape=(length + 1, 1)  # length+1 because need a -1 after last end
     ).toarray().ravel()
-    # Cumulative sum to propagate full fragments
-    return np.cumsum(start_ends)
+    # Cumulative sum to propagate full fragments,
+    # remove last value which is always 0
+    return np.cumsum(start_ends)[:-1]
 
 
 def bin_preds(preds, bins):
@@ -1523,14 +1550,14 @@ def overlapping_peaks(peaks0: np.ndarray, peaks1: np.ndarray) -> tuple:
 
 
 def self_overlapping_peaks(peaks: np.ndarray,
-                           merge: bool = True,
+                           merge: bool = False,
                            tol: int = 1
                            ) -> tuple:
     # tuple(np.ndarray, Optional(np.ndarray)):
     """Determine which peaks within the array overlap
 
     As opposed to `overlapping_peaks`, here two disjoint but adjacent peaks
-    will be considered self-overlapping since then can be merged into one
+    will be considered self-overlapping since they can be merged into one
     contiguous peak.
 
     Parameters
@@ -1541,9 +1568,9 @@ def self_overlapping_peaks(peaks: np.ndarray,
         `peak_start` and `peak_end` must be indices on the chromosome.
         Peaks must be disjoint within a 2D-array, meaning that there is no
         other peak starting or ending between `peak_start` and `peak_end`.
-    merge : bool, default=True
+    merge : bool, default=False
         True indicates to return an array with overlapping peaks merged. False
-        indicates to not perform this operation, which can be faster
+        indicates to not perform this operation, which is faster
     tol : int, default=1
         Maximum difference between peak_end and the next peak_start to
         consider as an overlap. This value defaults to 1 because unlike slices,
@@ -1900,6 +1927,21 @@ def integer_histogram_sample_vect(array: np.ndarray,
         shape=(len(frac), len(array))
     ).toarray()
     return histogram
+
+
+def indices_from_starts_ends(starts, ends):
+    lens = ends - starts
+    np.cumsum(lens, out=lens)
+    i = np.ones(lens[-1], dtype=int)
+    i[0] = starts[0]
+    i[lens[:-1]] += starts[1:]
+    i[lens[:-1]] -= ends[:-1]
+    np.cumsum(i, out=i)
+    return i
+
+
+def indices_from_peaks(peaks):
+    return indices_from_starts_ends(peaks[:, 0], peaks[:, 1])
 
 
 # Other utils
