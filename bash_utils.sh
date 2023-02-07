@@ -6,7 +6,7 @@ find . -mindepth 1 -type f -name "*.sam" -exec du -ch {} +
 expr `wc -l < file` / 4
 
 # check read lengths in fastq
-awk 'NR%4 == 2 {lengths[length($0)]++ ; counter++} END {for (l in lengths) {print l, lengths[l]}; print "total reads: " counter}' $fastq
+awk 'NR%4 == 2 {lengths[length($0)]++ ; counter++} ENDFILE {for (l in lengths) {print l, lengths[l]}; print "total reads: " counter; delete lengths; counter=0}' $fastqs
 
 # linearize, shuffle and rebuild fastq
 awk '{OFS="\t"; getline seq; getline sep; getline qual; print $0,seq,sep,qual}' $fastq | shuf | awk -F '\t' '{OFS="\n"; print $1,$2,$3,$4}' > $new_fastq
