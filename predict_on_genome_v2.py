@@ -152,10 +152,10 @@ if __name__ == "__main__":
             # predict on data and save predictions
             preds = model.predict(generator_chr).ravel()
             if args.multi_file:
-                np.savez_compressed(Path(args.output, f"preds_on_chr{chr_id}"),
+                np.savez_compressed(Path(args.output, f"preds_on_{chr_id}"),
                                     preds=preds)
             else:
-                all_preds[f"chr{chr_id}"] = preds
+                all_preds[chr_id] = preds
         if not args.multi_file:
             np.savez_compressed(Path(args.output,
                                      f"preds_on_{Path(args.genome).name}"),
