@@ -35,18 +35,17 @@ def parsing():
         type=str,
         required=True)
     parser.add_argument(
+        "-o", "--output",
+        help="output directory to write predictions in.",
+        type=str,
+        required=True)
+    parser.add_argument(
         "-c", "--chromosomes",
         help="chromosomes to predict on. Specify 'all' if you wish to predict "
              "on all chromosomes",
         nargs="+",
         default=["all"],
-        type=str,
-        required=True)
-    parser.add_argument(
-        "-o", "--output",
-        help="output directory to write predictions in.",
-        type=str,
-        required=True)
+        type=str)
     parser.add_argument(
         "-tm", "--train_method",
         help="method used during training, 0 for base and 1 for reweighting, "
