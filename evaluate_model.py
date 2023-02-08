@@ -147,7 +147,7 @@ if __name__ == "__main__":
         # If labels aren't provided, assume alternating between 1 and 0
         # This is often the case in the sharded dataset
         if y_test is None:
-            y_test = np.zeros(len(x_test), dtype=bool)
+            y_test = np.zeros(len(pred), dtype=bool)
             y_test[::2] = 1
         predIP = pred[y_test == 1]
         predControl = pred[y_test == 0]
