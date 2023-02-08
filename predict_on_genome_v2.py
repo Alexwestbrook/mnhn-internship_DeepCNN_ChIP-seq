@@ -116,12 +116,10 @@ if __name__ == "__main__":
         all_preds = {}
     # Load genome
     with np.load(Path(args.genome)) as genome:
-        print(args.chromosomes)
         if args.chromosomes == ["all"]:
             chromosomes = genome.keys()
         else:
             chromosomes = args.chromosomes
-        print(chromosomes)
         for chr_id in chromosomes:
             # Load genomic data and maybe labels (labels aren't currently used)
             try:
