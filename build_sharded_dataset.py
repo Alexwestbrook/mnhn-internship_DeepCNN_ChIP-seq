@@ -144,7 +144,7 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     # helper functions
     def save_shard():
         """One-hot encode a shard and save to npz archive"""
-        print(f'saving shard {cur_split}_{cur_shard}...')
+        print(f'saving shard {cur_split}_{cur_shard} with {len(shard)} reads...')
         one_hots = utils.one_hot_encoding(shard, read_length=read_length)
         np.savez_compressed(Path(out_dir, f'{cur_split}_{cur_shard}'),
                             ids=ids,
@@ -214,7 +214,6 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     cur_split, cur_split_shards = next(splits)
     cur_shard_size = next(cur_split_shards)
     cur_shard = 0
-    print(cur_split, cur_shard, cur_shard_size)
     ids, shard = [], []
     # Read files
     while True:
@@ -236,7 +235,6 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
                 try:
                     # Update next shard size
                     cur_shard_size = next(cur_split_shards)
-                    print(cur_split, cur_shard, cur_shard_size)
                 except StopIteration:
                     # Split is done, get to next split,
                     # loop again in case split is empty
@@ -246,7 +244,6 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
                     # cur_shard_size was set successfully
                     break
         elif len(shard) > cur_shard_size:
-            print(len(shard))
             raise ValueError("Shard size increased past expected size")
 
     # Save last incomplete shard
