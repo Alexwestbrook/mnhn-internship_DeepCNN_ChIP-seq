@@ -39,7 +39,7 @@ def parsing():
         help="chromosomes to predict on. Specify 'all' if you wish to predict "
              "on all chromosomes",
         nargs="+",
-        default="all",
+        default=["all"],
         type=str,
         required=True)
     parser.add_argument(
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     # Load genome
     with np.load(Path(args.genome)) as genome:
         print(args.chromosomes)
-        if args.chromosomes == "all":
+        if args.chromosomes == ["all"]:
             chromosomes = genome.keys()
         else:
             chromosomes = args.chromosomes
