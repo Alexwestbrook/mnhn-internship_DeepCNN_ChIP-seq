@@ -144,7 +144,8 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     # helper functions
     def save_shard():
         """One-hot encode a shard and save to npz archive"""
-        print(f'saving shard {cur_split}_{cur_shard} with {len(shard)} reads...')
+        print(f'saving shard {cur_split}_{cur_shard} with {len(shard)} '
+              'reads...')
         one_hots = utils.one_hot_encoding(shard, read_length=read_length)
         np.savez_compressed(Path(out_dir, f'{cur_split}_{cur_shard}'),
                             ids=ids,
