@@ -435,7 +435,7 @@ def remove_reads_with_N(sequences,
                         max_size=None,
                         read_length=None,
                         verbose=False):
-    if max is not None:
+    if max_size is not None:
         sequences = sequences[:max_size]
     too_short = []
     with_Ns = []
