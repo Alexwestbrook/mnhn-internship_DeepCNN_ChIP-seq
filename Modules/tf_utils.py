@@ -294,9 +294,9 @@ class DataGeneratorFromFiles(Sequence):
 
     def __getitem__(self, index):
         # Initialize batch
-        print(f"getitem {index}")
-        print("file order")
-        print(self.files_idx)
+        # print(f"getitem {index}")
+        # print("file order")
+        # print(self.files_idx)
         X = np.empty((self.batch_size, *self.dim), dtype='float')
         Y = np.empty((self.batch_size, 1), dtype='float')
         weights = np.empty((self.batch_size, 1), dtype='float')
@@ -323,9 +323,9 @@ class DataGeneratorFromFiles(Sequence):
                         self.cur_weights[self.cur_labels == label] = weight
             content_indices = self.contents_idx[file_idx][start:stop]
             to_fill = slice(filled_idx, filled_idx + stop - start)
-            print(to_fill)
-            print(X.shape)
-            print(X[to_fill].shape)
+            # print(to_fill)
+            # print(X.shape)
+            # print(X[to_fill].shape)
             X[to_fill] = self.cur_data[content_indices]
             Y[to_fill, 0] = self.cur_labels[content_indices]
             weights[to_fill, 0] = self.cur_weights[content_indices]
@@ -338,7 +338,7 @@ class DataGeneratorFromFiles(Sequence):
         start_idx = utils.argmax_last(offset >= 0)
         end_idx = min(utils.argmax_last(offset > - self.batch_size),
                       len(self.files_idx) - 1)
-        print("start file", start_idx, "| end file", end_idx)
+        # print("start file", start_idx, "| end file", end_idx)
         starts = np.maximum(offset, 0)
         for idx in range(start_idx, end_idx + 1):
             file_idx, file_len = self.files_idx[idx]
