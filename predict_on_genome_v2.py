@@ -36,8 +36,10 @@ def parsing():
         required=True)
     parser.add_argument(
         "-c", "--chromosomes",
-        help="chromosomes to predict on.",
+        help="chromosomes to predict on. Specify 'all' if you wish to predict "
+             "on all chromosomes",
         nargs="+",
+        default="all",
         type=str,
         required=True)
     parser.add_argument(
@@ -115,7 +117,11 @@ if __name__ == "__main__":
         all_preds = {}
     # Load genome
     with np.load(Path(args.genome)) as genome:
-        for chr_id in args.chromosomes:
+        if args.chromosomes == "all":
+            chromosomes = genome.keys()
+        else:
+            chromosomes = args.chromosomes
+        for chr_id in chromosomes:
             # Load genomic data and maybe labels (labels aren't currently used)
             try:
                 one_hot_chr = genome[chr_id]
