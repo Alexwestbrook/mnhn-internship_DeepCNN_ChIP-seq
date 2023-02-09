@@ -249,7 +249,7 @@ class DataGeneratorFromFiles(Sequence):
                     )
                 np.save(new_file, data)
                 self.data_files.append(new_file)
-            # File content indices, used for for shuffling file contents
+            # File content indices, used for shuffling file contents
             self.contents_idx.append(np.arange(len(data)))
             # Get label files
             if use_labels:
