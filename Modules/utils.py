@@ -1099,6 +1099,27 @@ def genome_enrichment(ip_coord_file,
                       out_file,
                       max_frag_len=500,
                       binsize=200):
+    def process_coord_file(coord_file):
+        """Pipeline for both ip and ctrl coord files"""
+        try:
+            # Load chromosome fragment coordinates
+            with np.load(coord_file) as f:
+                coord_chr = f[chr_id]
+            # Filter out fragments too long
+            frag_lens_chr = np.diff(coord_chr, axis=1).ravel()
+            coord_chr = coord_chr[frag_lens_chr <= max_frag_len, :]
+            # Get binned count of mid points
+            count_chr = binned_alignment_count_from_coord(
+                coord_chr, binsize=binsize, length=chr_lens[chr_id])
+            with open(log_file, 'a') as f:
+                f'{np.sum(frag_lens_chr >= max_frag_len)} fragments '
+                f'longer than {max_frag_len}bp in {coord_file}\n'
+        except KeyError:
+            count_chr = np.zeros(chr_lens[chr_id] // binsize + 1)
+            with open(log_file, 'a') as f:
+                f'No reads in {coord_file}\n'
+        return count_chr
+
     # Log parameters
     wdir = Path(out_file).parent
     log_file = Path(wdir, 'alignment_analysis_log.txt')
@@ -1125,31 +1146,13 @@ def genome_enrichment(ip_coord_file,
     df = pd.DataFrame(0, index=mindex, columns=columns)
     # Loop over chromosomes
     for chr_id in chr_lens.keys():
-        # Load chromosome fragment coordinates
-        with np.load(ip_coord_file) as f:
-            ip_coord_chr = f[chr_id]
-        with np.load(ctrl_coord_file) as f:
-            ctrl_coord_chr = f[chr_id]
-        # Filter out fragments too long
-        ip_frag_lens_chr = np.diff(ip_coord_chr, axis=1).ravel()
-        ctrl_frag_lens_chr = np.diff(ctrl_coord_chr, axis=1).ravel()
-        ip_coord_chr = ip_coord_chr[ip_frag_lens_chr <= max_frag_len, :]
-        ctrl_coord_chr = ctrl_coord_chr[ctrl_frag_lens_chr <= max_frag_len, :]
-        # Get binned middle alignment
-        ip_count_chr = binned_alignment_count_from_coord(
-            ip_coord_chr, binsize=binsize, length=chr_lens[chr_id])
-        ctrl_count_chr = binned_alignment_count_from_coord(
-            ctrl_coord_chr, binsize=binsize, length=chr_lens[chr_id])
+        with open(log_file, 'a') as f:
+            f.write(f'Processing {chr_id}...\n')
+        ip_count_chr = process_coord_file(ip_coord_file)
+        ctrl_count_chr = process_coord_file(ctrl_coord_file)
         # Insert in DataFrame
         df.loc[chr_id, :'ctrl_count'] = np.transpose(
             np.vstack((ip_count_chr, ctrl_count_chr)))
-        # Write log info
-        with open(log_file, 'a') as f:
-            f.write(f'Processing chr {chr_id}...\n'
-                    f'{np.sum(ip_frag_lens_chr >= max_frag_len)} fragments '
-                    f'longer than {max_frag_len}bp in IP\n'
-                    f'{np.sum(ctrl_frag_lens_chr >= max_frag_len)} fragments '
-                    f'longer than {max_frag_len}bp in Control\n')
     # Compute p-values and q-values
     n_binom = df['ip_count'] + df['ctrl_count']
     p_binom = np.sum(df['ip_count']) / np.sum(n_binom)
