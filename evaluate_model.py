@@ -51,11 +51,6 @@ def parsing():
         default=0,
         type=int)
     parser.add_argument(
-        "-rl", "--read_length",
-        help="Number of base pairs in input reads, default to 101",
-        default=101,
-        type=int)
-    parser.add_argument(
         "-data", "--data_part",
         help="data to evaluate the model on, train or test, default to test",
         default='test',
@@ -113,8 +108,14 @@ if __name__ == "__main__":
     if args.train_method == 0:
         model = tf.keras.models.load_model(args.trained_model)
     else:
+        if args.from_files:
+            with np.load(Path(args.dataset, 'test_0.npz')) as f:
+                read_length = f['one_hots'].shape[1]
+        else:
+            with np.load(args.dataset) as f:
+                read_length = f['x_test'].shape[1]
         model = models.build_model(args.architecture,
-                                   read_length=args.read_length,
+                                   read_length=read_length,
                                    method=args.train_method)
         model.load_weights(args.trained_model)
     # Load dataset
