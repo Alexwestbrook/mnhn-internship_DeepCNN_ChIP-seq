@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from collections import defaultdict
 import warnings
-from typing import Optional, Union
+from typing import Callable, Optional, Union
 import re
 import json
 
@@ -1046,14 +1046,14 @@ def exact_alignment_count_from_coord(coord: np.ndarray,
     return np.cumsum(start_ends)[:-1]
 
 
-def bin_preds(preds, bins):
-    if len(preds) % bins == 0:
-        binned_preds = np.mean(strided_window_view(preds, bins, bins), axis=1)
+def bin_values(values: np.ndarray, binsize: int) -> np.ndarray:
+    if len(values) % binsize == 0:
+        binned_values = np.mean(strided_window_view(values, binsize, binsize), axis=1)
     else:
-        binned_preds = np.append(
-            np.mean(strided_window_view(preds, bins, bins), axis=1),
-            np.mean(preds[-(len(preds) % bins):]))
-    return binned_preds
+        binned_values = np.append(
+            np.mean(strided_window_view(values, binsize, binsize), axis=1),
+            np.mean(values[-(len(values) % binsize):]))
+    return binned_values
 
 
 def full_genome_binned_preds(pred_file,
@@ -1069,7 +1069,7 @@ def full_genome_binned_preds(pred_file,
     for i, chr_id in enumerate(chr_ids.keys()):
         with np.load(pred_file) as f:
             preds = f[f'chr{chr_id}']
-        binned_preds = bin_preds(preds, binsize)
+        binned_preds = bin_values(preds, binsize)
         df[separators[i]-len(binned_preds):separators[i]] = binned_preds
     return df, separators
 
@@ -1334,6 +1334,53 @@ def adapt_to_bins_old(df, df_ref, binsize, binsize_ref):
         cumul = seps[i]*scale - seps_ref[i]
     # reset indices again
     return subdf.reset_index().drop('index', axis=1)
+
+
+def make_mindex_ser(annotation_file: Path,
+                    chr_sizes_file: Path,
+                    out_file: Path,
+                    binsize: int,
+                    log: bool = True,
+                    process_func: Callable = None,
+                    name: str = None):
+    """
+    """
+    # Log parameters
+    out_file = safe_filename(out_file)
+    log_file = Path(out_file.parent, out_file.stem + '_log.txt')
+    log_file = safe_filename(log_file)
+    with open(log_file, 'w') as f:
+        f.write(f'annotation file: {annotation_file}\n'
+                f'chromosome sizes file: {chr_sizes_file}\n'
+                f'output file: {out_file}\n'
+                f'bin size: {binsize}\n'
+                f'process_function: {process_func}\n\n')
+    # Get chromosome lengths
+    with open(chr_sizes_file, 'r') as f:
+        chr_lens = json.load(f)
+    # Build MultiIndex
+    mindex = pd.MultiIndex.from_tuples(
+        [(chr_id, pos)
+         for chr_id in chr_lens.keys()
+         for pos in np.arange(0, chr_lens[chr_id], binsize)],
+        names=['chr', 'pos']
+    )
+    ser = pd.Series(0, index=mindex, name=name)
+    # Loop over chromosomes
+    for chr_id in chr_lens.keys():
+        with open(log_file, 'a') as f:
+            f.write(f'Processing {chr_id}...\n')
+        with np.load(annotation_file) as f:
+            try:
+                annot_chr = f[chr_id]
+                if process_func is not None:
+                    annot_chr = process_func(annot_chr)
+            except KeyError:
+                annot_chr = np.zeros(chr_lens[chr_id] // binsize + 1)
+                with open(log_file, 'a') as f:
+                    f'No annotation for {chr_id} in {annotation_file}\n'
+        # Insert in Series
+        ser.loc[chr_id] = annot_chr
 
 
 # Peak manipulation
@@ -1962,8 +2009,9 @@ def safe_filename(file: Path) -> Path:
     If file already exists, returns a new filename with a number in between
     parenthesis. If the parent to the file doesn't exist, it is created.
     """
+    file = Path(file)
     # Build parent directories if needed
-    Path(file.parent).mkdir(parents=True, exist_ok=True)
+    file.parent.mkdir(parents=True, exist_ok=True)
     # Change filename if it already exists
     file_dups = 0
     original_stem = file.stem
