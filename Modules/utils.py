@@ -1048,7 +1048,8 @@ def exact_alignment_count_from_coord(coord: np.ndarray,
 
 def bin_values(values: np.ndarray, binsize: int) -> np.ndarray:
     if len(values) % binsize == 0:
-        binned_values = np.mean(strided_window_view(values, binsize, binsize), axis=1)
+        binned_values = np.mean(
+            strided_window_view(values, binsize, binsize), axis=1)
     else:
         binned_values = np.append(
             np.mean(strided_window_view(values, binsize, binsize), axis=1),
@@ -1097,8 +1098,8 @@ def genome_enrichment(ip_coord_file,
                       ctrl_coord_file,
                       chr_sizes_file,
                       out_file,
-                      max_frag_len=500,
-                      binsize=200):
+                      binsize,
+                      max_frag_len=500):
     def process_coord_file(coord_file):
         """Pipeline for both ip and ctrl coord files"""
         try:
@@ -1121,17 +1122,17 @@ def genome_enrichment(ip_coord_file,
         return count_chr
 
     # Log parameters
-    wdir = Path(out_file).parent
-    log_file = Path(wdir, 'alignment_analysis_log.txt')
-    log_file = safe_filename(log_file)
+    out_file = Path(out_file)
     out_file = safe_filename(out_file)
+    log_file = Path(out_file.parent, out_file.stem + '_log.txt')
+    log_file = safe_filename(log_file)
     with open(log_file, 'w') as f:
         f.write(f'IP coordinates file: {ip_coord_file}\n'
                 f'Control coordinates file: {ctrl_coord_file}\n'
                 f'chromosome sizes file: {chr_sizes_file}\n'
                 f'output file: {out_file}\n'
-                f'max fragment length: {max_frag_len}\n'
-                f'bin size: {binsize}\n\n')
+                f'bin size: {binsize}\n'
+                f'max fragment length: {max_frag_len}\n\n')
     # Get chromosome lengths
     with open(chr_sizes_file, 'r') as f:
         chr_lens = json.load(f)
@@ -1340,11 +1341,11 @@ def make_mindex_ser(annotation_file: Path,
                     chr_sizes_file: Path,
                     out_file: Path,
                     binsize: int,
-                    log: bool = True,
+                    name: str = None,
+                    coords: bool = False,
                     process_func: Callable = None,
-                    name: str = None):
-    """
-    """
+                    **kwargs):
+    """Build a binned MultiIndex Series from an annotation file."""
     # Log parameters
     out_file = safe_filename(out_file)
     log_file = Path(out_file.parent, out_file.stem + '_log.txt')
@@ -1354,33 +1355,42 @@ def make_mindex_ser(annotation_file: Path,
                 f'chromosome sizes file: {chr_sizes_file}\n'
                 f'output file: {out_file}\n'
                 f'bin size: {binsize}\n'
-                f'process_function: {process_func}\n\n')
+                f'coords: {coords}\n'
+                f'process function: {process_func}\n\n')
     # Get chromosome lengths
     with open(chr_sizes_file, 'r') as f:
         chr_lens = json.load(f)
     # Build MultiIndex
     mindex = pd.MultiIndex.from_tuples(
         [(chr_id, pos)
-         for chr_id in chr_lens.keys()
-         for pos in np.arange(0, chr_lens[chr_id], binsize)],
+         for chr_id, chr_len in chr_lens.items()
+         for pos in np.arange(0, chr_len, binsize)],
         names=['chr', 'pos']
     )
     ser = pd.Series(0, index=mindex, name=name)
     # Loop over chromosomes
-    for chr_id in chr_lens.keys():
+    for chr_id, chr_len in chr_lens.items():
         with open(log_file, 'a') as f:
             f.write(f'Processing {chr_id}...\n')
         with np.load(annotation_file) as f:
             try:
                 annot_chr = f[chr_id]
                 if process_func is not None:
-                    annot_chr = process_func(annot_chr)
+                    # Process annotations before binning
+                    annot_chr = process_func(annot_chr, log_file, **kwargs)
+                if coords:
+                    # Get binned count of mid points
+                    annot_chr = binned_alignment_count_from_coord(
+                        annot_chr, binsize=binsize, length=chr_len)
+                else:
+                    annot_chr = bin_values(annot_chr, binsize)
             except KeyError:
-                annot_chr = np.zeros(chr_lens[chr_id] // binsize + 1)
+                annot_chr = np.zeros(chr_len // binsize + 1)
                 with open(log_file, 'a') as f:
                     f'No annotation for {chr_id} in {annotation_file}\n'
         # Insert in Series
         ser.loc[chr_id] = annot_chr
+    ser.to_csv(out_file)
 
 
 # Peak manipulation
