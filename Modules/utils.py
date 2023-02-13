@@ -1394,6 +1394,68 @@ def make_mindex_ser(annotation_file: Path,
 
 
 # Peak manipulation
+def make_peaks(peak_mask: np.ndarray,
+               length_thres: int = 1,
+               tol: int = 1) -> np.ndarray:
+    """Format peak array from peak boolean mask.
+
+    Determine regions of consecutive high prediction, called peaks.
+
+    Parameters
+    ----------
+    peak_mask : ndarray
+        1D-array of boolean values along the chromosome
+    length_thres : int, default=1
+        Minimum length required for peaks, any peak below or equal to that
+        length will be discarded
+    tol : int, default=1
+        Distance between consecutive peaks under which the peaks are merged
+        into one. Can be set higher to get a single peak when signal is
+        fluctuating too much. Unlike slices, peaks include their end points,
+        meaning [1 2] and [4 5] actually contain a gap of one base,
+        but the distance is 2 (4-2). The default value of 1 means that no
+        peaks will be merged.
+
+    Returns
+    -------
+    peaks : ndarray, shape=(n, 2)
+        2D-array, each line corresponds to a peak. A peak is a 1D-array of
+        size 2, with format [peak_start, peak_end]. `peak_start` and
+        `peak_end` are indices on the chromosome.
+    """
+    # Find where peak start and end
+    change_idx = np.where(peak_mask[1:] != peak_mask[:-1])[0] + 1
+    if peak_mask[0]:
+        # If predictions start with a peak, add an index at the start
+        change_idx = np.insert(change_idx, 0, 0)
+    if peak_mask[-1]:
+        # If predictions end with a peak, add an index at the end
+        change_idx = np.append(change_idx, len(peak_mask))
+    # # Check that change_idx contains as many starts as ends
+    # assert (len(change_idx) % 2 == 0)
+    # Merge consecutive peaks if their distance is below a threshold
+    if tol != 0:
+        # Compute difference between end of peak and start of next one
+        diffs = change_idx[2::2] - change_idx[1:-1:2]
+        # Get index when difference is below threshold, see below for matching
+        # index in diffs and in change_idx
+        # diff index:   0   1   2  ...     n-1
+        # change index:1-2 3-4 5-6 ... (2n-1)-2n
+        small_diff_idx, = np.where(diffs <= tol)
+        delete_idx = np.concatenate((small_diff_idx*2 + 1,
+                                     small_diff_idx*2 + 2))
+        # Remove close ends and starts using boolean mask
+        mask = np.ones(len(change_idx), dtype=bool)
+        mask[delete_idx] = False
+        change_idx = change_idx[mask]
+    # Reshape as starts and ends
+    peaks = np.reshape(change_idx, (-1, 2))
+    # Compute lengths of peaks and remove the ones below given threshold
+    lengths = np.diff(peaks, axis=1).ravel()
+    peaks = peaks[lengths > length_thres]
+    return peaks
+
+
 def find_peaks(preds: np.ndarray,
                pred_thres: float,
                length_thres: int = 1,
@@ -1429,37 +1491,7 @@ def find_peaks(preds: np.ndarray,
     """
     # Find pointwise peaks as predictions above the threshold
     peak_mask = (preds > pred_thres)
-    # Find where peak start and end
-    change_idx = np.where(peak_mask[1:] != peak_mask[:-1])[0] + 1
-    if peak_mask[0]:
-        # If predictions start with a peak, add an index at the start
-        change_idx = np.insert(change_idx, 0, 0)
-    if peak_mask[-1]:
-        # If predictions end with a peak, add an index at the end
-        change_idx = np.append(change_idx, len(peak_mask))
-    # # Check that change_idx contains as many starts as ends
-    # assert (len(change_idx) % 2 == 0)
-    # Merge consecutive peaks if their distance is below a threshold
-    if tol != 0:
-        # Compute difference between end of peak and start of next one
-        diffs = change_idx[2::2] - change_idx[1:-1:2]
-        # Get index when difference is below threshold, see below for matching
-        # index in diffs and in change_idx
-        # diff index:   0   1   2  ...     n-1
-        # change index:1-2 3-4 5-6 ... (2n-1)-2n
-        small_diff_idx, = np.where(diffs <= tol)
-        delete_idx = np.concatenate((small_diff_idx*2 + 1,
-                                     small_diff_idx*2 + 2))
-        # Remove close ends and starts using boolean mask
-        mask = np.ones(len(change_idx), dtype=bool)
-        mask[delete_idx] = False
-        change_idx = change_idx[mask]
-    # Reshape as starts and ends
-    peaks = np.reshape(change_idx, (-1, 2))
-    # Compute lengths of peaks and remove the ones below given threshold
-    lengths = np.diff(peaks, axis=1).ravel()
-    peaks = peaks[lengths > length_thres]
-    return peaks
+    return make_peaks(peak_mask, length_thres, tol)
 
 
 def find_peaks_in_window(peaks: np.ndarray,
