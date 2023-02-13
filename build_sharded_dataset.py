@@ -81,7 +81,8 @@ def parsing():
         "-split", "--split_sizes",
         help="numbers of reads to put in the test and valid sets, "
              "must be of length 2, set to 0 to ignore a split, default to "
-             "2**22 each.",
+             "2**22 each. All other samples are put in train split. You can "
+             "add a third value to limit train size",
         default=[2**23, 2**23],
         type=int,
         nargs='+')
@@ -132,7 +133,8 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
         indicates to process files entirely before moving to the next.
     split_sizes : tuple[int], default=[2**23, 2**23]
         Number of test and valid samples in this order, remaining samples are
-        train samples. Set value to 0 to ignore a split.
+        train samples. Set value to 0 to ignore a split. You can add a third
+        value to limit train size.
     read_length : int, default=None
         Number of bases in reads, if None, the read length is inferred from
         the maximum length in the first 100 sequences from each file. All
@@ -217,12 +219,14 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     cur_shard = 0
     ids, shard = [], []
     # Read files
-    while True:
+    done = False
+    while not done:
         # Get next ip and control reads, if either ran out, stop
         try:
             ip_id, ip_seq = get_next_valid_read(ip_iter)
             ctrl_id, ctrl_seq = get_next_valid_read(ctrl_iter)
         except StopIteration:
+            # No more reads
             break
         ids += [ip_id, ctrl_id]
         shard += [ip_seq, ctrl_seq]
@@ -232,15 +236,19 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
             # Reinitialize
             ids, shard = [], []
             cur_shard += 1
-            while True:
+            while not done:
                 try:
                     # Update next shard size
                     cur_shard_size = next(cur_split_shards)
                 except StopIteration:
                     # Split is done, get to next split,
-                    # loop again in case split is empty
-                    cur_split, cur_split_shards = next(splits)
+                    try:
+                        cur_split, cur_split_shards = next(splits)
+                    except StopIteration:
+                        # train split has reached max, exit all
+                        done = True
                     cur_shard = 0
+                    # loop again in case split is empty
                 else:
                     # cur_shard_size was set successfully
                     break
