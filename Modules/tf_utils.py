@@ -5,10 +5,11 @@ import numpy as np
 
 import tensorflow as tf
 from keras.engine import data_adapter
+import keras.backend as K
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
 from tensorflow.keras import Model
-from tensorflow.keras.metrics import binary_crossentropy
+from tensorflow.keras.metrics import binary_crossentropy, mse
 from tensorflow.python.eager import backprop
 
 import Modules.utils as utils
@@ -94,6 +95,39 @@ class ReweightingModel(Model):
             else:
                 return_metrics[metric.name] = result
         return return_metrics
+
+
+class ConfidenceLoss(tf.keras.losses.Loss):
+    def call(self, y_true, y_pred):
+        return tf.reduce_mean(
+            binary_crossentropy(y_true, y_pred[0])
+            + binary_crossentropy(y_true - y_pred[0], y_pred[1]),
+            axis=-1)
+
+
+def confidence_loss(y_true, y_pred):
+    return tf.reduce_mean(
+        binary_crossentropy(y_true, y_pred[:, 0])
+        + mse(y_true - y_pred[:, 0], y_pred[:, 1]))
+
+
+def mae_cor(y_true, y_pred):
+    """Compute loss with Mean absolute error and correlation.
+        :Example:
+        >>> model.compile(optimizer = 'adam', losses = mae_cor)
+        >>> load_model('file', custom_objects = {'mae_cor : mae_cor})
+    """
+    X = y_true - K.mean(y_true)
+    Y = y_pred - K.mean(y_pred)
+
+    sigma_XY = K.sum(X*Y)
+    sigma_X = K.sqrt(K.sum(X*X))
+    sigma_Y = K.sqrt(K.sum(Y*Y))
+
+    cor = sigma_XY/(sigma_X*sigma_Y + K.epsilon())
+    mae = K.mean(K.abs(y_true - y_pred))
+
+    return (1 - cor) + mae
 
 
 # Generators
