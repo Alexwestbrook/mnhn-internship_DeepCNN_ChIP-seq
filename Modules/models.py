@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 import tensorflow as tf
+import keras.backend as K
 from tensorflow.keras import Sequential
+from tensorflow.keras.losses import binary_crossentropy
 from tensorflow.keras.layers import Conv1D, MaxPool1D, concatenate, Dropout, \
     Dense, Input, Flatten
 from tensorflow.keras.initializers import VarianceScaling
@@ -16,9 +18,11 @@ def build_model(model_name,
                 loss='binary_crossentropy',
                 method=0,
                 T=1,
-                start_reweighting=2000):
+                start_reweighting=2000,
+                confidence=False):
     model_dict = {
         'inception_dna_v1': inception_dna_v1,
+        'inception_dna_v1_confidence': inception_dna_v1_confidence,
         'inception_dna_v2': inception_dna_v2,
         'inception_dna_paired_v1': inception_dna_paired_v1,
         'Yann_original': Yann_original,
@@ -31,9 +35,14 @@ def build_model(model_name,
         T=T,
         start_reweighting=start_reweighting
     )
-    model.compile(optimizer=Adam(learning_rate=learn_rate),
-                  loss=loss,
-                  metrics=['accuracy'])
+    if confidence:
+        model.compile(optimizer=Adam(learning_rate=learn_rate),
+                      loss=tf_utils.ConfidenceLoss(),
+                      metrics=['accuracy'])
+    else:
+        model.compile(optimizer=Adam(learning_rate=learn_rate),
+                      loss=loss,
+                      metrics=['accuracy'])
     return model
 
 
@@ -185,6 +194,65 @@ def inception_dna_v1(read_length=101,
                                           T=T,
                                           start_reweighting=start_reweighting,
                                           name='inception_dna_v1')
+    return model
+
+
+def inception_dna_v1_confidence(read_length=101,
+                                method=0,
+                                T=1,
+                                start_reweighting=2000):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) read_length: the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(read_length, 4))
+
+    x = simple_inception_module(input_layer,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_1')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_1')(x)
+    x = Dropout(0.2)(x)
+    x = simple_inception_module(x,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_2')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_2')(x)
+    x = Dropout(0.2)(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
+              activation='relu',
+              name='dense_1')(x)
+    out = Dense(units=1,
+                activation='sigmoid',
+                name='out')(x)
+    conf = Dense(units=1,
+                 activation='sigmoid',
+                 name='conf')(x)
+    model = tf.keras.Model(input_layer,
+                           [out, conf],
+                           name='inception_dna_v1_confidence')
     return model
 
 
