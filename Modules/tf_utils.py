@@ -100,8 +100,15 @@ class ReweightingModel(Model):
 class ConfidenceLoss(tf.keras.losses.Loss):
     def call(self, y_true, y_pred):
         return tf.reduce_mean(
-            binary_crossentropy(y_true, y_pred[0])
-            + binary_crossentropy(y_true - y_pred[0], y_pred[1]),
+            binary_crossentropy(y_true, y_pred[:, :1])
+            + mse(tf.abs(y_true - y_pred[:, :1]), y_pred[:, 1:]),
+            axis=-1)
+
+
+class DummyLoss(tf.keras.losses.Loss):
+    def call(self, y_true, y_pred):
+        return tf.reduce_mean(
+            binary_crossentropy(y_true, y_pred[:, :1]),
             axis=-1)
 
 
