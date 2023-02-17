@@ -1344,6 +1344,7 @@ def make_mindex_ser(annotation_file: Path,
                     name: str = None,
                     coords: bool = False,
                     process_func: Callable = None,
+                    annot_ids_dict: dict = None,
                     **kwargs):
     """Build a binned MultiIndex Series from an annotation file."""
     # Log parameters
@@ -1356,7 +1357,8 @@ def make_mindex_ser(annotation_file: Path,
                 f'output file: {out_file}\n'
                 f'bin size: {binsize}\n'
                 f'coords: {coords}\n'
-                f'process function: {process_func}\n\n')
+                f'process function: {process_func}\n'
+                f'annot_ids_dict: {annot_ids_dict}\n\n')
     # Get chromosome lengths
     with open(chr_sizes_file, 'r') as f:
         chr_lens = json.load(f)
@@ -1374,7 +1376,10 @@ def make_mindex_ser(annotation_file: Path,
             f.write(f'Processing {chr_id}...\n')
         with np.load(annotation_file) as f:
             try:
-                annot_chr = f[chr_id]
+                if annot_ids_dict is not None:
+                    annot_chr = f[annot_ids_dict[chr_id]]
+                else:
+                    annot_chr = f[chr_id]
                 if process_func is not None:
                     # Process annotations before binning
                     annot_chr = process_func(annot_chr, log_file, **kwargs)
@@ -1387,7 +1392,8 @@ def make_mindex_ser(annotation_file: Path,
             except KeyError:
                 annot_chr = np.zeros(chr_len // binsize + 1)
                 with open(log_file, 'a') as f:
-                    f'No annotation for {chr_id} in {annotation_file}\n'
+                    f.write(
+                        f'No annotation for {chr_id} in {annotation_file}\n')
         # Insert in Series
         ser.loc[chr_id] = annot_chr
     ser.to_csv(out_file)
