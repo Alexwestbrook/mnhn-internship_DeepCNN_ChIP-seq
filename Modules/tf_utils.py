@@ -196,6 +196,48 @@ class DataGenerator(Sequence):
 class DataGeneratorFromFiles(Sequence):
     """
     Build callable generator for Tensorflow model from multiple files
+
+    Parameters
+    ----------
+    dataset_dir : Path
+        Path to dataset directory, containing files in numpy binary format
+        npy or npz. Filenames must be '[split]_[index].[npy or npz]'. For
+        example, the first train file (in npy format) must be named
+        'train_0.npy'.
+        The directory must not contain unrelated files or globbing might
+        include more files in the dataset.
+        If files are provided in npz format, they will be copied in npy
+        format for faster access during training and prediction. The copy
+        will have same name as the original but with the .npy extension
+        instead of .npz. It will raise an Exception if the file already
+        exists in npy format.
+    batch_size : int
+        Number of samples per batch.
+    split : str, default='train'
+        Name of the split to generate, must match the dataset filenames
+    use_labels: bool, default=False
+        If False, the even index samples are assumed of label 1 and odd
+        index samples of label 0. If True, indicates to use labels in
+        label files.
+        The files must be in the same directory as their data files and
+        with the name labels_[split]_[index].npy. The labels must be an
+        array of same shape as the data.
+    class_weight: dict[label] -> float, default={0: 1, 1: 1}
+        Dictionary mapping labels to class weights values.
+    use_sample_weight: bool, default=False
+        If True, overides class_weight argument and indicates to use weight
+        files. The sample_weight files must be in the same directory as
+        their data files and with the name weights_[split]_[index].npy.
+        The weights must be an array of same shape as the data.
+    shuffle: bool, default=True
+        If True, indicates to shuffle file order and content before each
+        iteration, recommended for training. During prediction, set to
+        False for easy matching between data and prediction.
+    file_suffix: {'npy', 'npz', 'None'}, default=None
+        Indicates the suffix of the files to use in the dataset. If None,
+        the suffix is inferred from the presence of a [split]_0.npy file.
+        If not, the file_suffix is assumed to be npz. Due to conversion of
+        npz into npy, an Error will be raised in case of conflicting names.
     """
     def __init__(self,
                  dataset_dir: Path,
@@ -207,51 +249,6 @@ class DataGeneratorFromFiles(Sequence):
                  use_sample_weights: np.ndarray = False,
                  shuffle: bool = True,
                  file_suffix: str = None):
-        """
-        Build callable generator for Tensorflow model from multiple files
-
-        Parameters
-        ----------
-        dataset_dir : Path
-            Path to dataset directory, containing files in numpy binary format
-            npy or npz. Filenames must be '[split]_[index].[npy or npz]'. For
-            example, the first train file (in npy format) must be named
-            'train_0.npy'.
-            The directory must not contain unrelated files or globbing might
-            include more files in the dataset.
-            If files are provided in npz format, they will be copied in npy
-            format for faster access during training and prediction. The copy
-            will have same name as the original but with the .npy extension
-            instead of .npz. It will raise an Exception if the file already
-            exists in npy format.
-        batch_size : int
-            Number of samples per batch.
-        split : str, default='train'
-            Name of the split to generate, must match the dataset filenames
-        use_labels: bool, default=False
-            If False, the even index samples are assumed of label 1 and odd
-            index samples of label 0. If True, indicates to use labels in
-            label files.
-            The files must be in the same directory as their data files and
-            with the name labels_[split]_[index].npy. The labels must be an
-            array of same shape as the data.
-        class_weight: dict[label] -> float, default={0: 1, 1: 1}
-            Dictionary mapping labels to class weights values.
-        use_sample_weight: bool, default=False
-            If True, overides class_weight argument and indicates to use weight
-            files. The sample_weight files must be in the same directory as
-            their data files and with the name weights_[split]_[index].npy.
-            The weights must be an array of same shape as the data.
-        shuffle: bool, default=True
-            If True, indicates to shuffle file order and content before each
-            iteration, recommended for training. During prediction, set to
-            False for easy matching between data and prediction.
-        file_suffix: {'npy', 'npz', 'None'}, default=None
-            Indicates the suffix of the files to use in the dataset. If None,
-            the suffix is inferred from the presence of a [split]_0.npy file.
-            If not, the file_suffix is assumed to be npz. Due to conversion of
-            npz into npy, an Error will be raised in case of conflicting names.
-        """
         self.batch_size = batch_size
         self.use_labels = use_labels
         self.class_weights = class_weights
@@ -398,6 +395,142 @@ class DataGeneratorFromFiles(Sequence):
                 print(file_idx)
                 self.rng.shuffle(self.contents_idx[file_idx])
             self.file_seperators[1:] = np.cumsum(self.files_idx[:, 1])
+
+
+class WindowGenerator(Sequence):
+    """
+    Build a Generator for training Tensorflow model from chromosome windows.
+
+    Parameters
+    ----------
+    data : ndarray, shape=(n, 4)
+        2D-array of one-hot encoded chromosome.
+    labels : ndarray, shape=(n,)
+        array of labels for each base of the chromosome.
+    window_size : int
+        length of windows to send as input to the model
+    batch_size : int
+        number of windows to send per batch
+    max_data : int
+        maximum number of windows per epoch (before evaluating on the
+        validation set). If there are more windows, they will be used in a
+        further epoch. There may be multiple epochs without reusing data.
+    shuffle : bool, default=True
+        If True, indicates to shuffle windows before training and once all
+        windows have been used (not necessarily after each epoch).
+
+    Attributes
+    ----------
+    data : ndarray, shape=(n, 4)
+        same as in Parameters
+    labels : ndarray, shape=(n, 1)
+        same as in Parameters, but with dimension expanded
+    winsize : int
+        equivalent of `window_size` in Parameters
+    batch_size : int
+        same as in Parameters
+    max_data : int
+        same as in Parameters. But `max_data` is set to the number of windows
+        if `max_data` is larger.
+    shuffle : bool
+        same as in Parameters
+    indexes : ndarray
+        1D-array of valid window indexes for training. Valid windows exclude
+        windows with Ns or null labels. Indexescorrespond to the center of the
+        window in `data`.
+    start_idx : int
+        Index of the starting window to use for next epoch. It is used and
+        updated in the method `on_epoch_end`.
+    """
+    def __init__(self,
+                 data,
+                 labels,
+                 window_size,
+                 batch_size,
+                 max_data,
+                 shuffle=True):
+        self.data = data
+        self.labels = labels
+        self.winsize = window_size
+        self.batch_size = batch_size
+        self.max_data = max_data
+        self.shuffle = shuffle
+        if len(self.labels.shape) == 1:
+            self.labels = np.expand_dims(self.labels, axis=1)
+        # Select indices of windows without Ns or null labels
+        N_mask = (np.sum(data, axis=1) == 0)
+        N_window_mask = np.asarray(
+            np.convolve(N_mask, np.ones(self.winsize), mode='same'),
+            dtype=int)
+        valid_window_mask = (N_window_mask == 0) & (labels != 0).ravel()
+        self.indexes = np.arange(len(data))[valid_window_mask]
+        # Remove indices of edge windows
+        self.indexes = self.indexes[
+            (self.indexes >= self.winsize // 2)
+            & (self.indexes < len(data) - (self.winsize // 2))]
+        # Set max_data to only take less than all the indexes
+        if max_data > len(self.indexes):
+            self.max_data = len(self.indexes)
+        if self.shuffle:
+            np.random.shuffle(self.indexes)
+        self.start_idx = 0
+        self.on_epoch_end()
+
+    def __len__(self):
+        """Return length of generator.
+
+        The length displayed is the length for the current epoch. Not the
+        number of available windows accross multiple epochs.
+        """
+        return int(np.ceil(len(self.sample) / self.batch_size))
+
+    def __getitem__(self, idx):
+        """Get a batch of data.
+
+        Parameters
+        ----------
+        idx : int
+            Index of the batch to extract
+        """
+        # Get window center idxes
+        batch_idxes = self.sample[idx*self.batch_size:(idx+1)*self.batch_size]
+        # Get full window idxes
+        window_indices = (
+            batch_idxes.reshape(-1, 1)
+            + np.arange(-(self.winsize//2), self.winsize//2 + 1).reshape(1, -1)
+        )
+        batch_x = self.data[window_indices]
+        batch_y = self.labels[batch_idxes]
+        # Divide continuous labels into classes and balance weights
+        n_classes = 500
+        bin_values, bin_edges = np.histogram(batch_y, bins=n_classes)
+        bin_indices = np.digitize(batch_y, bin_edges)
+        bin_indices[bin_indices == n_classes+1] = n_classes
+        bin_indices -= 1
+        batch_weights = len(batch_y) / (n_classes * bin_values[bin_indices])
+        return batch_x, batch_y, batch_weights
+
+    def on_epoch_end(self):
+        """Update the sample to use for next epoch.
+
+        The sample can be different from the one used in the previous epoch if
+        there are enough windows. If all windows have been seen, a shuffle may
+        be applied and additional windows are extracted from the start.
+        """
+        stop_idx = self.start_idx + self.max_data
+        self.sample = self.indexes[self.start_idx:stop_idx]
+        if stop_idx >= len(self.indexes):
+            # Complete sample by going back to the beginning of indexes
+            if self.shuffle:
+                # Save current sample because shuffling indexes will modify it
+                self.sample = self.sample.copy()
+                np.random.shuffle(self.indexes)
+            stop_idx = stop_idx - len(self.indexes)
+            if stop_idx != 0:
+                self.sample = np.concatenate(
+                    (self.sample, self.indexes[:stop_idx]))
+        # Update start_idx for next call to on_epoch_end
+        self.start_idx = stop_idx
 
 
 @tf.function
