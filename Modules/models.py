@@ -5,17 +5,19 @@ import keras.backend as K
 from tensorflow.keras import Sequential
 from tensorflow.keras.losses import binary_crossentropy
 from tensorflow.keras.layers import Conv1D, MaxPool1D, concatenate, Dropout, \
-    Dense, Input, Flatten
+    Dense, Input, Flatten, BatchNormalization
 from tensorflow.keras.initializers import VarianceScaling
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import Model
 from Modules import tf_utils
+from Modules.tf_utils import mae_cor, correlate
 
 
 def build_model(model_name,
                 read_length=101,
                 learn_rate=0.001,
                 loss='binary_crossentropy',
+                metrics=['accuracy'],
                 method=0,
                 T=1,
                 start_reweighting=2000,
@@ -25,6 +27,7 @@ def build_model(model_name,
         'inception_dna_v1_confidence': inception_dna_v1_confidence,
         'inception_dna_v2': inception_dna_v2,
         'inception_dna_paired_v1': inception_dna_paired_v1,
+        'mnase_model': mnase_model,
         'Yann_original': Yann_original,
         'Yann_with_init': Yann_with_init,
         'Yann_with_init_and_padding': Yann_with_init_and_padding
@@ -38,11 +41,11 @@ def build_model(model_name,
     if confidence:
         model.compile(optimizer=Adam(learning_rate=learn_rate),
                       loss=tf_utils.ConfidenceLoss(),
-                      metrics=['accuracy'])
+                      metrics=metrics)
     else:
         model.compile(optimizer=Adam(learning_rate=learn_rate),
                       loss=loss,
-                      metrics=['accuracy'])
+                      metrics=metrics)
     return model
 
 
@@ -415,6 +418,78 @@ def inception_dna_paired_v1(read_length=101,
                                           T=T,
                                           start_reweighting=start_reweighting,
                                           name='inception_dna_paired_v1')
+    return model
+
+
+def mnase_model(winsize=2001, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(winsize, 4))
+
+    x = simple_inception_module(input_layer,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_1')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_1')(x)
+    x = Dropout(0.2)(x)
+    x = simple_inception_module(x,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_2')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_2')(x)
+    x = Dropout(0.2)(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
+              activation='relu',
+              name='dense_1')(x)
+    x = Dense(units=1,
+              activation='sigmoid',
+              name='dense_out')(x)
+    model = tf.keras.Model(input_layer,
+                           x,
+                           name='mnase_model')
+    return model
+
+
+def mnase_Maxime(winsize=2001, **kwargs):
+    model = Sequential([
+        Conv1D(32, kernel_size=3, activation='relu', input_shape=(winsize, 4)),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=10, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=20, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Flatten(),
+        Dense(8, activation='relu'),
+        BatchNormalization(),
+        Dense(1, activation='sigmoid')
+    ])
     return model
 
 
