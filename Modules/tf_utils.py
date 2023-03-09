@@ -137,6 +137,22 @@ def mae_cor(y_true, y_pred):
     return (1 - cor) + mae
 
 
+def correlate(y_true, y_pred):
+    """Calculate the correlation between the predictions and the labels.
+        :Example:
+        >>> model.compile(optimizer = 'adam', losses = correlate)
+        >>> load_model('file', custom_objects = {'correlate : correlate})
+    """
+    X = y_true - K.mean(y_true)
+    Y = y_pred - K.mean(y_pred)
+
+    sigma_XY = K.sum(X*Y)
+    sigma_X = K.sqrt(K.sum(X*X))
+    sigma_Y = K.sqrt(K.sum(Y*Y))
+
+    return sigma_XY/(sigma_X*sigma_Y + K.epsilon())
+
+
 # Generators
 class DataGenerator(Sequence):
     def __init__(self,
@@ -407,7 +423,7 @@ class WindowGenerator(Sequence):
         2D-array of one-hot encoded chromosome.
     labels : ndarray, shape=(n,)
         array of labels for each base of the chromosome.
-    window_size : int
+    winsize : int
         length of windows to send as input to the model
     batch_size : int
         number of windows to send per batch
@@ -418,6 +434,16 @@ class WindowGenerator(Sequence):
     shuffle : bool, default=True
         If True, indicates to shuffle windows before training and once all
         windows have been used (not necessarily after each epoch).
+    same_samples : bool, default=False
+        If True, indicates to use the same sample at each epoch. Otherwise the
+        sample is changed at each epoch to use all available data.
+    balance : {None, "batch", "global"}, default=None
+        "batch" indicates to balance weights among classes inside each batch,
+        while "global" indicates to balance on the entire data. Default value
+        None indicates not to balance weights.
+    n_classes : int, default=500
+        If `balance` is set, indicates number of bins to divide the signal
+        range in, for determining classes.
 
     Attributes
     ----------
@@ -426,7 +452,7 @@ class WindowGenerator(Sequence):
     labels : ndarray, shape=(n, 1)
         same as in Parameters, but with dimension expanded
     winsize : int
-        equivalent of `window_size` in Parameters
+        same as in Parameters
     batch_size : int
         same as in Parameters
     max_data : int
@@ -434,27 +460,41 @@ class WindowGenerator(Sequence):
         if `max_data` is larger.
     shuffle : bool
         same as in Parameters
+    same_samples : bool, default=False
+        same as in Parameters
+    balance : {None, "batch", "global"}, default=None
+        same as in Parameters
+    n_classes : int, default=500
+        same as in Parameters
     indexes : ndarray
         1D-array of valid window indexes for training. Valid windows exclude
         windows with Ns or null labels. Indexescorrespond to the center of the
         window in `data`.
+    weights : ndarray
+        global weights to use when `balance` is set to 'global'.
     start_idx : int
-        Index of the starting window to use for next epoch. It is used and
-        updated in the method `on_epoch_end`.
+        Index of the starting window to use for next epoch when `same_samples`
+        is set to False. It is used and updated in the method `on_epoch_end`.
     """
     def __init__(self,
                  data,
                  labels,
-                 window_size,
+                 winsize,
                  batch_size,
                  max_data,
-                 shuffle=True):
+                 shuffle=True,
+                 same_samples=False,
+                 balance=None,
+                 n_classes=500):
         self.data = data
         self.labels = labels
-        self.winsize = window_size
+        self.winsize = winsize
         self.batch_size = batch_size
         self.max_data = max_data
         self.shuffle = shuffle
+        self.same_samples = same_samples
+        self.balance = balance
+        self.n_classes = n_classes
         if len(self.labels.shape) == 1:
             self.labels = np.expand_dims(self.labels, axis=1)
         # Select indices of windows without Ns or null labels
@@ -473,8 +513,25 @@ class WindowGenerator(Sequence):
             self.max_data = len(self.indexes)
         if self.shuffle:
             np.random.shuffle(self.indexes)
-        self.start_idx = 0
-        self.on_epoch_end()
+        # Build first sample
+        self.sample = self.indexes[0:self.max_data]
+        if not self.same_samples:
+            self.start_idx = self.max_data
+        if self.balance == "global":
+            # Compute effective labels that will be used for training
+            if self.same_samples:
+                y_eff = self.y[self.sample]
+            else:
+                y_eff = self.y[self.indexes]
+            # Determine weights with effective labels
+            bin_values, bin_edges = np.histogram(
+                y_eff, bins=self.n_classes, range=(0, 1))
+            # Weight all labels for convinience
+            bin_idx = np.digitize(self.y, bin_edges)
+            bin_idx[bin_idx == self.n_classes+1] = self.n_classes
+            bin_idx -= 1
+            self.weights = self.batch_size / (
+                self.n_classes * bin_values[bin_idx])
 
     def __len__(self):
         """Return length of generator.
@@ -502,12 +559,18 @@ class WindowGenerator(Sequence):
         batch_x = self.data[window_indices]
         batch_y = self.labels[batch_idxes]
         # Divide continuous labels into classes and balance weights
-        n_classes = 500
-        bin_values, bin_edges = np.histogram(batch_y, bins=n_classes)
-        bin_indices = np.digitize(batch_y, bin_edges)
-        bin_indices[bin_indices == n_classes+1] = n_classes
-        bin_indices -= 1
-        batch_weights = len(batch_y) / (n_classes * bin_values[bin_indices])
+        if self.balance == 'batch':
+            bin_values, bin_edges = np.histogram(
+                batch_y, bins=self.n_classes, range=(0, 1))
+            bin_idx = np.digitize(batch_y, bin_edges)
+            bin_idx[bin_idx == self.n_classes+1] = self.n_classes
+            bin_idx -= 1
+            batch_weights = self.batch_size / (
+                self.n_classes * bin_values[bin_idx])
+        elif self.balance == 'global':
+            batch_weights = self.weights[batch_idxes]
+        else:
+            return batch_x, batch_y
         return batch_x, batch_y, batch_weights
 
     def on_epoch_end(self):
@@ -517,20 +580,24 @@ class WindowGenerator(Sequence):
         there are enough windows. If all windows have been seen, a shuffle may
         be applied and additional windows are extracted from the start.
         """
-        stop_idx = self.start_idx + self.max_data
-        self.sample = self.indexes[self.start_idx:stop_idx]
-        if stop_idx >= len(self.indexes):
-            # Complete sample by going back to the beginning of indexes
+        if self.same_samples:
             if self.shuffle:
-                # Save current sample because shuffling indexes will modify it
-                self.sample = self.sample.copy()
-                np.random.shuffle(self.indexes)
-            stop_idx = stop_idx - len(self.indexes)
-            if stop_idx != 0:
-                self.sample = np.concatenate(
-                    (self.sample, self.indexes[:stop_idx]))
-        # Update start_idx for next call to on_epoch_end
-        self.start_idx = stop_idx
+                np.random.shuffle(self.sample)
+        else:
+            stop_idx = self.start_idx + self.max_data
+            self.sample = self.indexes[self.start_idx:stop_idx]
+            if stop_idx >= len(self.indexes):
+                # Complete sample by going back to the beginning of indexes
+                if self.shuffle:
+                    # Save current sample because shuffling will modify it
+                    self.sample = self.sample.copy()
+                    np.random.shuffle(self.indexes)
+                stop_idx = stop_idx - len(self.indexes)
+                if stop_idx != 0:
+                    self.sample = np.concatenate(
+                        (self.sample, self.indexes[:stop_idx]))
+            # Update start_idx for next call to on_epoch_end
+            self.start_idx = stop_idx
 
 
 @tf.function
