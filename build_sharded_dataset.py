@@ -81,7 +81,7 @@ def parsing():
         "-split", "--split_sizes",
         help="numbers of reads to put in the test and valid sets, "
              "must be of length 2, set to 0 to ignore a split, default to "
-             "2**22 each. All other samples are put in train split. You can "
+             "2**23 each. All other samples are put in train split. You can "
              "add a third value to limit train size",
         default=[2**23, 2**23],
         type=int,
