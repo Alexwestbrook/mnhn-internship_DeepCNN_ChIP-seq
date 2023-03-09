@@ -109,6 +109,16 @@ def chunk_chr(one_hot_chr, window_size, remove_Ns=False):
     return indexes, data
 
 
+def merge_chroms(chr_ids, file):
+    annot = []
+    with np.load(file) as f:
+        for chr_id in chr_ids:
+            annot.append(f[chr_id])
+            shape, dtype = f[chr_id].shape, f[chr_id].dtype
+            annot.append(np.zeros((1,)+shape[1:], dtype=dtype))
+    return np.concatenate(annot)
+
+
 # Sample weight handling
 def create_weights(y):
     """Return weights to balance negative and positive classes.
