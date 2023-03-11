@@ -25,6 +25,7 @@ import numpy as np
 import sys
 import argparse
 import time
+import datetime
 import json
 from Modules import utils, tf_utils, models
 from pathlib import Path
@@ -317,6 +318,7 @@ def train_reweighting_model(model,
 
 
 if __name__ == "__main__":
+    tmstmp = datetime.datetime.now()
     # Get arguments
     args = parsing()
     # Maybe build output directory
@@ -325,6 +327,7 @@ if __name__ == "__main__":
     with open(Path(args.output, 'Experiment_info.txt'), 'w') as f:
         json.dump(vars(args), f, indent=4)
         f.write('\n')
+        f.write(f'timestamp: {tmstmp}\n')
 
     # Limit gpu memory usage
     tf.debugging.set_log_device_placement(True)
