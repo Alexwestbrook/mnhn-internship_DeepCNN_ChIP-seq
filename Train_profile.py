@@ -50,8 +50,8 @@ def parsing():
         type=str,
         required=True)
     parser.add_argument(
-        "-s", "--signal",
-        help="signal file in npz archive, with one array per chromosome",
+        "-l", "--labels",
+        help="label file in npz archive, with one array per chromosome",
         type=str,
         required=True)
     parser.add_argument(
@@ -71,6 +71,12 @@ def parsing():
         nargs='+',
         type=str,
         required=True)
+    parser.add_argument(
+        "-s", "--strand",
+        help="strand to perform training on, choose between 'for', 'rev' or "
+        "'both'. Default to 'both.",
+        type=str,
+        default='both')
     parser.add_argument(
         "-w", "--winsize",
         help="Size of the window in bp to use for prediction, default to 2001",
@@ -139,17 +145,20 @@ def parsing():
     if not Path(args.genome).is_file():
         sys.exit(f"{args.genome} does not exist.\n"
                  "Please enter a valid genome file path.")
-    if not Path(args.signal).is_file():
-        sys.exit(f"{args.signal} does not exist.\n"
-                 "Please enter a valid signal file path.")
-    args.chrom_train = ['chr'+format(int(c), '02d') for c in args.chrom_train]
-    args.chrom_valid = ['chr'+format(int(c), '02d') for c in args.chrom_valid]
+    if not Path(args.labels).is_file():
+        sys.exit(f"{args.labels} does not exist.\n"
+                 "Please enter a valid labels file path.")
+    if Path(args.genome).stem == 'W303':
+        args.chrom_train = [
+            'chr' + format(int(c), '02d') for c in args.chrom_train]
+        args.chrom_valid = [
+            'chr' + format(int(c), '02d') for c in args.chrom_valid]
     with np.load(args.genome) as g:
-        with np.load(args.signal) as s:
+        with np.load(args.labels) as s:
             for chr_id in args.chrom_train + args.chrom_valid:
                 if not(chr_id in g.keys() and chr_id in s.keys()):
                     sys.exit(f"{chr_id} is not a valid chromosome id in "
-                             f"{args.genome} and {args.signal}")
+                             f"{args.genome} and {args.labels}")
     return args
 
 
@@ -198,8 +207,8 @@ if __name__ == "__main__":
     # Load the data
     x_train = utils.merge_chroms(args.chrom_train, args.genome)
     x_valid = utils.merge_chroms(args.chrom_valid, args.genome)
-    y_train = utils.merge_chroms(args.chrom_train, args.signal)
-    y_valid = utils.merge_chroms(args.chrom_valid, args.signal)
+    y_train = utils.merge_chroms(args.chrom_train, args.labels)
+    y_valid = utils.merge_chroms(args.chrom_valid, args.labels)
     generator_train = tf_utils.WindowGenerator(
         data=x_train,
         labels=y_train,
@@ -207,7 +216,8 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         max_data=args.max_train,
         same_samples=args.same_samples,
-        balance=args.balance)
+        balance=args.balance,
+        strand=args.strand)
     generator_valid = tf_utils.WindowGenerator(
         data=x_valid,
         labels=y_valid,
@@ -215,7 +225,8 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         max_data=args.max_valid,
         shuffle=False,
-        same_samples=True)
+        same_samples=True,
+        strand=args.strand)
     # Create callbacks during training
     callbacks_list = [
         CSVLogger(Path(args.output, "epoch_data.csv"))
