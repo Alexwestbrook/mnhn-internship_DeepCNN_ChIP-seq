@@ -444,6 +444,9 @@ class WindowGenerator(Sequence):
     n_classes : int, default=500
         If `balance` is set, indicates number of bins to divide the signal
         range in, for determining classes.
+    strand : {'for', 'rev', 'both'}, default='both'
+        Indicates which strand to use for training. If 'both', half the
+        windows of each batch are reversed.
 
     Attributes
     ----------
@@ -466,6 +469,8 @@ class WindowGenerator(Sequence):
         same as in Parameters
     n_classes : int, default=500
         same as in Parameters
+    strand : {'for', 'rev', 'both'}, default='for'
+        same as in Parameters
     indexes : ndarray
         1D-array of valid window indexes for training. Valid windows exclude
         windows with Ns or null labels. Indexescorrespond to the center of the
@@ -485,7 +490,8 @@ class WindowGenerator(Sequence):
                  shuffle=True,
                  same_samples=False,
                  balance=None,
-                 n_classes=500):
+                 n_classes=500,
+                 strand='both'):
         self.data = data
         self.labels = labels
         self.winsize = winsize
@@ -495,6 +501,7 @@ class WindowGenerator(Sequence):
         self.same_samples = same_samples
         self.balance = balance
         self.n_classes = n_classes
+        self.strand = strand
         if len(self.labels.shape) == 1:
             self.labels = np.expand_dims(self.labels, axis=1)
         # Select indices of windows without Ns or null labels
@@ -557,6 +564,11 @@ class WindowGenerator(Sequence):
             + np.arange(-(self.winsize//2), self.winsize//2 + 1).reshape(1, -1)
         )
         batch_x = self.data[window_indices]
+        if self.strand == 'rev':
+            batch_x = batch_x[:, ::-1, ::-1]
+        elif self.strand == 'both':
+            half_size = self.batch_size // 2
+            batch_x[:half_size] = batch_x[:half_size, ::-1, ::-1]
         batch_y = self.labels[batch_idxes]
         # Divide continuous labels into classes and balance weights
         if self.balance == 'batch':
@@ -598,6 +610,45 @@ class WindowGenerator(Sequence):
                         (self.sample, self.indexes[:stop_idx]))
             # Update start_idx for next call to on_epoch_end
             self.start_idx = stop_idx
+
+
+class PredGenerator(Sequence):
+    def __init__(self,
+                 data,
+                 winsize,
+                 batch_size):
+        self.data = data
+        self.winsize = winsize
+        self.batch_size = batch_size
+        self.indexes = np.arange(self.winsize // 2,
+                                 len(data) - (self.winsize // 2))
+
+    def __len__(self):
+        return int(np.ceil(len(self.data) / self.batch_size))
+
+    def __getitem__(self, idx):
+        # Get window center idxes
+        batch_idxes = self.indexes[idx*self.batch_size:(idx+1)*self.batch_size]
+        # Get full window idxes
+        window_indices = (
+            batch_idxes.reshape(-1, 1)
+            + np.arange(-(self.winsize//2), self.winsize//2 + 1).reshape(1, -1)
+        )
+        batch_x = self.data[window_indices]
+        batch_y = np.zeros((len(batch_x), 1))
+        return batch_x, batch_y
+
+
+def predict(model, one_hot_chr, winsize, reverse=False, batch_size=1024):
+    if reverse:
+        one_hot_chr = one_hot_chr[::-1, ::-1]
+    X = PredGenerator(one_hot_chr, winsize, batch_size)
+    pred = np.zeros(len(one_hot_chr))
+    pred[winsize//2:-(winsize//2)] = model.predict(X).ravel()
+    if reverse:
+        return pred[::-1]
+    else:
+        return pred
 
 
 @tf.function
