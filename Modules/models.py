@@ -474,6 +474,60 @@ def mnase_model(winsize=2001, **kwargs):
     return model
 
 
+def mnase_model_batchnorm(winsize=2001, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(winsize, 4))
+
+    x = simple_inception_module(input_layer,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_1')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_1')(x)
+    x = BatchNormalization(x)
+    x = simple_inception_module(x,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_2')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_2')(x)
+    x = BatchNormalization(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
+              activation='relu',
+              name='dense_1')(x)
+    x = BatchNormalization()(x)
+    x = Dense(units=1,
+              activation='sigmoid',
+              name='dense_out')(x)
+    model = tf.keras.Model(input_layer,
+                           x,
+                           name='mnase_model')
+    return model
+
+
 def mnase_Maxime(winsize=2001, **kwargs):
     model = Sequential([
         Conv1D(32, kernel_size=3, activation='relu', input_shape=(winsize, 4)),
@@ -483,6 +537,44 @@ def mnase_Maxime(winsize=2001, **kwargs):
         MaxPool1D(2),
         BatchNormalization(),
         Conv1D(32, kernel_size=20, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Flatten(),
+        Dense(8, activation='relu'),
+        BatchNormalization(),
+        Dense(1, activation='sigmoid')
+    ])
+    return model
+
+
+def mnase_Maxime_decreasing(winsize=2001, **kwargs):
+    model = Sequential([
+        Conv1D(64, kernel_size=3, activation='relu', input_shape=(winsize, 4)),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=10, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(16, kernel_size=20, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Flatten(),
+        Dense(8, activation='relu'),
+        BatchNormalization(),
+        Dense(1, activation='sigmoid')
+    ])
+    return model
+
+
+def mnase_Maxime_increasing(winsize=2001, **kwargs):
+    model = Sequential([
+        Conv1D(16, kernel_size=3, activation='relu', input_shape=(winsize, 4)),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=10, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(64, kernel_size=20, activation='relu'),
         MaxPool1D(2),
         BatchNormalization(),
         Flatten(),

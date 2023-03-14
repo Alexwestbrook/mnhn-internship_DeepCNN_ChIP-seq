@@ -188,7 +188,10 @@ if __name__ == "__main__":
     # Build model with chosen strategy
     model_dict = {
         'mnase_model': models.mnase_model,
-        'mnase_Maxime': models.mnase_Maxime
+        'mnase_Maxime': models.mnase_Maxime,
+        'mnase_model_batchnorm': models.mnase_model_batchnorm,
+        'mnase_Maxime_decreasing': models.mnase_Maxime_decreasing,
+        'mnase_Maxime_increasing': models.mnase_Maxime_increasing
     }
     model_builder = model_dict[args.architecture]
     if args.distribute:
