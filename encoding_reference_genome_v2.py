@@ -100,7 +100,7 @@ def parsing():
 args = parsing()
 batch_size = args.batch_size
 
-print(f"Writing {args.genome_file} to {args.output}.npz")
+print(f"Writing {args.genome_file} to {args.output}")
 if args.timing:
     times = {}
     t0 = time.time()
