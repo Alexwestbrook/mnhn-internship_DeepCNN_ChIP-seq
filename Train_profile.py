@@ -148,11 +148,15 @@ def parsing():
     if not Path(args.labels).is_file():
         sys.exit(f"{args.labels} does not exist.\n"
                  "Please enter a valid labels file path.")
-    if Path(args.genome).stem == 'W303':
+    genome_name = Path(args.genome).stem
+    if genome_name == 'W303':
         args.chrom_train = [
             'chr' + format(int(c), '02d') for c in args.chrom_train]
         args.chrom_valid = [
             'chr' + format(int(c), '02d') for c in args.chrom_valid]
+    elif genome_name == 'mm10':
+        args.chrom_train = [f'chr{c}' for c in args.chrom_train]
+        args.chrom_valid = [f'chr{c}' for c in args.chrom_valid]
     with np.load(args.genome) as g:
         with np.load(args.labels) as s:
             for chr_id in args.chrom_train + args.chrom_valid:
