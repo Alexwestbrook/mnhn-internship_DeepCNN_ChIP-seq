@@ -527,14 +527,14 @@ class WindowGenerator(Sequence):
         if self.balance == "global":
             # Compute effective labels that will be used for training
             if self.same_samples:
-                y_eff = self.y[self.sample]
+                y_eff = self.labels[self.sample]
             else:
-                y_eff = self.y[self.indexes]
+                y_eff = self.labels[self.indexes]
             # Determine weights with effective labels
             bin_values, bin_edges = np.histogram(
                 y_eff, bins=self.n_classes, range=(0, 1))
             # Weight all labels for convinience
-            bin_idx = np.digitize(self.y, bin_edges)
+            bin_idx = np.digitize(self.labels, bin_edges)
             bin_idx[bin_idx == self.n_classes+1] = self.n_classes
             bin_idx -= 1
             self.weights = self.batch_size / (
