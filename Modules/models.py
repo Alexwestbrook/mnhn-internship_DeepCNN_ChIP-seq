@@ -502,7 +502,7 @@ def mnase_model_batchnorm(winsize=2001, **kwargs):
                   padding='same',
                   strides=2,
                   name='max_pool_1')(x)
-    x = BatchNormalization(x)
+    x = BatchNormalization()(x)
     x = simple_inception_module(x,
                                 filters_3=32,
                                 filters_6=64,
@@ -513,7 +513,7 @@ def mnase_model_batchnorm(winsize=2001, **kwargs):
                   padding='same',
                   strides=2,
                   name='max_pool_2')(x)
-    x = BatchNormalization(x)
+    x = BatchNormalization()(x)
     x = Flatten()(x)
     x = Dense(units=128,
               activation='relu',
@@ -752,5 +752,5 @@ def Yann_with_init_and_padding(read_length=101,
 
 
 if __name__ == "__main__":
-    model = build_model('inception_dna_v1')
+    model = mnase_model(2001)
     print(model.summary())
