@@ -537,7 +537,7 @@ class WindowGenerator(Sequence):
             bin_idx = np.digitize(self.labels, bin_edges)
             bin_idx[bin_idx == self.n_classes+1] = self.n_classes
             bin_idx -= 1
-            self.weights = self.batch_size / (
+            self.weights = len(y_eff) / (
                 self.n_classes * bin_values[bin_idx])
 
     def __len__(self):
