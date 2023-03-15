@@ -15,6 +15,7 @@ import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 import scipy
 from scipy.signal import gaussian, convolve
+from scipy.stats import pearsonr
 from scipy.sparse import coo_matrix
 
 from statsmodels.stats import multitest
@@ -1407,6 +1408,32 @@ def make_mindex_ser(annotation_file: Path,
         # Insert in Series
         ser.loc[chr_id] = annot_chr
     ser.to_csv(out_file)
+
+
+def sliding_correlation(X, Y, offsets):
+    slide_corr = []
+    for i in offsets:
+        if i == 0:
+            corr = pearsonr(X, Y)[0]
+        elif i > 0:
+            corr = pearsonr(X[i:], Y[:-i])[0]
+        else:
+            corr = pearsonr(Y[-i:], X[:i])[0]
+        slide_corr.append(corr)
+    return slide_corr
+
+
+def fast_sliding_correlation(X, Y, offsets):
+    """Higher memory footprint, will crash with too much data"""
+    min_offset = np.min(offsets)
+    max_offset = np.max(offsets)
+    max_len = len(X) - max_offset + min_offset
+    offsets -= min_offset
+    windows = offsets.reshape(-1, 1) + np.arange(max_len).reshape(1, -1)
+    X_slides = X[windows]
+    slide_corrs = lineWiseCorrcoef(
+        X_slides, Y[-min_offset:-min_offset + max_len])
+    return slide_corrs
 
 
 # Peak manipulation
