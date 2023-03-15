@@ -651,6 +651,25 @@ def predict(model, one_hot_chr, winsize, reverse=False, batch_size=1024):
         return pred
 
 
+def predict_v1(model, one_hot_chr, winsize, reverse=False, batch_size=1024):
+    if reverse:
+        one_hot_chr = one_hot_chr[::-1, ::-1]
+    indexes, data = utils.chunk_chr(one_hot_chr, winsize)
+    labels = np.zeros(len(data), dtype=bool)
+    X = DataGenerator(
+        indexes,
+        data,
+        labels,
+        batch_size,
+        shuffle=False)
+    pred = np.zeros(len(one_hot_chr))
+    pred[winsize//2:-(winsize//2)] = model.predict(X).ravel()
+    if reverse:
+        return pred[::-1]
+    else:
+        return pred
+
+
 @tf.function
 def change_sample_weights(loss, T=1):
     """
