@@ -178,18 +178,20 @@ def create_sample_weights(y):
 
 
 # One-hot encoding and decoding
-def one_hot_encode(seq, read_length=101, one_hot_type=bool):
-    one_hot = np.zeros((read_length, 4), dtype=one_hot_type)
+def one_hot_encode(seq, length=None, one_hot_type=bool, order='ACGT'):
+    if length is None:
+        length = len(seq)
+    one_hot = np.zeros((length, 4), dtype=one_hot_type)
     for i, base in enumerate(seq):
-        if i >= read_length:
+        if i >= length:
             break
-        if base == 'A':
+        if base == order[0]:
             one_hot[i, 0] = 1
-        elif base == 'C':
+        elif base == order[1]:
             one_hot[i, 1] = 1
-        elif base == 'G':
+        elif base == order[2]:
             one_hot[i, 2] = 1
-        elif base == 'T':
+        elif base == order[3]:
             one_hot[i, 3] = 1
     return one_hot
 
@@ -909,7 +911,7 @@ def adapt_to_window(values: np.ndarray,
 
 
 # GC content
-def GC_content(one_hot_reads: np.ndarray) -> np.ndarray:
+def GC_content(one_hot_reads: np.ndarray, order: int = 'ACGT') -> np.ndarray:
     """Compute GC content on all reads in one-hot format
 
     Parameters
@@ -925,7 +927,8 @@ def GC_content(one_hot_reads: np.ndarray) -> np.ndarray:
     assert(len(one_hot_reads.shape) == 3 and one_hot_reads.shape[2] == 4)
     # Compute content of each base
     content = np.sum(one_hot_reads, axis=1)  # shape (nb_reads, 4)
-    gc = (content[:, 1] + content[:, 2]) / np.sum(content, axis=1)
+    g_idx, c_idx = order.find('G'), order.find('C')
+    gc = (content[:, g_idx] + content[:, c_idx]) / np.sum(content, axis=1)
     return gc
 
 
@@ -1947,6 +1950,12 @@ def moving_average(x, n=2):
     ret = np.cumsum(x)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
+
+
+def moving_sum(x, n=2):
+    ret = np.cumsum(x)
+    ret[n:] = ret[n:] - ret[:-n]
+    return ret[n - 1:]
 
 
 def clip_to_nonzero_min(array):
