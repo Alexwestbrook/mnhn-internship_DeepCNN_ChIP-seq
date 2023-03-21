@@ -25,3 +25,4 @@ script -a -c "$bash_command" $log_file
 # get chromsizes
 samtools faidx $fasta
 cut -f1,2 $fasta.fai > $chromsizes
+
