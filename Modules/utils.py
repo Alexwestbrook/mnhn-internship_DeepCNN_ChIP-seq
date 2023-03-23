@@ -932,6 +932,13 @@ def GC_content(one_hot_reads: np.ndarray, order: int = 'ACGT') -> np.ndarray:
     return gc
 
 
+def sliding_GC(one_hot, n, order='ACGT'):
+    valid_mask = one_hot.sum(axis=1) != 0
+    GC_idx = [order.find('G'), order.find('C')]
+    GC_mask = one_hot[:, GC_idx].sum(axis=1)
+    return moving_sum(GC_mask, n=n) / moving_sum(valid_mask, n=n)
+
+
 def classify_1D(features, y, bins):
     """Find best threshold to classify 1D features with label y.
 
@@ -1952,8 +1959,8 @@ def moving_average(x, n=2):
     return ret[n - 1:] / n
 
 
-def moving_sum(x, n=2):
-    ret = np.cumsum(x)
+def moving_sum(x, n=2, axis=None):
+    ret = np.cumsum(x, axis)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:]
 
