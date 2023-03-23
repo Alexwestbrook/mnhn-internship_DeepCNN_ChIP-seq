@@ -242,7 +242,7 @@ if __name__ == "__main__":
     if not args.disable_autotune:
         callbacks_list.append([
             ModelCheckpoint(filepath=Path(args.output, "Checkpoint"),
-                            monitor="val_cor",
+                            monitor="val_correlate",
                             save_best_only=True),
             EarlyStopping(monitor="val_loss",
                           patience=args.patience,
