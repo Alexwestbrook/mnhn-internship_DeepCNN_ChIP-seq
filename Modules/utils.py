@@ -14,6 +14,7 @@ import pandas as pd
 
 from sklearn.preprocessing import OneHotEncoder
 import scipy
+from scipy import signal
 from scipy.signal import gaussian, convolve
 from scipy.stats import pearsonr
 from scipy.sparse import coo_matrix
@@ -196,22 +197,26 @@ def one_hot_encode(seq, length=None, one_hot_type=bool, order='ACGT'):
     return one_hot
 
 
-def one_hot_decode(one_hot, read_length=101, one_hot_type=bool):
-    if len(one_hot.shape) == 2:
-        read_length, n_bases = one_hot.shape
-    else:
+def one_hot_decode(one_hot, order='ACGT'):
+    if len(one_hot.shape) != 2:
         raise ValueError(
-            'input must be a single one hot encoded read with ')
-    categories = np.array([['A'], ['C'], ['G'], ['T']])
-    encoder = OneHotEncoder(dtype=bool,
-                            handle_unknown='ignore',
-                            sparse=False)
-    encoder.fit(categories)
+            'input must be a single one hot encoded read')
+    if order == 'ACGT':
+        categories = np.array(list('ACGT')).reshape(-1, 1)
+        encoder = OneHotEncoder(dtype=one_hot.dtype,
+                                handle_unknown='ignore',
+                                sparse=False)
+        encoder.fit(categories)
 
-    seq = encoder.inverse_transform(one_hot)
-    seq = seq.ravel()
-    seq = ''.join(['N' if value is None else value for value in seq])
-    return seq
+        seq = encoder.inverse_transform(one_hot)
+        seq = seq.ravel()
+        seq = ''.join(['N' if value is None else value for value in seq])
+        return seq
+    else:
+        bases = np.array(list(order))
+        seq = bases[np.argmax(one_hot, axis=1)]
+        seq[np.sum(one_hot, axis=1) != 1] = 'N'
+        return ''.join(seq)
 
 
 def one_hot_encoding(array: np.ndarray,
@@ -372,48 +377,23 @@ def one_hot_encoding_v2(reads: np.ndarray,
     return one_hots
 
 
-def one_hot_to_seq(reads):
-    return one_hot_to_seq_v2(reads)
+def one_hot_to_seq(reads, order='ACGT'):
+    if order == 'ACGT':
+        return one_hot_to_seq_v2(reads)
+    else:
+        return one_hot_to_seq_v1(reads, order)
 
 
-def fast_one_hot_to_seq(reads):
+def one_hot_to_seq_v1(reads, order='ACGT'):
     """
     Convert one_hot array of reads into list of sequences.
-
-    This doesn't support N values, which will be converted to A.
     """
     if len(reads.shape) != 3:
-        raise ValueError('must be an array of one hot encoded read')
-    bases = np.array(['A', 'C', 'G', 'T'])
-    indexed_reads = np.argmax(reads, axis=2)
-    seqs = [''.join([char for char in seq]) for seq in bases[indexed_reads]]
-    return seqs
-
-
-def one_hot_to_seq_v1(reads):
-    """
-    Convert one_hot array of reads into list of sequences.
-    """
-    if len(reads.shape) == 3:
-        n_reads, read_length, _ = reads.shape
-    else:
-        raise ValueError('must be an array of one hot encoded read')
-    seqs = []
-    for i in range(n_reads):
-        seq = ''
-        for j in range(read_length):
-            one_hot = reads[i, j, :]
-            if np.allclose(one_hot, np.array([1, 0, 0, 0])):
-                seq += 'A'
-            elif np.allclose(one_hot, np.array([0, 1, 0, 0])):
-                seq += 'C'
-            elif np.allclose(one_hot, np.array([0, 0, 1, 0])):
-                seq += 'G'
-            elif np.allclose(one_hot, np.array([0, 0, 0, 1])):
-                seq += 'T'
-            else:
-                seq += 'N'
-        seqs.append(seq)
+        raise ValueError('must be an array of one hot encoded reads')
+    bases = np.array(list(order))
+    seqs = bases[np.argmax(reads, axis=2)]
+    seqs[np.sum(reads, axis=2) != 1] = 'N'
+    seqs = [''.join([char for char in seq]) for seq in seqs]
     return seqs
 
 
@@ -1444,6 +1424,17 @@ def fast_sliding_correlation(X, Y, offsets):
     slide_corrs = lineWiseCorrcoef(
         X_slides, Y[-min_offset:-min_offset + max_len])
     return slide_corrs
+
+
+def best_cor_lag(x, y, mode="full"):
+    """
+    Return the offset which leads to the highest correlation between two
+    signals.
+    """
+    # Not a true
+    correlation = signal.correlate(x, y, mode="full")
+    lags = signal.correlation_lags(x.size, y.size, mode="full")
+    return lags[np.argmax(correlation)]
 
 
 # Peak manipulation
