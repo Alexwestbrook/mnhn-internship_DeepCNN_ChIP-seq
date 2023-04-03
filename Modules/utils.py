@@ -121,6 +121,11 @@ def merge_chroms(chr_ids, file):
     return np.concatenate(annot)
 
 
+def chunk_regions(array, length):
+    leftover = len(array) % length
+    return array[:-leftover].reshape((-1, length) + array.shape[1:])
+
+
 # Sample weight handling
 def create_weights(y):
     """Return weights to balance negative and positive classes.
@@ -2086,6 +2091,120 @@ def indices_from_peaks(peaks):
     return indices_from_starts_ends(peaks[:, 0], peaks[:, 1])
 
 
+# Random sequences generation
+def kmer_counts(one_hots, k, order='ACGT', includeN=True):
+    """Compute kmer occurences in one-hot encoded sequence."""
+    # Convert input into list-like of one_hot 2D-arrays
+    if isinstance(one_hots, dict):
+        one_hots = list(one_hots.values())
+    elif isinstance(one_hots, np.ndarray):
+        if one_hots.ndim == 2:
+            # single array turned into list of arrays
+            one_hots = [one_hots]
+    # Work on integers then convert to char by indexing `letters`
+    letters = np.array(list(order + 'N'))
+    # build series with or without Ns in index
+    if includeN:
+        order += 'N'
+    ser = pd.Series(
+        0,
+        index=pd.MultiIndex.from_product([list(order)]*k))
+    # Iterate over one-hot encoded arrays
+    for one_hot in one_hots:
+        # Check that arrays are 2D with a shape of 4 in the 2nd dimension
+        assert one_hot.ndim == 2
+        assert one_hot.shape[1] == 4
+        # convert one_hot to integer encoding, as indexes of `letters`
+        arr = np.argmax(one_hot, axis=1) + 4*(np.sum(one_hot, axis=1) != 1)
+        # count unique kmers as integer sequences
+        kmers_int, count = np.unique(
+            sliding_window_view(arr, k).reshape(-1, k),
+            return_counts=True,
+            axis=0)
+        # add kmers's counts to series
+        for i, kmer in enumerate(letters[kmers_int]):
+            if tuple(kmer) in ser.index:
+                ser[tuple(kmer)] += count[i]
+    return ser
+
+
+def ref_kmer_frequencies(freq_nucs, k=2):
+    ser = pd.Series(
+        1,
+        index=pd.MultiIndex.from_product([list(flatten(freq_nucs.index))]*k))
+    freq_nucs = freq_nucs / freq_nucs.sum(axis=0)
+    for tup in ser.index:
+        for nuc in tup:
+            ser.loc[tup] *= freq_nucs[nuc]
+    return ser
+
+
+def random_shuffles(array, n):
+    return array[np.random.rand(n, len(array)).argsort(axis=1)]
+
+
+def random_seq_strict_GC(n_seqs, seq_length, gc):
+    gc_count = int(round((seq_length//2)*gc, 0))
+    ref_seq = np.array(list(
+        'A'*(seq_length % 2) + 'AT'*(seq_length//2-gc_count) + 'GC'*gc_count))
+    return random_shuffles(ref_seq, n_seqs)
+
+
+def random_sequences(n_seqs, seq_length, freq_nucs, freq_dinucs, seed=None):
+    """Generate random DNA sequences with custom kmer distribution.
+
+    Currently only supports 2-mer distribution.
+
+    Parameters
+    ----------
+    n_seqs : int
+        Number of sequences to generate
+    seq_length : int
+        Length of the sequence to generate
+    freq_nucs : Series
+        Series indexed by the bases 'ACGT', contains frequencies or occurences
+        of each base
+    freq_dinucs : Series
+        Series indexed by a 2-level MultiIndex with the bases 'ACGT' on each
+        level, contains frequencies or occurences of each 2-mer
+
+    Returns
+    -------
+    seq : ndarray, shape=(`n_seqs`, `seq_length`)
+        Generated sequences as a 2D-array of characters
+
+    """
+    # Array of bases for fast indexing
+    letters = np.array(list('ACGTN'))
+
+    # Cumulative distribution of each base
+    p_cum_nucs = freq_nucs.cumsum(axis=0) / freq_nucs.sum(axis=0)
+
+    # Cumulative distribution of each base, given the previous
+    groups = freq_dinucs.groupby(level=0)
+    sum = groups.transform("sum")
+    cumsum = groups.transform("cumsum")
+    p_cum_dinucs = cumsum / sum
+    # Convert to 2D-array
+    arr_dinucs = np.zeros((4, 4))
+    for i in range(4):
+        arr_dinucs[i] = np.asarray(p_cum_dinucs.loc[letters[i]])
+
+    # Empty sequences
+    seqs = np.array([5]*seq_length*n_seqs).reshape(n_seqs, seq_length)
+    # Generate all random numbers at start
+    if seed is not None:
+        np.random.seed(seed)
+    r = np.random.random((n_seqs, seq_length))
+    # Get first base given base distribution and first random number
+    seqs[:, 0] = np.argmax(np.asarray(p_cum_nucs) >= r[:, [0]*4], axis=1)
+    # Get other bases given 2-mer distribution, previous base and random
+    # numbers
+    for i in range(1, seq_length):
+        seqs[:, i] = np.argmax(arr_dinucs[seqs[:, i-1]] >= r[:, [i]*4], axis=1)
+    return letters[seqs]
+
+
 # Other utils
 def s_plural(value: float) -> str:
     """Return s if scalar value induces plural"""
@@ -2167,3 +2286,12 @@ def int_to_roman(number):
             div -= 1
         i -= 1
     return res
+
+
+def flatten(container):
+    for i in container:
+        if isinstance(i, (list, tuple)):
+            for j in flatten(i):
+                yield j
+        else:
+            yield i
