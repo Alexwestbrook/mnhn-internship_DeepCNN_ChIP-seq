@@ -853,6 +853,19 @@ def inspect_bam_mapq(bam_file):
     return dict(sorted(mapqs.items()))
 
 
+def load_bw(filename, nantonum=True):
+    labels = {}
+    bw = pyBigWig.open(str(filename))
+    for chr_id in bw.chroms():
+        if nantonum:
+            labels[chr_id] = np.nan_to_num(
+                bw.values(chr_id, 0, -1, numpy=True))
+        else:
+            labels[chr_id] = bw.values(chr_id, 0, -1, numpy=True)
+    bw.close()
+    return labels
+
+
 def load_annotation(file, chr_id, window_size, anchor='center'):
     bw = pyBigWig.open(file)
     values = bw.values(f"chr{chr_id}", 0, -1, numpy=True)
@@ -1949,7 +1962,12 @@ def vcorrcoef(X, Y):
     return r
 
 
-def moving_average(x, n=2):
+def moving_average(x, n=2, keepsize=False):
+    if keepsize:
+        x = np.concatenate([
+            np.zeros(n // 2, dtype=x.dtype),
+            x,
+            np.zeros((n-1) // 2, dtype=x.dtype)])
     ret = np.cumsum(x)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1:] / n
