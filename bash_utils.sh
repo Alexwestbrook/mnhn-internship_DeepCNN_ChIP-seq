@@ -21,6 +21,7 @@ awk '/^>/ {next} {for(i=1;i<=length($0);i++) {array[substr($1,i,1)]++}} END {for
 bash_command="bash my_script.sh"
 echo $bash_command > $log_file
 script -a -c "$bash_command" $log_file
+# In terminal use exit to stop scripting
 
 # get chromsizes
 samtools faidx $fasta
