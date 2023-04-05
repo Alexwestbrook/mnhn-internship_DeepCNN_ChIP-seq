@@ -643,7 +643,7 @@ def predict(model, one_hot_chr, winsize, reverse=False, batch_size=1024):
     if reverse:
         one_hot_chr = one_hot_chr[::-1, ::-1]
     X = PredGenerator(one_hot_chr, winsize, batch_size)
-    pred = np.zeros(len(one_hot_chr))
+    pred = np.zeros(len(one_hot_chr), dtype='float32')
     pred[winsize//2:-(winsize//2)] = model.predict(X).ravel()
     if reverse:
         return pred[::-1]
