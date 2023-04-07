@@ -2110,15 +2110,18 @@ def indices_from_peaks(peaks):
 
 
 # Random sequences generation
-def kmer_counts(one_hots, k, order='ACGT', includeN=True):
+def kmer_counts(one_hots, k, order='ACGT', includeN=True, fast=True, version=1):
     """Compute kmer occurences in one-hot encoded sequence."""
     # Convert input into list-like of one_hot 2D-arrays
+    accelerate = False
     if isinstance(one_hots, dict):
         one_hots = list(one_hots.values())
     elif isinstance(one_hots, np.ndarray):
         if one_hots.ndim == 2:
             # single array turned into list of arrays
             one_hots = [one_hots]
+        elif one_hots.ndim == 3:
+            accelerate = fast and True
     # Work on integers then convert to char by indexing `letters`
     letters = np.array(list(order + 'N'))
     # build series with or without Ns in index
@@ -2127,6 +2130,60 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True):
     ser = pd.Series(
         0,
         index=pd.MultiIndex.from_product([list(order)]*k))
+    # Accelerate one 3D array
+    if accelerate and not includeN:
+        assert one_hots.shape[2] == 4
+        if version == 1:
+            arr = np.argmax(one_hots, axis=2) + 4*(np.sum(one_hots, axis=2) != 1)
+            arr = np.append(arr,
+                            4*np.ones((len(arr), k-1), dtype=arr.dtype),
+                            axis=1).ravel()
+            kmers_int, count = np.unique(
+                sliding_window_view(arr, k).reshape(-1, k),
+                return_counts=True,
+                axis=0)
+            # add kmers's counts to series
+            for i, kmer in enumerate(letters[kmers_int]):
+                if tuple(kmer) in ser.index:
+                    ser[tuple(kmer)] = count[i]
+        elif version == 2:
+            arr = np.argmax(one_hots, axis=2) + 4*(np.sum(one_hots, axis=2) != 1)
+            if k > 1:
+                edges = np.concatenate([arr[:-1, -k+1:], arr[1:, :k-1]], axis=1)
+                edge_kmers, edge_count = np.unique(sliding_window_view(edges, (len(edges), k)).reshape(-1, k), return_counts=True, axis=0)
+            kmers, count = np.unique(
+                sliding_window_view(arr.ravel(), k).reshape(-1, k),
+                return_counts=True,
+                axis=0)
+            if k > 1:
+                all_kmers, index = np.unique(np.concatenate([kmers, edge_kmers]), return_inverse=True, axis=0)
+                all_counts = np.zeros(len(all_kmers), dtype=int)
+                np.add.at(all_counts, index, np.concatenate([count, -edge_count]))
+            else:
+                all_kmers, all_counts = kmers, count
+            # add kmers's counts to series
+            for i, kmer in enumerate(letters[all_kmers]):
+                if tuple(kmer) in ser.index:
+                    ser[tuple(kmer)] = all_counts[i]
+        elif version == 3:
+            arr = np.argmax(one_hots, axis=2) + 4*(np.sum(one_hots, axis=2) != 1)
+            if k > 1:
+                edges = np.concatenate([arr[:-1, -k+1:], arr[1:, :k-1]], axis=1)
+                edge_kmers, edge_count = np.unique(sliding_window_view(edges, (len(edges), k)).reshape(-1, k), return_counts=True, axis=0)
+            kmers, count = np.unique(
+                sliding_window_view(arr.ravel(), k).reshape(-1, k),
+                return_counts=True,
+                axis=0)
+            if k > 1:
+                all_kmers, index = np.unique(np.concatenate([kmers, edge_kmers]), return_inverse=True, axis=0)
+                all_counts = np.zeros(len(all_kmers), dtype=int)
+                np.add.at(all_counts, index, np.concatenate([count, -edge_count]))
+            else:
+                all_kmers, all_counts = kmers, count
+            print(all_kmers, all_counts)
+            index = ser.index
+            ser = ser.add(pd.Series(all_counts, index=pd.MultiIndex.from_arrays(letters[all_kmers].T)), fill_value=0).astype(int).reindex(index)
+        return ser.sort_index()
     # Iterate over one-hot encoded arrays
     for one_hot in one_hots:
         # Check that arrays are 2D with a shape of 4 in the 2nd dimension
@@ -2143,7 +2200,7 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True):
         for i, kmer in enumerate(letters[kmers_int]):
             if tuple(kmer) in ser.index:
                 ser[tuple(kmer)] += count[i]
-    return ser
+    return ser.sort_index()
 
 
 def ref_kmer_frequencies(freq_nucs, k=2):
@@ -2313,3 +2370,217 @@ def flatten(container):
                 yield j
         else:
             yield i
+
+
+# Test functions
+def kmer_counts_test(orders=['ACGT', 'ATGC'],
+                     fasts=[True, False],
+                     versions=[1, 2, 3]):
+    one_hot = np.array([[1, 0, 0, 0]]
+                       + [[0, 1, 0, 0]]*2
+                       + [[0, 0, 1, 0]]*3
+                       + [[0, 0, 0, 1]]*4
+                       + [[0, 0, 0, 0]]*5)
+    one_hot2 = np.array([[1, 0, 0, 0]]
+                        + [[0, 1, 0, 0]]*2
+                        + [[0, 0, 1, 0]]*3
+                        + [[0, 0, 0, 1]]*4)
+
+    k = 1
+    includeN = True
+    for order in orders:
+        ref = pd.Series(
+            np.arange(1, 6),
+            index=pd.MultiIndex.from_product([list(order + 'N')])
+        ).sort_index()
+        for fast in fasts:
+            for version in versions:
+                res = kmer_counts(one_hot,
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts([one_hot],
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts({'foo': one_hot},
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts(one_hot.reshape(3, 5, 4),
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+
+    k = 1
+    includeN = False
+    for order in orders:
+        ref = pd.Series(
+            np.arange(1, 5),
+            index=pd.MultiIndex.from_product([list(order)])
+        ).sort_index()
+        for fast in fasts:
+            for version in versions:
+                res = kmer_counts(one_hot,
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts([one_hot],
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts({'foo': one_hot},
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts(one_hot.reshape(3, 5, 4),
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+
+    k = 2
+    includeN = True
+    for order in orders:
+        ref = pd.Series(
+            [0, 1, 0, 0, 0,
+             0, 1, 1, 0, 0,
+             0, 0, 2, 1, 0,
+             0, 0, 0, 3, 1,
+             0, 0, 0, 0, 4],
+            index=pd.MultiIndex.from_product([list(order + 'N')]*2)
+        ).sort_index()
+        for fast in fasts:
+            for version in versions:
+                res = kmer_counts(one_hot,
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts([one_hot],
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts({'foo': one_hot},
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+        ref = pd.Series(
+            [0, 1, 0, 0, 0,
+             0, 1, 1, 0, 0,
+             0, 0, 1, 1, 0,
+             0, 0, 0, 3, 0,
+             0, 0, 0, 0, 4],
+            index=pd.MultiIndex.from_product([list(order + 'N')]*2)
+        ).sort_index()
+        for fast in fasts:
+            for version in versions:
+                res = kmer_counts(one_hot.reshape(3, 5, 4),
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+
+    k = 2
+    includeN = False
+    for order in orders:
+        ref = pd.Series(
+            [0, 1, 0, 0,
+             0, 1, 1, 0,
+             0, 0, 2, 1,
+             0, 0, 0, 3],
+            index=pd.MultiIndex.from_product([list(order)]*2)
+        ).sort_index()
+        for fast in fasts:
+            for version in versions:
+                res = kmer_counts(one_hot,
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts([one_hot],
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+                res = kmer_counts({'foo': one_hot},
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                assert np.all(res == ref)
+        ref = pd.Series(
+            [0, 1, 0, 0, 0,
+             0, 1, 1, 0, 0,
+             0, 0, 1, 1, 0,
+             0, 0, 0, 3, 0,
+             0, 0, 0, 0, 4],
+            index=pd.MultiIndex.from_product([list(order + 'N')]*2)
+        ).sort_index()
+        for fast in fasts:
+            for version in versions:
+                res = kmer_counts(one_hot.reshape(3, 5, 4),
+                                  k=k,
+                                  includeN=includeN,
+                                  order=order,
+                                  fast=fast,
+                                  version=version)
+                try:
+                    assert np.all(res == ref)
+                except:
+                    print(order, fast, version)
+                    raise
+
+    res = kmer_counts(one_hot.reshape(3, 5, 4), k=2)
+    res2 = kmer_counts(one_hot.reshape(3, 5, 4), k=2, fast=False)
+    ref = pd.Series(
+        [0, 1, 0, 0, 0,
+         0, 1, 1, 0, 0,
+         0, 0, 1, 1, 0,
+         0, 0, 0, 3, 0,
+         0, 0, 0, 0, 4],
+        index=pd.MultiIndex.from_product([list('ACGTN')]*2)
+    ).sort_index()
+    assert np.all(res == ref)
+
+
+if __name__ == "__main__":
+    kmer_counts_test()
