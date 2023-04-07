@@ -135,27 +135,25 @@ def compare_binned_plots(values_list, label_list, start, end, bins, **kwargs):
 
 
 def plot_2mer_df(df, columns=None, group=None):
-    df.sort_index(inplace=True)
-    df['SW'] = (['same', 'alt', 'alt', 'same']
-                + ['alt', 'same', 'same', 'alt']
-                + ['alt', 'same', 'same', 'alt']
-                + ['same', 'alt', 'alt', 'same'])
+    df = df.sort_index().copy()
     kmer_order = [
         ('A', 'C'), ('G', 'T'), ('C', 'A'), ('T', 'G'),
         ('A', 'G'), ('C', 'T'), ('G', 'A'), ('T', 'C'),
         ('A', 'A'), ('T', 'T'), ('A', 'T'), ('T', 'A'),
         ('C', 'C'), ('G', 'G'), ('C', 'G'), ('G', 'C')]
+    df = df.loc[kmer_order]
+    df['SW'] = ['alt']*8 + ['same']*8
     if group is None:
         fig, ax = plt.subplots(1, 1, figsize=(10, 5), facecolor='w')
-        df.loc[kmer_order].plot(kind='bar', y=columns, ax=ax)
+        df.plot(kind='bar', y=columns, ax=ax)
     elif group == 'SW':
         fig, axes = plt.subplots(1, 2,
                                  sharey='row',
                                  figsize=(20, 5),
                                  facecolor='w')
-        for (key, grp), ax in zip(df.loc[kmer_order, :].groupby('SW'),
-                                  axes.flatten()):
+        for (key, grp), ax in zip(df.groupby('SW'), axes.flatten()):
             grp.plot(kind='bar',
                      y=columns,
                      ax=ax,
                      title=key)
+    return fig, axes
