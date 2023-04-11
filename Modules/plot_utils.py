@@ -144,8 +144,8 @@ def plot_2mer_df(df, columns=None, group=None):
     df = df.loc[kmer_order]
     df['SW'] = ['alt']*8 + ['same']*8
     if group is None:
-        fig, ax = plt.subplots(1, 1, figsize=(10, 5), facecolor='w')
-        df.plot(kind='bar', y=columns, ax=ax)
+        fig, axes = plt.subplots(1, 1, figsize=(20, 5), facecolor='w')
+        df.plot(kind='bar', y=columns, ax=axes)
     elif group == 'SW':
         fig, axes = plt.subplots(1, 2,
                                  sharey='row',
