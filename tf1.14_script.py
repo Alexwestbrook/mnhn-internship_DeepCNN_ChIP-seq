@@ -202,16 +202,21 @@ def nuc_shuffle(seq, num_shufs=1, rng=None):
 deeplift_model = kc.convert_model_from_saved_files(
     Path('shared_folder', 'SCerevisiae', 'models_etienne',
          'weights_myco_rep1.hdf5'),
-    # nonlinear_mxts_mode=deeplift.layers.NonlinearMxtsMode.DeepLIFT_GenomicsDefault
-    nonlinear_mxts_mode=deeplift.layers.NonlinearMxtsMode.RevealCancel
+    nonlinear_mxts_mode=deeplift.layers.NonlinearMxtsMode.DeepLIFT_GenomicsDefault
+    # nonlinear_mxts_mode=deeplift.layers.NonlinearMxtsMode.RevealCancel
     )
 find_scores_layer_idx = 0
-with np.load(Path('shared_folder', 'SCerevisiae', 'genome', 'W303',
-                  'W303_ATGC.npz')) as f:
-    one_hot = f['chr16']
-seq_start = 114_050
-X = rolling_window(
-    one_hot, window=(2001, 4))[seq_start:seq_start+1001, 0, :, None, :]
+# with np.load(Path('shared_folder', 'SCerevisiae', 'genome', 'W303',
+#                   'W303_ATGC.npz')) as f:
+#     one_hot = f['chr16']
+# seq_start = 114_050
+# X = rolling_window(
+#     one_hot, window=(2001, 4))[seq_start:seq_start+1001, 0, :, None, :]
+# X = rolling_window(
+#     one_hot, window=(2001, 4))[:, 0, :, None, :]
+with np.load(Path('shared_folder', 'SCerevisiae', 'results', 'models_etienne',
+                  'modisco', 'onehot_slidemaxchr16.npz')) as f:
+    X = np.transpose(f['arr_0'], [0, 2, 1]).reshape(-1, 2001, 1, 4)
 deeplift_contribs_func = deeplift_model.get_target_contribs_func(
     find_scores_layer_idx=find_scores_layer_idx,
     target_layer_idx=-2)
@@ -230,12 +235,12 @@ func_many_refs = get_shuffle_seq_ref_function(
 scores = func_many_refs(task_idx=0,
                         input_data_sequences=X,
                         num_refs_per_seq=20,
-                        batch_size=10,
+                        batch_size=200,
                         progress_update=1000)
 print(scores.shape)
 np.save(Path('shared_folder', 'SCerevisiae', 'results',
              'models_etienne', 'DeepLIFT',
-             'score_nuc1_115050-116050_RevealCancel_vs_20dinucshuffle.npy'),
+             'score_nuc1_slidemaxchr16_vs_20dinucshuffle.npy'),
         scores.squeeze())
 
 # model = tf.keras.models.load_model(
