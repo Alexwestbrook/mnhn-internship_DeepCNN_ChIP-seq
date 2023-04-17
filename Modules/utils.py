@@ -2110,11 +2110,11 @@ def indices_from_peaks(peaks):
 
 
 # Random sequences generation
-def kmer_counts(one_hots, k, order='ACGT', includeN=True, fast=True):
+def kmer_counts(one_hots, k, order='ACGT', includeN=True, as_pandas=True):
     """Compute kmer occurences in one-hot encoded sequence."""
     # Convert input into list-like of one_hot 2D-arrays
     # If 3D-array optionnally use faster implementation
-    accelerate = False
+    fast = False
     if isinstance(one_hots, dict):
         one_hots = list(one_hots.values())
     elif isinstance(one_hots, np.ndarray):
@@ -2124,66 +2124,63 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True, fast=True):
         elif one_hots.ndim == 3:
             # Check that last dimension is 4
             assert one_hots.shape[2] == 4
-            accelerate = fast and True
-    # Work on integers then convert to char by indexing `letters`
-    letters = np.array(list(order + 'N'))
-    # build series with or without Ns in index
+            fast = True
+    if fast:  # Faster on 3D array
+        # convert one_hot to integer tokens
+        arr = np.argmax(one_hots, axis=-1) + 4*(np.sum(one_hots, axis=-1) != 1)
+        # Get kmers with sliding_window_view
+        kmers = sliding_window_view(arr, (1, k)).reshape(-1, k)
+        # Count kmers in a k-dimensional array
+        all_counts = np.zeros(tuple(5 for i in range(k)), dtype=int)
+        np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
+    else:  # Iterate over one-hot encoded arrays
+        # Initialise kD array
+        all_counts = np.zeros(tuple(5 for i in range(k)), dtype=int)
+        for oh in one_hots:
+            # Check that arrays are 2D with a shape of 4 in the 2nd dimension
+            assert oh.ndim == 2
+            assert oh.shape[1] == 4
+            # convert one_hot to integer tokens
+            arr = np.argmax(oh, axis=-1) + 4*(np.sum(oh, axis=-1) != 1)
+            # Get kmers with sliding_window_view
+            kmers = sliding_window_view(arr, k).reshape(-1, k)
+            # Count kmers in a k-dimensional array
+            np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
+    # Format output
     if includeN:
         order += 'N'
-    ser = pd.Series(
-        0,
-        index=pd.MultiIndex.from_product([list(order)]*k))
-    # Accelerate on 3D array
-    if accelerate:
-        # convert one_hot to integer encoding, as indexes of `letters`
-        arr = np.argmax(one_hots, axis=-1) + 4*(np.sum(one_hots, axis=-1) != 1)
-        # Count kmers in the flattened array, then account for surplus kmers
-        # going over the edge
-        if k > 1:
-            edges = np.concatenate([arr[:-1, -k+1:], arr[1:, :k-1]], axis=1)
-            edge_kmers, edge_count = np.unique(
-                sliding_window_view(edges, (len(edges), k)).reshape(-1, k),
-                return_counts=True,
-                axis=0)
-        kmers, count = np.unique(
-            sliding_window_view(arr.ravel(), k).reshape(-1, k),
-            return_counts=True,
-            axis=0)
-        if k > 1:
-            all_kmers, index = np.unique(
-                np.concatenate([kmers, edge_kmers]),
-                return_inverse=True,
-                axis=0)
-            all_counts = np.zeros(len(all_kmers), dtype=int)
-            np.add.at(all_counts, index, np.concatenate([count, -edge_count]))
-        else:
-            all_kmers, all_counts = kmers, count
-        # Save index, add to series then reindex to old index, in case some
-        # kmers had Ns and includeN is False
-        index = ser.index
-        ser = ser.add(
-            pd.Series(all_counts,
-                      index=pd.MultiIndex.from_arrays(letters[all_kmers].T)),
-            fill_value=0
-            ).astype(int).reindex(index)
+    else:
+        all_counts = all_counts[tuple(slice(0, -1) for i in range(k))]
+    if as_pandas:
+        ser = pd.Series(
+            all_counts.ravel(),
+            index=pd.MultiIndex.from_product([list(order)]*k))
         return ser.sort_index()
-    # Iterate over one-hot encoded arrays
-    for one_hot in one_hots:
-        # Check that arrays are 2D with a shape of 4 in the 2nd dimension
-        assert one_hot.ndim == 2
-        assert one_hot.shape[1] == 4
-        # convert one_hot to integer encoding, as indexes of `letters`
-        arr = np.argmax(one_hot, axis=-1) + 4*(np.sum(one_hot, axis=-1) != 1)
-        # count unique kmers as integer sequences
-        kmers_int, count = np.unique(
-            sliding_window_view(arr, k).reshape(-1, k),
-            return_counts=True,
-            axis=0)
-        # add kmers's counts to series
-        for i, kmer in enumerate(letters[kmers_int]):
-            if tuple(kmer) in ser.index:
-                ser[tuple(kmer)] += count[i]
-    return ser.sort_index()
+    else:
+        return all_counts
+
+
+def kmer_counts_by_seq(one_hots, k, order='ACGT', includeN=True,
+                       as_pandas=True):
+    assert one_hots.ndim == 3
+    all_counts = np.zeros(tuple(5 for i in range(k)) + (len(one_hots),),
+                          dtype=int)
+    tokens = np.argmax(one_hots, axis=-1) + 4*(np.sum(one_hots, axis=-1) != 1)
+    for i, arr in enumerate(tokens):
+        kmers = sliding_window_view(arr, k).reshape(-1, k)
+        np.add.at(all_counts, tuple(kmers[:, j] for j in range(k)) + (i,), 1)
+    if includeN:
+        order += 'N'
+    else:
+        all_counts = all_counts[tuple(slice(0, -1) for i in range(k))
+                                + (slice(None),)]
+    if as_pandas:
+        ser = pd.DataFrame(
+            all_counts.reshape(len(order)**k, -1),
+            index=pd.MultiIndex.from_product([list(order)]*k))
+        return ser.sort_index()
+    else:
+        return all_counts
 
 
 def ref_kmer_frequencies(freq_nucs, k=2):
@@ -2228,7 +2225,7 @@ def one_hot_to_tokens(one_hot):
     From github.com/kundajelab/deeplift/blob/master/deeplift/dinuc_shuffle.py
     """
     # Vector of all D
-    tokens = np.ones(one_hot.shape[0], dtype=int) * one_hot.shape[1]
+    tokens = np.full(one_hot.shape[0], one_hot.shape[1], dtype=int)
     seq_inds, dim_inds = np.where(one_hot)
     tokens[seq_inds] = dim_inds
     return tokens
@@ -2553,26 +2550,22 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot,
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts([one_hot],
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts({'foo': one_hot},
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts(one_hot.reshape(-1, 5, 4),
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref = pd.Series(
             [5, 9, 13, 17, 16],
@@ -2582,14 +2575,12 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
             r = kmer_counts(one_hots,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
             r = kmer_counts(one_hots_dict,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
 
     k = 1
@@ -2612,26 +2603,22 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot,
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts([one_hot],
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts({'foo': one_hot},
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts(one_hot.reshape(-1, 5, 4),
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref = pd.Series(
             [5, 9, 13, 17],
@@ -2641,14 +2628,12 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
             r = kmer_counts(one_hots,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
             r = kmer_counts(one_hots_dict,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
 
     k = 2
@@ -2700,20 +2685,17 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot,
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts([one_hot],
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts({'foo': one_hot},
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref1 = pd.Series(
             [0, 1, 0, 0, 0,
@@ -2761,8 +2743,7 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot.reshape(-1, 5, 4),
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref = pd.Series(
             [0, 3, 0, 0, 2,
@@ -2776,14 +2757,12 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
             r = kmer_counts(one_hots,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
             r = kmer_counts(one_hots_dict,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
 
     k = 2
@@ -2824,20 +2803,17 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot,
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts([one_hot],
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts({'foo': one_hot},
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref1 = pd.Series(
             [0, 1, 0, 0,
@@ -2874,8 +2850,7 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot.reshape(-1, 5, 4),
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref = pd.Series(
             [0, 3, 0, 0,
@@ -2888,14 +2863,12 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
             r = kmer_counts(one_hots,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
             r = kmer_counts(one_hots_dict,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
 
     k = 3
@@ -3067,20 +3040,17 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot,
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts([one_hot],
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts({'foo': one_hot},
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref1 = pd.Series(
             [0, 0, 0, 0, 0,
@@ -3248,8 +3218,7 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot.reshape(-1, 5, 4),
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref = pd.Series(
             [0, 0, 0, 0, 0,
@@ -3287,14 +3256,12 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
             r = kmer_counts(one_hots,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
             r = kmer_counts(one_hots_dict,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
 
     k = 3
@@ -3395,20 +3362,17 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot,
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts([one_hot],
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
                 r = kmer_counts({'foo': one_hot},
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref1 = pd.Series(
             [0, 0, 0, 0,
@@ -3505,8 +3469,7 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
                 r = kmer_counts(one_hot.reshape(-1, 5, 4),
                                 k=k,
                                 includeN=includeN,
-                                order=order,
-                                fast=fast)
+                                order=order)
                 assert np.all(r == ref)
         ref = pd.Series(
             [0, 0, 0, 0,
@@ -3534,14 +3497,12 @@ def kmer_counts_test(orders=['ACGT', 'ATGC'],
             r = kmer_counts(one_hots,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
             r = kmer_counts(one_hots_dict,
                             k=k,
                             includeN=includeN,
-                            order=order,
-                            fast=fast)
+                            order=order)
             assert np.all(r == ref)
 
 
