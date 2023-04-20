@@ -134,14 +134,18 @@ def compare_binned_plots(values_list, label_list, start, end, bins, **kwargs):
     return axes
 
 
-def plot_2mer_df(df, columns=None, group=None):
+def order_2mer_df(df):
     df = df.sort_index().copy()
     kmer_order = [
         ('A', 'C'), ('G', 'T'), ('C', 'A'), ('T', 'G'),
         ('A', 'G'), ('C', 'T'), ('G', 'A'), ('T', 'C'),
         ('A', 'A'), ('T', 'T'), ('A', 'T'), ('T', 'A'),
         ('C', 'C'), ('G', 'G'), ('C', 'G'), ('G', 'C')]
-    df = df.loc[kmer_order]
+    return df.loc[kmer_order]
+
+
+def plot_2mer_df(df, columns=None, group=None):
+    df = order_2mer_df(df)
     df['SW'] = ['alt']*8 + ['same']*8
     if group is None:
         fig, axes = plt.subplots(1, 1, figsize=(20, 5), facecolor='w')
