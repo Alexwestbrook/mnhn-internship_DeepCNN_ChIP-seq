@@ -2098,7 +2098,7 @@ def indices_from_starts_ends(starts, ends):
     # ends must be excluded, ends-starts>0
     lens = ends - starts
     np.cumsum(lens, out=lens)
-    i = np.ones(lens[-1]+1, dtype=int)
+    i = np.ones(lens[-1], dtype=int)
     i[0] = starts[0]
     i[lens[:-1]] += starts[1:]
     i[lens[:-1]] -= ends[:-1]
