@@ -2095,9 +2095,10 @@ def integer_histogram_sample_vect(array: np.ndarray,
 
 
 def indices_from_starts_ends(starts, ends):
+    # ends must be excluded, ends-starts>0
     lens = ends - starts
     np.cumsum(lens, out=lens)
-    i = np.ones(lens[-1], dtype=int)
+    i = np.ones(lens[-1]+1, dtype=int)
     i[0] = starts[0]
     i[lens[:-1]] += starts[1:]
     i[lens[:-1]] -= ends[:-1]
@@ -2106,6 +2107,7 @@ def indices_from_starts_ends(starts, ends):
 
 
 def indices_from_peaks(peaks):
+    # ends must be excluded, ends-starts>0
     return indices_from_starts_ends(peaks[:, 0], peaks[:, 1])
 
 
@@ -2126,12 +2128,13 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True, as_pandas=True):
             assert one_hots.shape[2] == 4
             fast = True
     if fast:  # Faster on 3D array
+        # Initialise kD array
+        all_counts = np.zeros(tuple(5 for i in range(k)), dtype=int)
         # convert one_hot to integer tokens
         arr = np.argmax(one_hots, axis=-1) + 4*(np.sum(one_hots, axis=-1) != 1)
         # Get kmers with sliding_window_view
         kmers = sliding_window_view(arr, (1, k)).reshape(-1, k)
         # Count kmers in a k-dimensional array
-        all_counts = np.zeros(tuple(5 for i in range(k)), dtype=int)
         np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
     else:  # Iterate over one-hot encoded arrays
         # Initialise kD array
