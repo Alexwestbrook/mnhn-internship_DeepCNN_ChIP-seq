@@ -123,7 +123,9 @@ def merge_chroms(chr_ids, file):
 
 def chunk_regions(array, length):
     leftover = len(array) % length
-    return array[:-leftover].reshape((-1, length) + array.shape[1:])
+    if leftover != 0:
+        array = array[:-leftover]
+    return array.reshape((-1, length) + array.shape[1:])
 
 
 # Sample weight handling
@@ -2130,12 +2132,18 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True, as_pandas=True):
     if fast:  # Faster on 3D array
         # Initialise kD array
         all_counts = np.zeros(tuple(5 for i in range(k)), dtype=int)
-        # convert one_hot to integer tokens
-        arr = np.argmax(one_hots, axis=-1) + 4*(np.sum(one_hots, axis=-1) != 1)
-        # Get kmers with sliding_window_view
-        kmers = sliding_window_view(arr, (1, k)).reshape(-1, k)
-        # Count kmers in a k-dimensional array
-        np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
+        if k == 1:
+            all_counts[:4] = one_hots.sum(axis=(0, 1))
+            all_counts[4] = (len(one_hots) * one_hots.shape[1]
+                             - all_counts[:4].sum())
+        else:
+            # convert one_hot to integer tokens
+            tokens = (np.argmax(one_hots, axis=-1)
+                      + 4 * (np.sum(one_hots, axis=-1) != 1))
+            # Get kmers with sliding_window_view
+            kmers = sliding_window_view(tokens, (1, k)).reshape(-1, k)
+            # Count kmers in a k-dimensional array
+            np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
     else:  # Iterate over one-hot encoded arrays
         # Initialise kD array
         all_counts = np.zeros(tuple(5 for i in range(k)), dtype=int)
@@ -2143,12 +2151,16 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True, as_pandas=True):
             # Check that arrays are 2D with a shape of 4 in the 2nd dimension
             assert oh.ndim == 2
             assert oh.shape[1] == 4
-            # convert one_hot to integer tokens
-            arr = np.argmax(oh, axis=-1) + 4*(np.sum(oh, axis=-1) != 1)
-            # Get kmers with sliding_window_view
-            kmers = sliding_window_view(arr, k).reshape(-1, k)
-            # Count kmers in a k-dimensional array
-            np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
+            if k == 1:
+                all_counts[:4] += oh.sum(axis=0)
+                all_counts[4] += len(oh) - oh.sum()
+            else:
+                # convert one_hot to integer tokens
+                tokens = np.argmax(oh, axis=-1) + 4*(np.sum(oh, axis=-1) != 1)
+                # Get kmers with sliding_window_view
+                kmers = sliding_window_view(tokens, k).reshape(-1, k)
+                # Count kmers in a k-dimensional array
+                np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
     # Format output
     if includeN:
         order += 'N'
@@ -2168,10 +2180,17 @@ def kmer_counts_by_seq(one_hots, k, order='ACGT', includeN=True,
     assert one_hots.ndim == 3
     all_counts = np.zeros(tuple(5 for i in range(k)) + (len(one_hots),),
                           dtype=int)
-    tokens = np.argmax(one_hots, axis=-1) + 4*(np.sum(one_hots, axis=-1) != 1)
-    for i, arr in enumerate(tokens):
-        kmers = sliding_window_view(arr, k).reshape(-1, k)
-        np.add.at(all_counts, tuple(kmers[:, j] for j in range(k)) + (i,), 1)
+    if k == 1:
+        all_counts[:4] = one_hots.sum(axis=1).T
+        all_counts[4] = one_hots.shape[1] - all_counts[:4].sum(axis=0)
+    else:
+        tokens = (np.argmax(one_hots, axis=-1)
+                  + 4 * (np.sum(one_hots, axis=-1) != 1))
+        for i, arr in enumerate(tokens):
+            kmers = sliding_window_view(arr, k).reshape(-1, k)
+            np.add.at(all_counts,
+                      tuple(kmers[:, j] for j in range(k)) + (i,),
+                      1)
     if includeN:
         order += 'N'
     else:
