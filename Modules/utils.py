@@ -2495,7 +2495,7 @@ def flatten(container):
 
 
 # Test functions
-def kmer_counts_test(orders=['ACGT', 'ATGC'],
+def kmer_counts_test(orders=['ACGT', 'ATCG'],
                      fasts=[True, False]):
     # All possible bases including N in different quantities
     one_hot1 = np.array([[1, 0, 0, 0]]
