@@ -6,6 +6,7 @@ import deeplift
 from deeplift.conversion import kerasapi_conversion as kc
 from deeplift.util import get_shuffle_seq_ref_function
 from deeplift.dinuc_shuffle import dinuc_shuffle
+from deeplift.layers import NonlinearMxtsMode
 print(tf.__version__)
 
 
@@ -202,21 +203,27 @@ def nuc_shuffle(seq, num_shufs=1, rng=None):
 deeplift_model = kc.convert_model_from_saved_files(
     Path('shared_folder', 'SCerevisiae', 'models_etienne',
          'weights_myco_rep1.hdf5'),
-    nonlinear_mxts_mode=deeplift.layers.NonlinearMxtsMode.DeepLIFT_GenomicsDefault
-    # nonlinear_mxts_mode=deeplift.layers.NonlinearMxtsMode.RevealCancel
+    nonlinear_mxts_mode=NonlinearMxtsMode.DeepLIFT_GenomicsDefault
+    # nonlinear_mxts_mode=NonlinearMxtsMode.RevealCancel
     )
 find_scores_layer_idx = 0
-# with np.load(Path('shared_folder', 'SCerevisiae', 'genome', 'W303',
-#                   'W303_ATGC.npz')) as f:
-#     one_hot = f['chr16']
+
+with np.load(Path('shared_folder', 'SCerevisiae', 'genome', 'W303',
+                  'W303_ATCG.npz')) as f:
+    one_hot = f['chr16']
 # seq_start = 114_050
 # X = rolling_window(
-#     one_hot, window=(2001, 4))[seq_start:seq_start+1001, 0, :, None, :]
-# X = rolling_window(
-#     one_hot, window=(2001, 4))[:, 0, :, None, :]
-with np.load(Path('shared_folder', 'SCerevisiae', 'results', 'models_etienne',
-                  'modisco', 'onehot_slidemaxchr16.npz')) as f:
-    X = np.transpose(f['arr_0'], [0, 2, 1]).reshape(-1, 2001, 1, 4)
+#     one_hot, window=(2001, 4))[seq_start:seq_start+1000, 0, :, None, :]
+indices = np.load(Path('shared_folder', 'SCerevisiae', 'results',
+                       'models_etienne', 'DeepLIFT',
+                       'onehot_chr16_randindices1000.npy'))
+X = one_hot[indices.reshape(-1, 1)
+            + np.arange(-1000, 1001).reshape(1, -1)].reshape(-1, 2001, 1, 4)
+
+# with np.load(Path('shared_folder', 'SCerevisiae', 'results',
+#                   'models_etienne', 'modisco',
+#                   'onehot_slideminchr16.npz')) as f:
+#     X = np.transpose(f['arr_0'], [0, 2, 1]).reshape(-1, 2001, 1, 4)
 deeplift_contribs_func = deeplift_model.get_target_contribs_func(
     find_scores_layer_idx=find_scores_layer_idx,
     target_layer_idx=-2)
@@ -240,16 +247,17 @@ scores = func_many_refs(task_idx=0,
 print(scores.shape)
 np.save(Path('shared_folder', 'SCerevisiae', 'results',
              'models_etienne', 'DeepLIFT',
-             'score_nuc1_slidemaxchr16_vs_20dinucshuffle.npy'),
+             'score_nuc1_chr16_randindices1000_vs_20dinucshuffle.npy'),
         scores.squeeze())
 
+# Tests
 # model = tf.keras.models.load_model(
 #     Path('shared_folder', 'SCerevisiae', 'models_etienne',
 #          'weights_myco_rep1.hdf5'),
 #     custom_objects={'correlate': correlate, 'mae_cor': mae_cor}
 #     )
 # with np.load(Path('shared_folder', 'SCerevisiae', 'genome', 'W303',
-#                   'W303_ATGC.npz')) as f:
+#                   'W303_ATCG.npz')) as f:
 #     one_hot = f['chr16']
 # print(one_hot.shape)
 # pred = model.predict(one_hot[:2001].reshape(1, 2001, 1, 4))[:, 0]
