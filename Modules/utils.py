@@ -2415,19 +2415,28 @@ def safe_filename(file: Path) -> Path:
     """Make sure file can be build without overriding an other.
 
     If file already exists, returns a new filename with a number in between
-    parenthesis. If the parent to the file doesn't exist, it is created.
+    parenthesis. If the parent of the file doesn't exist, it is created.
+
+    Raises
+    ------
+    FileExistsError
+        If one of the parents of the file to create is an existing file
     """
     file = Path(file)
     # Build parent directories if needed
-    file.parent.mkdir(parents=True, exist_ok=True)
+    if not file.parent.is_dir():
+        print("Building parent directories")
+        file.parent.mkdir(parents=True)
     # Change filename if it already exists
-    file_dups = 0
-    original_stem = file.stem
-    while file.exists():
-        file_dups += 1
-        file = Path(file.parent,
-                    original_stem + f'({file_dups})' + file.suffix)
-        # in python 3.9, use file.with_stem(original_stem + f'({file_dups})')
+    if file.exists():
+        original_file = file
+        file_dups = 0
+        while file.exists():
+            file_dups += 1
+            file = Path(file.parent,
+                        original_file.stem + f'({file_dups})' + file.suffix)
+            # python3.9: file.with_stem(original_file.stem + f'({file_dups})')
+        print(f'{original_file} exists, changing filename to {file}')
     return file
 
 
