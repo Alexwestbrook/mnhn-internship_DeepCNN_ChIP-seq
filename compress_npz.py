@@ -7,3 +7,4 @@ for file in Path('..', 'shared_folder', 'SCerevisiae', 'results',
     with np.load(file) as f:
         data = {k: f[k] for k in f.keys()}
     np.savez_compressed(file, **data)
+    del data
