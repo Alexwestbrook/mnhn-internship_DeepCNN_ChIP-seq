@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 from collections import defaultdict
+import itertools as it
 import warnings
 from typing import Callable, Optional, Union
 import re
@@ -2133,16 +2134,18 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True, as_pandas=True):
         # Initialise kD array
         all_counts = np.zeros(tuple(5 for i in range(k)), dtype=int)
         if k == 1:
+            # Count each base
             all_counts[:4] = one_hots.sum(axis=(0, 1))
+            # Count leftover as Ns
             all_counts[4] = (len(one_hots) * one_hots.shape[1]
                              - all_counts[:4].sum())
         else:
-            # convert one_hot to integer tokens
+            # Convert one_hot to integer tokens
             tokens = (np.argmax(one_hots, axis=-1)
                       + 4 * (np.sum(one_hots, axis=-1) != 1))
             # Get kmers with sliding_window_view
             kmers = sliding_window_view(tokens, (1, k)).reshape(-1, k)
-            # Count kmers in a k-dimensional array
+            # Count kmers in the kD array
             np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
     else:  # Iterate over one-hot encoded arrays
         # Initialise kD array
@@ -2152,14 +2155,16 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True, as_pandas=True):
             assert oh.ndim == 2
             assert oh.shape[1] == 4
             if k == 1:
+                # Count each base
                 all_counts[:4] += oh.sum(axis=0)
+                # Count leftover as Ns
                 all_counts[4] += len(oh) - oh.sum()
             else:
-                # convert one_hot to integer tokens
+                # Convert one_hot to integer tokens
                 tokens = np.argmax(oh, axis=-1) + 4*(np.sum(oh, axis=-1) != 1)
                 # Get kmers with sliding_window_view
-                kmers = sliding_window_view(tokens, k).reshape(-1, k)
-                # Count kmers in a k-dimensional array
+                kmers = sliding_window_view(tokens, k)
+                # Count kmers in the kD array
                 np.add.at(all_counts, tuple(kmers[:, i] for i in range(k)), 1)
     # Format output
     if includeN:
@@ -2178,19 +2183,70 @@ def kmer_counts(one_hots, k, order='ACGT', includeN=True, as_pandas=True):
 def kmer_counts_by_seq(one_hots, k, order='ACGT', includeN=True,
                        as_pandas=True):
     assert one_hots.ndim == 3
+    # Initialise kD array
     all_counts = np.zeros(tuple(5 for i in range(k)) + (len(one_hots),),
                           dtype=int)
     if k == 1:
+        # Count each base
         all_counts[:4] = one_hots.sum(axis=1).T
+        # Count leftover as Ns
         all_counts[4] = one_hots.shape[1] - all_counts[:4].sum(axis=0)
     else:
+        # Convert one_hot to integer tokens
         tokens = (np.argmax(one_hots, axis=-1)
                   + 4 * (np.sum(one_hots, axis=-1) != 1))
         for i, arr in enumerate(tokens):
-            kmers = sliding_window_view(arr, k).reshape(-1, k)
+            # Get kmers with sliding_window_view
+            kmers = sliding_window_view(arr, k)
+            # Count kmers in the kD array
             np.add.at(all_counts,
                       tuple(kmers[:, j] for j in range(k)) + (i,),
                       1)
+    if includeN:
+        order += 'N'
+    else:
+        all_counts = all_counts[tuple(slice(0, -1) for i in range(k))
+                                + (slice(None),)]
+    if as_pandas:
+        ser = pd.DataFrame(
+            all_counts.reshape(len(order)**k, -1),
+            index=pd.MultiIndex.from_product([list(order)]*k))
+        return ser.sort_index()
+    else:
+        return all_counts
+
+
+def sliding_kmer_counts(one_hot, k, winsize, order='ACGT', includeN=True,
+                        as_pandas=True):
+    assert one_hot.ndim == 2
+    n_windows = len(one_hot) - winsize + 1
+    # Initialise kD array
+    all_counts = np.zeros(tuple(5 for i in range(k)) + (n_windows,),
+                          dtype=int)
+    if k == 1:
+        # Count each base
+        all_counts[:4] = moving_sum(one_hot, winsize, axis=0).T
+        # Count leftover as Ns
+        all_counts[4] = winsize - all_counts[:4].sum(axis=0)
+    else:
+        # Convert one_hot to integer tokens
+        tokens = (np.argmax(one_hot, axis=-1)
+                  + 4 * (np.sum(one_hot, axis=-1) != 1))
+        # Get kmers with sliding_window_view
+        kmers = sliding_window_view(tokens, k)
+        # Count kmers in first window in the kD array
+        np.add.at(
+            all_counts,
+            tuple(kmers[:winsize+1-k, j] for j in range(k)) + (0,),
+            1)
+        for i in range(n_windows - 1):
+            # Copy count from previous window
+            all_counts[..., i+1] = all_counts[..., i]
+            # Remove first kmer of previous window, add last kmer of next one
+            np.add.at(
+                all_counts,
+                tuple(kmers[[i, winsize+1-k+i], j] for j in range(k)) + (i+1,),
+                [-1, 1])
     if includeN:
         order += 'N'
     else:
@@ -2517,7 +2573,7 @@ def kmer_counts_test(orders=['ACGT', 'ATCG'],
                         + [[0, 1, 0, 0]]*2
                         + [[0, 0, 1, 0]]*3
                         + [[0, 0, 0, 1]]*4)
-    # Shuffled vesion of one_hot1, starting with N
+    # Shuffled version of one_hot1, starting with N
     one_hot3 = np.array([[0, 0, 0, 0],
                          [0, 0, 0, 1],
                          [0, 0, 0, 0],
@@ -3535,6 +3591,18 @@ def kmer_counts_test(orders=['ACGT', 'ATCG'],
                             includeN=includeN,
                             order=order)
             assert np.all(r == ref)
+
+    for k, includeN, order, one_hot, winsize in it.product(range(1, 4),
+                                                           [True, False],
+                                                           orders,
+                                                           one_hots,
+                                                           range(k, 6)):
+        assert np.all(
+            kmer_counts_by_seq(
+                sliding_window_view(one_hot, (winsize, 4)).squeeze(),
+                k, order=order, includeN=includeN)
+            == sliding_kmer_counts(
+                one_hot, k, winsize, order=order, includeN=includeN))
 
 
 if __name__ == "__main__":
