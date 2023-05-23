@@ -74,7 +74,7 @@ np.savez(Path(data_dir, species, 'results', 'models_etienne', 'saliency',
               'seq_contrib_weights_myco_rep1.npz'),
          **seq_contrib)
 np.savez(Path(data_dir, species, 'results', 'models_etienne', 'saliency',
-              'seq_contrib_weights_myco_rep1.npz'),
+              'sign_seq_contrib_weights_myco_rep1.npz'),
          **sign_seq_contrib)
 np.savez(Path(data_dir, species, 'results', 'models_etienne', 'saliency',
               'grads_abs_pos_sum_weights_myco_rep1.npz'),
