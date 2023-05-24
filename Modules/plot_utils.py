@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
+import pickle
 
 from scipy.cluster.hierarchy import linkage
 import Modules.utils as utils
@@ -162,3 +163,11 @@ def plot_2mer_df(df, columns=None, group=None):
                      ax=ax,
                      title=key)
     return fig, axes
+
+
+def save_fig_and_values(fig, filename):
+    pngfile = utils.safe_filename(str(filename) + '.png')
+    picklefile = utils.safe_filename(str(filename) + '.pickle')
+    fig.savefig(pngfile, bbox_inches='tight')
+    with open(picklefile, 'wb') as f:
+        pickle.dump(fig, f)
