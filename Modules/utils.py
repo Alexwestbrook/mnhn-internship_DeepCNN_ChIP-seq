@@ -97,13 +97,7 @@ def chunk_chr(one_hot_chr, window_size, remove_Ns=False):
     """
     Load all sliding windows of a chromosome
     """
-    sliding_window = sliding_window_view(
-        one_hot_chr,
-        (window_size, 4),
-        axis=(0, 1))
-    data = sliding_window.reshape(sliding_window.shape[0],
-                                  sliding_window.shape[2],
-                                  sliding_window.shape[3])
+    data = sliding_window_view(one_hot_chr, (window_size, 4)).squeeze()
     if remove_Ns:
         indexes = remove_windows_with_N(one_hot_chr, window_size)
         data = data[indexes]
@@ -1871,9 +1865,12 @@ def sliding_window_view(x, window_shape, axis=None, *,
                       subok=subok, writeable=writeable)
 
 
-def strided_window_view(x, window_shape, stride, out_shape=None,
+def strided_window_view(x, window_shape, stride,
                         axis=None, *, subok=False, writeable=False):
-    """Variant of `sliding_window_view` which supports stride parameter."""
+    """Variant of `sliding_window_view` which supports stride parameter.
+
+    The axis parameter doesn't work, the stride is always considered on the
+    first axis, it also doesn't support multiple windowing on same axis"""
     window_shape = (tuple(window_shape)
                     if np.iterable(window_shape)
                     else (window_shape,))
@@ -1901,7 +1898,9 @@ def strided_window_view(x, window_shape, stride, out_shape=None,
     # CHANGED THIS LINE ####
     # out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
     # TO ###################
-    out_strides = (x.strides[0]*stride, ) + tuple(x.strides[1:]) + x.strides
+    out_strides = ((x.strides[0]*stride, )
+                   + tuple(x.strides[1:])
+                   + tuple(x.strides[ax] for ax in axis))
     ########################
 
     # note: same axis can be windowed repeatedly
@@ -1916,6 +1915,67 @@ def strided_window_view(x, window_shape, stride, out_shape=None,
         x_shape_trimmed[ax] = int(np.ceil(
             (x_shape_trimmed[ax] - dim + 1) / stride))
         ########################
+    out_shape = tuple(x_shape_trimmed) + window_shape
+    return as_strided(x, strides=out_strides, shape=out_shape,
+                      subok=subok, writeable=writeable)
+
+
+def strided_sliding_window_view(x, window_shape, stride, sliding_len,
+                                axis=None, *, subok=False, writeable=False):
+    """Variant of `strided_window_view` which slides in between strides.
+
+    This will provide blocks of slliding window of `sliding_len` windows,
+    with first windows spaced by `stride`
+    The axis parameter doesn't work, the stride and slide are always
+    considered on the first axis, it also doesn't support multiple windowing
+    on same axis."""
+    window_shape = (tuple(window_shape)
+                    if np.iterable(window_shape)
+                    else (window_shape,))
+    # first convert input to array, possibly keeping subclass
+    x = np.array(x, copy=False, subok=subok)
+
+    window_shape_array = np.array(window_shape)
+    if np.any(window_shape_array < 0):
+        raise ValueError('`window_shape` cannot contain negative values')
+
+    if axis is None:
+        axis = tuple(range(x.ndim))
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Since axis is `None`, must provide '
+                             f'window_shape for all dimensions of `x`; '
+                             f'got {len(window_shape)} window_shape elements '
+                             f'and `x.ndim` is {x.ndim}.')
+    else:
+        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
+        if len(window_shape) != len(axis):
+            raise ValueError(f'Must provide matching length window_shape and '
+                             f'axis; got {len(window_shape)} window_shape '
+                             f'elements and {len(axis)} axes elements.')
+
+    # CHANGED THIS LINE ####
+    # out_strides = ((x.strides[0]*stride, )
+    #                + tuple(x.strides[1:])
+    #                + tuple(x.strides[ax] for ax in axis))
+    # TO ###################
+    out_strides = (x.strides[0]*stride, x.strides[0]) + x.strides
+    ########################
+
+    # CHANGED THIS ####
+    # note: same axis can be windowed repeatedly
+    # x_shape_trimmed = list(x.shape)
+    # for ax, dim in zip(axis, window_shape):
+    #     if x_shape_trimmed[ax] < dim:
+    #         raise ValueError(
+    #             'window shape cannot be larger than input array shape')
+    #     x_shape_trimmed[ax] = int(np.ceil(
+    #         (x_shape_trimmed[ax] - dim + 1) / stride))
+    # TO ###################
+    x_shape_trimmed = [(len(x)
+                        - window_shape[0]
+                        - sliding_len + 1) // stride + 1,
+                       sliding_len]
+    ########################
     out_shape = tuple(x_shape_trimmed) + window_shape
     return as_strided(x, strides=out_strides, shape=out_shape,
                       subok=subok, writeable=writeable)
@@ -1963,6 +2023,36 @@ def vcorrcoef(X, Y):
     r_den = np.sqrt(np.sum((X-Xm)**2, axis=1)*np.sum((Y-Ym)**2, axis=1))
     r = r_num/r_den
     return r
+
+
+def continuousjaccard(x, y):
+    """Compute continuous Jaccard index.
+
+    Parameters
+    ----------
+    x, y : array_like
+        1D or 2D array_likes. x and y must have the same shape, unless one of
+        them is 1D and the other is 2D, in which case their last axis must
+        have the same shape.
+
+    Returns
+    -------
+    ndarray
+        Row-wise Jaccard index between x and y. If the dimensions aren't the
+        same, each row of the 2D array is compared to the 1D array
+    """
+    x, y = np.asarray(x), np.asarray(y)
+    assert {x.ndim, y.ndim}.union({1, 2}) == {1, 2}
+    if x.ndim != y.ndim:
+        if x.ndim == 1:
+            x, y = y, x
+        y = np.tile(y, len(x)).reshape(x.shape)
+    assert x.shape == y.shape
+    merge = np.vstack([x, y]).reshape((2,) + x.shape)
+    sign = np.prod(np.sign(merge), axis=0)
+    merge = np.abs(merge)
+    return np.sum(np.min(merge, axis=0) * sign, axis=-1
+                  ) / np.sum(np.max(merge, axis=0), axis=-1)
 
 
 def moving_average(x, n=2, keepsize=False):
