@@ -122,6 +122,12 @@ def parsing():
         default=None,
         type=str)
     parser.add_argument(
+        "-h_int", "--head_interval",
+        help="Spacing between output head in case of mutliple outputs, "
+             "default to None",
+        default=None,
+        type=int)
+    parser.add_argument(
         "-da", "--disable_autotune",
         action='store_true',
         help="Indicates not to use earlystopping.")
@@ -160,7 +166,7 @@ def parsing():
     with np.load(args.genome) as g:
         with np.load(args.labels) as s:
             for chr_id in args.chrom_train + args.chrom_valid:
-                if not(chr_id in g.keys() and chr_id in s.keys()):
+                if not (chr_id in g.keys() and chr_id in s.keys()):
                     sys.exit(f"{chr_id} is not a valid chromosome id in "
                              f"{args.genome} and {args.labels}")
     return args
@@ -195,7 +201,9 @@ if __name__ == "__main__":
         'mnase_Maxime': models.mnase_Maxime,
         'mnase_model_batchnorm': models.mnase_model_batchnorm,
         'mnase_Maxime_decreasing': models.mnase_Maxime_decreasing,
-        'mnase_Maxime_increasing': models.mnase_Maxime_increasing
+        'mnase_Maxime_increasing': models.mnase_Maxime_increasing,
+        'mnase_Etienne': models.mnase_Etienne,
+        'bassenji_Etienne': models.bassenji_Etienne
     }
     model_builder = model_dict[args.architecture]
     if args.distribute:
@@ -224,7 +232,8 @@ if __name__ == "__main__":
         max_data=args.max_train,
         same_samples=args.same_samples,
         balance=args.balance,
-        strand=args.strand)
+        strand=args.strand,
+        head_interval=args.head_interval)
     generator_valid = tf_utils.WindowGenerator(
         data=x_valid,
         labels=y_valid,
@@ -233,7 +242,8 @@ if __name__ == "__main__":
         max_data=args.max_valid,
         shuffle=False,
         same_samples=True,
-        strand=args.strand)
+        strand=args.strand,
+        head_interval=args.head_interval)
     # Create callbacks during training
     callbacks_list = [
         CSVLogger(Path(args.output, "epoch_data.csv"))
