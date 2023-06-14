@@ -2557,6 +2557,15 @@ def s_plural(value: float) -> str:
         return ''
 
 
+def format_secs(x):
+    d, r = divmod(x, 86400)
+    h, r = divmod(r, 3600)
+    m, s = divmod(r, 60)
+    if d != 0:
+        print(f'{d}d', end=' ')
+    print(f'{h}h{m}m{s}s')
+
+
 def safe_filename(file: Path) -> Path:
     """Make sure file can be build without overriding an other.
 
