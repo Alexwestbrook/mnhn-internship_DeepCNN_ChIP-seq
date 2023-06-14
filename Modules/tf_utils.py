@@ -447,6 +447,11 @@ class WindowGenerator(Sequence):
     strand : {'for', 'rev', 'both'}, default='both'
         Indicates which strand to use for training. If 'both', half the
         windows of each batch are reversed.
+    extradims : int or tuple of int, default=None
+        Extra dimensions with length of 1 needed for model inputs
+    head_interval : int, default=None
+        For multiple outputs accross the entire window, specifies spacing
+        between each head. head will start on the far left of the window.
 
     Attributes
     ----------
@@ -471,6 +476,10 @@ class WindowGenerator(Sequence):
         same as in Parameters
     strand : {'for', 'rev', 'both'}, default='for'
         same as in Parameters
+    extradims : int or tuple of int
+        sam as in Parameters
+    head_interval : int, default=None
+        same as in Parameters
     indexes : ndarray
         1D-array of valid window indexes for training. Valid windows exclude
         windows with Ns or null labels. Indexescorrespond to the center of the
@@ -491,7 +500,9 @@ class WindowGenerator(Sequence):
                  same_samples=False,
                  balance=None,
                  n_classes=500,
-                 strand='both'):
+                 strand='both',
+                 extradims=None,
+                 head_interval=None):
         self.data = data
         self.labels = labels
         self.winsize = winsize
@@ -502,6 +513,8 @@ class WindowGenerator(Sequence):
         self.balance = balance
         self.n_classes = n_classes
         self.strand = strand
+        self.extradims = extradims
+        self.head_interval = head_interval
         if len(self.labels.shape) == 1:
             self.labels = np.expand_dims(self.labels, axis=1)
         # Select indices of windows without Ns or null labels
@@ -514,7 +527,7 @@ class WindowGenerator(Sequence):
         # Remove indices of edge windows
         self.indexes = self.indexes[
             (self.indexes >= self.winsize // 2)
-            & (self.indexes < len(data) - (self.winsize // 2))]
+            & (self.indexes < len(data) - ((self.winsize - 1) // 2))]
         # Set max_data to only take less than all the indexes
         if max_data > len(self.indexes):
             self.max_data = len(self.indexes)
@@ -533,7 +546,7 @@ class WindowGenerator(Sequence):
             # Determine weights with effective labels
             bin_values, bin_edges = np.histogram(
                 y_eff, bins=self.n_classes, range=(0, 1))
-            # Weight all labels for convinience
+            # Weight all labels for convenience
             bin_idx = np.digitize(self.labels, bin_edges)
             bin_idx[bin_idx == self.n_classes+1] = self.n_classes
             bin_idx -= 1
@@ -561,26 +574,46 @@ class WindowGenerator(Sequence):
         # Get full window idxes
         window_indices = (
             batch_idxes.reshape(-1, 1)
-            + np.arange(-(self.winsize//2), self.winsize//2 + 1).reshape(1, -1)
+            + np.arange(-(self.winsize // 2),
+                        (self.winsize - 1) // 2 + 1).reshape(1, -1)
         )
         batch_x = self.data[window_indices]
+        # Optionally reverse complement all or part of the sequences
         if self.strand == 'rev':
             batch_x = batch_x[:, ::-1, ::-1]
         elif self.strand == 'both':
             half_size = self.batch_size // 2
             batch_x[:half_size] = batch_x[:half_size, ::-1, ::-1]
-        batch_y = self.labels[batch_idxes]
+        # Optionally add dimensions
+        if self.extradims:
+            batch_x = np.expand_dims(batch_x, axis=self.extradims)
+        # Determine head indices for labels
+        if self.head_interval:
+            head_indices = (
+                batch_idxes.reshape(-1, 1)
+                + np.arange(-(self.winsize // 2),
+                            (self.winsize - 1) // 2 + 1,
+                            self.head_interval).reshape(1, -1)
+            )
+        else:
+            head_indices = batch_idxes
+        batch_y = self.labels[head_indices]
         # Divide continuous labels into classes and balance weights
         if self.balance == 'batch':
+            # Flatten in case of multiple outputs
+            flat_batch_y = batch_y.flatten()
+            # Compute batch weights
             bin_values, bin_edges = np.histogram(
-                batch_y, bins=self.n_classes, range=(0, 1))
-            bin_idx = np.digitize(batch_y, bin_edges)
+                flat_batch_y, bins=self.n_classes, range=(0, 1))
+            bin_idx = np.digitize(flat_batch_y, bin_edges)
             bin_idx[bin_idx == self.n_classes+1] = self.n_classes
             bin_idx -= 1
             batch_weights = self.batch_size / (
                 self.n_classes * bin_values[bin_idx])
+            # Reshape as batch_y
+            batch_weights = batch_weights.reshape(batch_y.shape)
         elif self.balance == 'global':
-            batch_weights = self.weights[batch_idxes]
+            batch_weights = self.weights[head_indices]
         else:
             return batch_x, batch_y
         return batch_x, batch_y, batch_weights
