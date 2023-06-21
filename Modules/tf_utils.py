@@ -452,6 +452,10 @@ class WindowGenerator(Sequence):
     head_interval : int, default=None
         For multiple outputs accross the entire window, specifies spacing
         between each head. head will start on the far left of the window.
+    removeNs : bool, default=True
+        Specifies to remove all windows containing Ns, recommended to set to
+        False in case of multiple heads and many regions containing Ns. If set
+        to False, beware not to merge chromosomes by adding Ns as buffers.
 
     Attributes
     ----------
@@ -502,7 +506,8 @@ class WindowGenerator(Sequence):
                  n_classes=500,
                  strand='both',
                  extradims=None,
-                 head_interval=None):
+                 head_interval=None,
+                 removeNs=True):
         self.data = data
         self.labels = labels
         self.winsize = winsize
@@ -515,19 +520,27 @@ class WindowGenerator(Sequence):
         self.strand = strand
         self.extradims = extradims
         self.head_interval = head_interval
-        if len(self.labels.shape) == 1:
-            self.labels = np.expand_dims(self.labels, axis=1)
-        # Select indices of windows without Ns or null labels
-        N_mask = (np.sum(data, axis=1) == 0)
-        N_window_mask = np.asarray(
-            np.convolve(N_mask, np.ones(self.winsize), mode='same'),
-            dtype=int)
-        valid_window_mask = (N_window_mask == 0) & (labels != 0).ravel()
-        self.indexes = np.arange(len(data))[valid_window_mask]
+        # Select indices of windows without null labels or Ns
+        self.indexes = np.arange(len(self.data))
+        valid_window_mask = None
+        if not head_interval:
+            # with multiple heads, keep null labels but weight sthem to 0
+            valid_window_mask = self.labels != 0
+        if removeNs:
+            N_mask = (np.sum(self.data, axis=1) == 0)
+            N_window_mask = np.asarray(
+                np.convolve(N_mask, np.ones(self.winsize), mode='same'),
+                dtype=int)
+            if valid_window_mask is None:
+                valid_window_mask = (N_window_mask == 0)
+            else:
+                valid_window_mask = valid_window_mask & (N_window_mask == 0)
+        if valid_window_mask is not None:
+            self.indexes = self.indexes[valid_window_mask]
         # Remove indices of edge windows
         self.indexes = self.indexes[
             (self.indexes >= self.winsize // 2)
-            & (self.indexes < len(data) - ((self.winsize - 1) // 2))]
+            & (self.indexes < len(self.data) - ((self.winsize - 1) // 2))]
         # Set max_data to only take less than all the indexes
         if max_data > len(self.indexes):
             self.max_data = len(self.indexes)
@@ -543,6 +556,7 @@ class WindowGenerator(Sequence):
                 y_eff = self.labels[self.sample]
             else:
                 y_eff = self.labels[self.indexes]
+            y_eff = y_eff[y_eff != 0]
             # Determine weights with effective labels
             bin_values, bin_edges = np.histogram(
                 y_eff, bins=self.n_classes, range=(0, 1))
@@ -552,6 +566,10 @@ class WindowGenerator(Sequence):
             bin_idx -= 1
             self.weights = len(y_eff) / (
                 self.n_classes * bin_values[bin_idx])
+        else:
+            self.weights = np.ones(len(self.data))
+        # weight null labels to 0
+        self.weights[self.labels == 0] = 0
 
     def __len__(self):
         """Return length of generator.
@@ -578,15 +596,6 @@ class WindowGenerator(Sequence):
                         (self.winsize - 1) // 2 + 1).reshape(1, -1)
         )
         batch_x = self.data[window_indices]
-        # Optionally reverse complement all or part of the sequences
-        if self.strand == 'rev':
-            batch_x = batch_x[:, ::-1, ::-1]
-        elif self.strand == 'both':
-            half_size = self.batch_size // 2
-            batch_x[:half_size] = batch_x[:half_size, ::-1, ::-1]
-        # Optionally add dimensions
-        if self.extradims:
-            batch_x = np.expand_dims(batch_x, axis=self.extradims)
         # Determine head indices for labels
         if self.head_interval:
             head_indices = (
@@ -597,25 +606,44 @@ class WindowGenerator(Sequence):
             )
         else:
             head_indices = batch_idxes
+        # Optionally reverse complement all or part of the sequences
+        if self.strand == 'rev':
+            batch_x = batch_x[:, ::-1, ::-1]
+            if self.head_interval:
+                head_indices = head_indices[:, ::-1] + self.head_interval - 1
+        elif self.strand == 'both':
+            half_size = self.batch_size // 2
+            batch_x[:half_size] = batch_x[:half_size, ::-1, ::-1]
+            if self.head_interval:
+                head_indices[:half_size] = (head_indices[:half_size, ::-1]
+                                            + self.head_interval - 1)
+        # Optionally add dimensions
+        if self.extradims:
+            batch_x = np.expand_dims(batch_x, axis=self.extradims)
+        # Get y after optionnally reversing head_indices
         batch_y = self.labels[head_indices]
+        # Make batch_y 2D (not sure if useful)
+        if len(batch_y.shape) == 1:
+            batch_y = np.expand_dims(batch_y, axis=1)
         # Divide continuous labels into classes and balance weights
         if self.balance == 'batch':
             # Flatten in case of multiple outputs
-            flat_batch_y = batch_y.flatten()
-            # Compute batch weights
+            flat_batch_y = batch_y.ravel()
+            # Compute batch weights based on non null labels
+            batch_y_eff = flat_batch_y[flat_batch_y != 0]
             bin_values, bin_edges = np.histogram(
-                flat_batch_y, bins=self.n_classes, range=(0, 1))
+                batch_y_eff, bins=self.n_classes, range=(0, 1))
             bin_idx = np.digitize(flat_batch_y, bin_edges)
             bin_idx[bin_idx == self.n_classes+1] = self.n_classes
             bin_idx -= 1
             batch_weights = self.batch_size / (
                 self.n_classes * bin_values[bin_idx])
+            # Set null labels weights to 0
+            batch_weights[flat_batch_y == 0] = 0
             # Reshape as batch_y
             batch_weights = batch_weights.reshape(batch_y.shape)
-        elif self.balance == 'global':
-            batch_weights = self.weights[head_indices]
         else:
-            return batch_x, batch_y
+            batch_weights = self.weights[head_indices]
         return batch_x, batch_y, batch_weights
 
     def on_epoch_end(self):
