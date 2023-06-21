@@ -17,6 +17,9 @@ awk 'BEGIN {RS=">";FS="\n";OFS=""} NR>1 {print ">"$1; $1=""; print}' $fasta > $n
 # count base occurence in fasta
 awk '/^>/ {next} {for(i=1;i<=length($0);i++) {array[substr($1,i,1)]++}} END {for(key in array) {print key ": " array[key]}}' $fasta
 
+# extract chromosome from fasta
+awk 'BEGIN {RS=">";FS="\n"} /^CHRNAME/ {printf("%s%s",">",$0)}' $fasta > $new_fasta
+
 # launch bash command, while saving the command and its terminal output to a file
 bash_command="bash my_script.sh"
 echo $bash_command > $log_file
