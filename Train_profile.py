@@ -163,6 +163,11 @@ def parsing():
     elif genome_name == 'mm10':
         args.chrom_train = [f'chr{c}' for c in args.chrom_train]
         args.chrom_valid = [f'chr{c}' for c in args.chrom_valid]
+    elif genome_name == 'W303_Mmmyco':
+        args.chrom_train = [f'chr{c}' if c != 'Mmmyco' else c
+                            for c in args.chrom_train]
+        args.chrom_valid = [f'chr{c}' if c != 'Mmmyco' else c
+                            for c in args.chrom_valid]
     with np.load(args.genome) as g:
         with np.load(args.labels) as s:
             for chr_id in args.chrom_train + args.chrom_valid:
