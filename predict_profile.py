@@ -48,9 +48,21 @@ def parsing():
         default=["all"],
         type=str)
     parser.add_argument(
+        "-s", "--strand",
+        help="strand to predict on, choose between 'for', 'rev' or "
+        "'both'. Default to 'both.",
+        type=str,
+        default='both')
+    parser.add_argument(
         "-w", "--winsize",
         help="Number of base pairs in windows used for training, used only if "
              "winsize can't be inferred from the model",
+        type=int)
+    parser.add_argument(
+        "-h_int", "--head_interval",
+        help="Spacing between output head in case of mutliple outputs, "
+             "default to None",
+        default=None,
         type=int)
     parser.add_argument(
         "-b", "--batch_size",
@@ -58,12 +70,6 @@ def parsing():
              "1024",
         default=1024,
         type=int)
-    parser.add_argument(
-        "-s", "--strand",
-        help="strand to predict on, choose between 'for', 'rev' or "
-        "'both'. Default to 'both.",
-        type=str,
-        default='both')
     args = parser.parse_args()
     # Check if the input data is valid
     if not args.genome.is_file():
@@ -113,10 +119,11 @@ if __name__ == "__main__":
                 continue
             if args.strand in ['for', 'both']:
                 all_preds[chr_id] = tf_utils.predict(
-                    model, one_hot_chr, winsize, batch_size=args.batch_size)
+                    model, one_hot_chr, winsize, batch_size=args.batch_size,
+                    head_interval=args.head_interval)
             if args.strand in ['rev', 'both']:
                 all_preds[f'{chr_id}_rev'] = tf_utils.predict(
                     model, one_hot_chr, winsize, batch_size=args.batch_size,
-                    reverse=True)
+                    head_interval=args.head_interval, reverse=True)
     np.savez_compressed(Path(args.output, f"preds_on_{args.genome.name}"),
                         **all_preds)
