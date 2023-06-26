@@ -83,6 +83,12 @@ def parsing():
         default=2001,
         type=int)
     parser.add_argument(
+        "-h_int", "--head_interval",
+        help="Spacing between output head in case of mutliple outputs, "
+             "default to None",
+        default=None,
+        type=int)
+    parser.add_argument(
         "-lr", "--learn_rate",
         help="Value for learning rate, default to 0.001",
         default=0.001,
@@ -121,12 +127,6 @@ def parsing():
         "are used. Default to None",
         default=None,
         type=str)
-    parser.add_argument(
-        "-h_int", "--head_interval",
-        help="Spacing between output head in case of mutliple outputs, "
-             "default to None",
-        default=None,
-        type=int)
     parser.add_argument(
         "-da", "--disable_autotune",
         action='store_true',
@@ -245,10 +245,10 @@ if __name__ == "__main__":
         winsize=args.winsize,
         batch_size=args.batch_size,
         max_data=args.max_valid,
-        shuffle=False,
         same_samples=True,
         strand=args.strand,
-        head_interval=args.head_interval)
+        head_interval=args.head_interval,
+        seed=0)
     # Create callbacks during training
     callbacks_list = [
         CSVLogger(Path(args.output, "epoch_data.csv"))
