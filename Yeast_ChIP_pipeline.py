@@ -37,6 +37,8 @@ def clean_ratio(ips, ctrls, func='ratio'):
 
     User may specify another function instead of ratio,
     either by name if implemented or as a callable.
+
+    Anywhere ctrls is 0 will be set to 0
     """
     assert set(ips.keys()) == set(ctrls.keys())
     if func == 'ratio':
