@@ -456,6 +456,8 @@ class WindowGenerator(Sequence):
         Specifies to remove all windows containing Ns, recommended to set to
         False in case of multiple heads and many regions containing Ns. If set
         to False, beware not to merge chromosomes by adding Ns as buffers.
+    seed : int, default=None
+        Seed to use for random shuffles
 
     Attributes
     ----------
@@ -507,7 +509,8 @@ class WindowGenerator(Sequence):
                  strand='both',
                  extradims=None,
                  head_interval=None,
-                 removeNs=True):
+                 removeNs=True,
+                 seed=None):
         self.data = data
         self.labels = labels
         self.winsize = winsize
@@ -545,6 +548,8 @@ class WindowGenerator(Sequence):
         if max_data > len(self.indexes):
             self.max_data = len(self.indexes)
         if self.shuffle:
+            if seed:
+                np.random.seed(seed)
             np.random.shuffle(self.indexes)
         # Build first sample
         self.sample = self.indexes[0:self.max_data]
@@ -636,7 +641,7 @@ class WindowGenerator(Sequence):
             bin_idx = np.digitize(flat_batch_y, bin_edges)
             bin_idx[bin_idx == self.n_classes+1] = self.n_classes
             bin_idx -= 1
-            batch_weights = self.batch_size / (
+            batch_weights = len(batch_y_eff) / (
                 self.n_classes * bin_values[bin_idx])
             # Set null labels weights to 0
             batch_weights[flat_batch_y == 0] = 0
@@ -700,12 +705,38 @@ class PredGenerator(Sequence):
         return batch_x, batch_y
 
 
-def predict(model, one_hot_chr, winsize, reverse=False, batch_size=1024):
+def predict(model, one_hot_chr, winsize, head_interval=None, reverse=False,
+            batch_size=1024):
+    if winsize > len(one_hot_chr):
+        raise ValueError('sequence too small')
     if reverse:
         one_hot_chr = one_hot_chr[::-1, ::-1]
-    X = PredGenerator(one_hot_chr, winsize, batch_size)
-    pred = np.zeros(len(one_hot_chr), dtype='float32')
-    pred[winsize//2:-(winsize//2)] = model.predict(X).ravel()
+    if head_interval:
+        X = utils.strided_sliding_window_view(
+            one_hot_chr,
+            (winsize, 4),
+            stride=winsize,
+            sliding_len=head_interval).reshape(-1, winsize, 4)
+        pred = np.zeros(len(one_hot_chr), dtype='float32')
+        y = model.predict(X).squeeze()
+        n_heads = y.shape[-1]
+        y = np.transpose(y.reshape(-1, head_interval, n_heads),
+                         [0, 2, 1]).ravel()
+        pred[:len(y)] = y
+        # Get last_window
+        leftover = len(pred) - len(y)
+        if leftover > head_interval - 1:
+            X = utils.strided_sliding_window_view(
+                one_hot_chr[-winsize-head_interval+1:],
+                (winsize, 4),
+                stride=winsize,
+                sliding_len=head_interval).squeeze()
+            y = model.predict(X).squeeze().T.ravel()
+            pred[-leftover:-head_interval+1] = y[-leftover+head_interval-1:]
+    else:
+        X = PredGenerator(one_hot_chr, winsize, batch_size)
+        pred = np.zeros(len(one_hot_chr), dtype='float32')
+        pred[winsize//2:-(winsize//2)] = model.predict(X).ravel()
     if reverse:
         return pred[::-1]
     else:
