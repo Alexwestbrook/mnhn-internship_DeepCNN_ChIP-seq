@@ -863,6 +863,14 @@ def load_bw(filename, nantonum=True):
     return labels
 
 
+def write_bw(filename, signals):
+    bw = pyBigWig.open(str(filename), 'w')
+    bw.addHeader([(k, len(v)) for k, v in signals.items()])
+    for chr_id, val in signals.items():
+        bw.addEntries(chr_id, 0, values=val, span=1, step=1)
+    bw.close()
+
+
 def load_annotation(file, chr_id, window_size, anchor='center'):
     bw = pyBigWig.open(file)
     values = bw.values(f"chr{chr_id}", 0, -1, numpy=True)
