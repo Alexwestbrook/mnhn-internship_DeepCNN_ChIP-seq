@@ -96,7 +96,10 @@ if __name__ == "__main__":
         args.trained_model,
         custom_objects={"mae_cor": mae_cor, "correlate": correlate})
     try:
-        winsize = model.layers[0].input_shape[1]
+        if isinstance(model.layers[0], tf.keras.layers.InputLayer):
+            winsize = model.layers[0].input_shape[0][1]
+        else:
+            winsize = model.layers[0].input_shape[1]
     except (AttributeError, IndexError):
         print("Couldn't infer winsize from model")
         winsize = args.winsize
