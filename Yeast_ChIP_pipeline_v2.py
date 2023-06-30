@@ -57,6 +57,11 @@ def clean_ratio(ips, ctrls, func='ratio'):
             for k in ips.keys()}
 
 
+def invalid_ratio(ips, ctrls):
+    return {k: (ctrls[k] == 0) | (ips[k] == 0)
+            for k in ips.keys()}
+
+
 def clipnorm(signals, q=0.99):
     """Clip max signal to a given quantile and normalize between 0 and 1."""
     full = np.concatenate(list(signals.values()))
@@ -107,3 +112,18 @@ np.savez(Path(data_dir, 'labels_myco_coh_log.npz'), **myco_coh)
 np.savez(Path(data_dir, 'labels_myco_pol_log.npz'), **myco_pol)
 np.savez(Path(data_dir, 'labels_pneu_coh_log.npz'), **pneu_coh)
 np.savez(Path(data_dir, 'labels_pneu_pol_log.npz'), **pneu_pol)
+
+utils.write_bw(Path(data_dir, 'labels_myco_coh_log.bw'), myco_coh)
+utils.write_bw(Path(data_dir, 'labels_myco_pol_log.bw'), myco_pol)
+utils.write_bw(Path(data_dir, 'labels_pneu_coh_log.bw'), pneu_coh)
+utils.write_bw(Path(data_dir, 'labels_pneu_pol_log.bw'), pneu_pol)
+
+invalid_myco_coh = invalid_ratio(myco_coh_ip, myco_ctrl_merge)
+invalid_myco_pol = invalid_ratio(myco_pol_ip_merge, myco_ctrl_merge)
+invalid_pneu_coh = invalid_ratio(pneu_coh_ip, pneu_ctrl_merge)
+invalid_pneu_pol = invalid_ratio(pneu_pol_ip, pneu_ctrl_merge)
+
+np.savez(Path(data_dir, 'invalid_myco_coh_log.npz'), **invalid_myco_coh)
+np.savez(Path(data_dir, 'invalid_myco_pol_log.npz'), **invalid_myco_pol)
+np.savez(Path(data_dir, 'invalid_pneu_coh_log.npz'), **invalid_pneu_coh)
+np.savez(Path(data_dir, 'invalid_pneu_pol_log.npz'), **invalid_pneu_pol)
