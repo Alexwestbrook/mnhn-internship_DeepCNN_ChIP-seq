@@ -20,3 +20,6 @@ pneu_nuc = clipnorm({k: v for k, v in mnase_pneumo.items() if k != 'Mito'})
 
 np.savez_compressed(Path(data_dir, 'labels_myco_nuc.npz'), **myco_nuc)
 np.savez_compressed(Path(data_dir, 'labels_pneu_nuc.npz'), **pneu_nuc)
+
+utils.write_bw(Path(data_dir, 'labels_myco_nuc.bw'), myco_nuc)
+utils.write_bw(Path(data_dir, 'labels_pneu_nuc.bw'), pneu_nuc)
