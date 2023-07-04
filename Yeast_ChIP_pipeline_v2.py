@@ -57,9 +57,13 @@ def clean_ratio(ips, ctrls, func='ratio'):
             for k in ips.keys()}
 
 
-def invalid_ratio(ips, ctrls):
-    return {k: (ctrls[k] == 0) | (ips[k] == 0)
+def invalid_log_ratio(ips, ctrls):
+    return {k: np.where((ctrls[k] == 0) | (ips[k] == 0))[0]
             for k in ips.keys()}
+
+
+def invalid_ratio(ips, ctrls):
+    return {k: np.where(ctrls[k] == 0)[0] for k in ips.keys()}
 
 
 def clipnorm(signals, q=0.99):
@@ -102,28 +106,28 @@ myco_ctrl_merge = {k: (myco_coh_ctrl[k]
 pneu_ctrl_merge = {k: (pneu_coh_ctrl[k] + pneu_pol_ctrl[k]) / 2
                    for k in pneu_coh_ctrl.keys()}
 
-myco_coh = clipnorm(clean_ratio(myco_coh_ip, myco_ctrl_merge, func='log'))
+myco_coh = clipnorm(clean_ratio(myco_coh_ip, myco_ctrl_merge, func='ratio'))
 myco_pol = clipnorm(
-    clean_ratio(myco_pol_ip_merge, myco_ctrl_merge, func='log'))
-pneu_coh = clipnorm(clean_ratio(pneu_coh_ip, pneu_ctrl_merge, func='log'))
-pneu_pol = clipnorm(clean_ratio(pneu_pol_ip, pneu_ctrl_merge, func='log'))
+    clean_ratio(myco_pol_ip_merge, myco_ctrl_merge, func='ratio'))
+pneu_coh = clipnorm(clean_ratio(pneu_coh_ip, pneu_ctrl_merge, func='ratio'))
+pneu_pol = clipnorm(clean_ratio(pneu_pol_ip, pneu_ctrl_merge, func='ratio'))
 
-np.savez(Path(data_dir, 'labels_myco_coh_log.npz'), **myco_coh)
-np.savez(Path(data_dir, 'labels_myco_pol_log.npz'), **myco_pol)
-np.savez(Path(data_dir, 'labels_pneu_coh_log.npz'), **pneu_coh)
-np.savez(Path(data_dir, 'labels_pneu_pol_log.npz'), **pneu_pol)
+np.savez(Path(data_dir, 'labels_myco_coh_ratio.npz'), **myco_coh)
+np.savez(Path(data_dir, 'labels_myco_pol_ratio.npz'), **myco_pol)
+np.savez(Path(data_dir, 'labels_pneu_coh_ratio.npz'), **pneu_coh)
+np.savez(Path(data_dir, 'labels_pneu_pol_ratio.npz'), **pneu_pol)
 
-utils.write_bw(Path(data_dir, 'labels_myco_coh_log.bw'), myco_coh)
-utils.write_bw(Path(data_dir, 'labels_myco_pol_log.bw'), myco_pol)
-utils.write_bw(Path(data_dir, 'labels_pneu_coh_log.bw'), pneu_coh)
-utils.write_bw(Path(data_dir, 'labels_pneu_pol_log.bw'), pneu_pol)
+utils.write_bw(Path(data_dir, 'labels_myco_coh_ratio.bw'), myco_coh)
+utils.write_bw(Path(data_dir, 'labels_myco_pol_ratio.bw'), myco_pol)
+utils.write_bw(Path(data_dir, 'labels_pneu_coh_ratio.bw'), pneu_coh)
+utils.write_bw(Path(data_dir, 'labels_pneu_pol_ratio.bw'), pneu_pol)
 
 invalid_myco_coh = invalid_ratio(myco_coh_ip, myco_ctrl_merge)
 invalid_myco_pol = invalid_ratio(myco_pol_ip_merge, myco_ctrl_merge)
 invalid_pneu_coh = invalid_ratio(pneu_coh_ip, pneu_ctrl_merge)
 invalid_pneu_pol = invalid_ratio(pneu_pol_ip, pneu_ctrl_merge)
 
-np.savez(Path(data_dir, 'invalid_myco_coh_log.npz'), **invalid_myco_coh)
-np.savez(Path(data_dir, 'invalid_myco_pol_log.npz'), **invalid_myco_pol)
-np.savez(Path(data_dir, 'invalid_pneu_coh_log.npz'), **invalid_pneu_coh)
-np.savez(Path(data_dir, 'invalid_pneu_pol_log.npz'), **invalid_pneu_pol)
+np.savez(Path(data_dir, 'invalid_myco_coh_ratio.npz'), **invalid_myco_coh)
+np.savez(Path(data_dir, 'invalid_myco_pol_ratio.npz'), **invalid_myco_pol)
+np.savez(Path(data_dir, 'invalid_pneu_coh_ratio.npz'), **invalid_pneu_coh)
+np.savez(Path(data_dir, 'invalid_pneu_pol_ratio.npz'), **invalid_pneu_pol)
