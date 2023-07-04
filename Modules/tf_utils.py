@@ -452,10 +452,12 @@ class WindowGenerator(Sequence):
     head_interval : int, default=None
         For multiple outputs accross the entire window, specifies spacing
         between each head. head will start on the far left of the window.
+    remove_indices : ndarray, default=None
+        1D-array of indices of labels to remove from training.
+    remove0s : bool, default=True
+        Specifies to remove all labels equal to 0 from training.
     removeNs : bool, default=True
-        Specifies to remove all windows containing Ns, recommended to set to
-        False in case of multiple heads and many regions containing Ns. If set
-        to False, beware not to merge chromosomes by adding Ns as buffers.
+        Specifies to remove all windows containing Ns from training.
     seed : int, default=None
         Seed to use for random shuffles
 
@@ -486,10 +488,20 @@ class WindowGenerator(Sequence):
         sam as in Parameters
     head_interval : int, default=None
         same as in Parameters
+    remove_indices : ndarray, default=None
+        same as in Parameters
+    remove0s : bool, default=True
+        same as in Parameters
     indexes : ndarray
         1D-array of valid window indexes for training. Valid windows exclude
         windows with Ns or null labels. Indexescorrespond to the center of the
         window in `data`.
+    masked_labels : MaskedArray
+        1D-array of labels to use for training, invalid labels are masked.
+        This complements `indexes` for multiple heads, when a window must be
+        kept but some heads must be discarded
+    sample : ndarray
+        1D-array of indexes to use for the current epoch
     weights : ndarray
         global weights to use when `balance` is set to 'global'.
     start_idx : int
@@ -509,7 +521,9 @@ class WindowGenerator(Sequence):
                  strand='both',
                  extradims=None,
                  head_interval=None,
-                 removeNs=True,
+                 remove_indices=None,
+                 remove0s=False,
+                 removeNs=False,
                  seed=None):
         self.data = data
         self.labels = labels
@@ -523,32 +537,59 @@ class WindowGenerator(Sequence):
         self.strand = strand
         self.extradims = extradims
         self.head_interval = head_interval
-        # Select indices of windows without null labels or Ns
-        self.indexes = np.arange(len(self.data))
-        valid_window_mask = None
-        if not head_interval:
-            # with multiple heads, keep null labels but weight sthem to 0
-            valid_window_mask = self.labels != 0
+        self.remove_indices = remove_indices
+        self.remove0s = remove0s
+
+        try:
+            assert 0 <= np.min(self.labels)
+            assert np.max(self.labels) <= 1
+            assert np.allclose(np.min(self.labels), 0)
+            assert np.allclose(np.max(self.labels), 1)
+        except AssertionError:
+            print("labels must be normalized between 0 and 1")
+            raise
+
+        # Select indices of windows to train on, using masked arrays
+        # Some window indices are totally removed from the training set, but
+        # with multiple heads, some individual labels can be removed from one
+        # of the heads without throwing away the window. This is done by
+        # weighting these labels to 0.
+        # `self.indexes` stores windows used for training
+        # `self.masked_labels` is a masked array with all invalid labels masked
+        self.indexes = np.ma.arange(len(self.data))
+        self.masked_labels = np.ma.array(self.labels, mask=False)
+        # Remove indices of edge windows
+        edge_window_mask = (
+            (self.indexes < self.winsize // 2)
+            | (self.indexes >= len(self.data) - ((self.winsize - 1) // 2))
+        )
+        if not self.head_interval:
+            # With multiple heads, even edge labels can be predicted
+            self.masked_labels[edge_window_mask] = np.ma.masked
+        self.indexes[edge_window_mask] = np.ma.masked
         if removeNs:
+            # Remove windows containing at least one N
             N_mask = (np.sum(self.data, axis=1) == 0)
             N_window_mask = np.asarray(
                 np.convolve(N_mask, np.ones(self.winsize), mode='same'),
                 dtype=int)
-            if valid_window_mask is None:
-                valid_window_mask = (N_window_mask == 0)
-            else:
-                valid_window_mask = valid_window_mask & (N_window_mask == 0)
-        if valid_window_mask is not None:
-            self.indexes = self.indexes[valid_window_mask]
-        # Remove indices of edge windows
-        self.indexes = self.indexes[
-            (self.indexes >= self.winsize // 2)
-            & (self.indexes < len(self.data) - ((self.winsize - 1) // 2))]
+            self.masked_labels[N_window_mask] = np.ma.masked
+            self.indexes[N_window_mask] = np.ma.masked
+        if self.remove0s:
+            self.masked_labels[self.labels == 0] = np.ma.masked
+            if not self.head_interval:
+                self.indexes[self.labels == 0] = np.ma.masked
+        if self.remove_indices is not None:
+            self.masked_labels[self.remove_indices] = np.ma.masked
+            if not self.head_interval:
+                self.indexes[self.remove_indices] = np.ma.masked
+        self.indexes = self.indexes.compressed()
+
         # Set max_data to only take less than all the indexes
-        if max_data > len(self.indexes):
+        if self.max_data > len(self.indexes):
             self.max_data = len(self.indexes)
         if self.shuffle:
-            if seed:
+            if seed is not None:
                 np.random.seed(seed)
             np.random.shuffle(self.indexes)
         # Build first sample
@@ -558,10 +599,9 @@ class WindowGenerator(Sequence):
         if self.balance == "global":
             # Compute effective labels that will be used for training
             if self.same_samples:
-                y_eff = self.labels[self.sample]
+                y_eff = self.masked_labels[self.sample].compressed()
             else:
-                y_eff = self.labels[self.indexes]
-            y_eff = y_eff[y_eff != 0]
+                y_eff = self.masked_labels[self.indexes].compressed()
             # Determine weights with effective labels
             bin_values, bin_edges = np.histogram(
                 y_eff, bins=self.n_classes, range=(0, 1))
@@ -573,8 +613,8 @@ class WindowGenerator(Sequence):
                 self.n_classes * bin_values[bin_idx])
         else:
             self.weights = np.ones(len(self.data))
-        # weight null labels to 0
-        self.weights[self.labels == 0] = 0
+        # Weight invalid labels to 0
+        self.weights[self.masked_labels.mask] = 0
 
     def __len__(self):
         """Return length of generator.
@@ -634,8 +674,9 @@ class WindowGenerator(Sequence):
         if self.balance == 'batch':
             # Flatten in case of multiple outputs
             flat_batch_y = batch_y.ravel()
-            # Compute batch weights based on non null labels
-            batch_y_eff = flat_batch_y[flat_batch_y != 0]
+            # Compute batch weights based on valid labels
+            batch_masked_y = self.masked_labels[head_indices]
+            batch_y_eff = batch_masked_y.compressed()  # flattens
             bin_values, bin_edges = np.histogram(
                 batch_y_eff, bins=self.n_classes, range=(0, 1))
             bin_idx = np.digitize(flat_batch_y, bin_edges)
@@ -643,8 +684,8 @@ class WindowGenerator(Sequence):
             bin_idx -= 1
             batch_weights = len(batch_y_eff) / (
                 self.n_classes * bin_values[bin_idx])
-            # Set null labels weights to 0
-            batch_weights[flat_batch_y == 0] = 0
+            # Weight invalid labels to 0
+            batch_weights[batch_masked_y.mask.ravel()] = 0
             # Reshape as batch_y
             batch_weights = batch_weights.reshape(batch_y.shape)
         else:
@@ -665,6 +706,7 @@ class WindowGenerator(Sequence):
             stop_idx = self.start_idx + self.max_data
             self.sample = self.indexes[self.start_idx:stop_idx]
             if stop_idx >= len(self.indexes):
+                print('full data loop')
                 # Complete sample by going back to the beginning of indexes
                 if self.shuffle:
                     # Save current sample because shuffling will modify it
