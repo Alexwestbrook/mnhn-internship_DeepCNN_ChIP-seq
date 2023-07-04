@@ -45,13 +45,13 @@ def parsing():
         required=True)
     parser.add_argument(
         "-g", "--genome",
-        help="one-hot encoded genome file in npz archive, with one array per "
+        help="One-hot encoded genome file in npz archive, with one array per "
         "chromosome",
         type=str,
         required=True)
     parser.add_argument(
         "-l", "--labels",
-        help="label file in npz archive, with one array per chromosome",
+        help="Label file in npz archive, with one array per chromosome",
         type=str,
         required=True)
     parser.add_argument(
@@ -73,7 +73,7 @@ def parsing():
         required=True)
     parser.add_argument(
         "-s", "--strand",
-        help="strand to perform training on, choose between 'for', 'rev' or "
+        help="Strand to perform training on, choose between 'for', 'rev' or "
         "'both'. Default to 'both.",
         type=str,
         default='both')
@@ -128,6 +128,30 @@ def parsing():
         default=None,
         type=str)
     parser.add_argument(
+        "-nc", "--n_classes",
+        help="Number of classes to divide",
+        default=500,
+        type=int)
+    parser.add_argument(
+        "-r0", "--remove0s",
+        action='store_true',
+        help="Indicates to remove 0 labels from training set")
+    parser.add_argument(
+        "-rN", "--removeNs",
+        action='store_true',
+        help="Indicates to remove windows with N from training set")
+    parser.add_argument(
+        "-r", "--remove_indices",
+        help="Npz archive containing indices of labels to remove from "
+             "training set, with one array per chromosome",
+        default=None,
+        type=str)
+    parser.add_argument(
+        "--seed",
+        help="Seed to use for random shuffling of training samples",
+        default=None,
+        type=int)
+    parser.add_argument(
         "-da", "--disable_autotune",
         action='store_true',
         help="Indicates not to use earlystopping.")
@@ -174,6 +198,12 @@ def parsing():
                 if not (chr_id in g.keys() and chr_id in s.keys()):
                     sys.exit(f"{chr_id} is not a valid chromosome id in "
                              f"{args.genome} and {args.labels}")
+    if args.remove_indices is not None:
+        with np.load(args.remove_indices) as r:
+            for chr_id in args.chrom_train + args.chrom_valid:
+                if chr_id not in r.keys():
+                    sys.exit(f"{chr_id} is not a valid chromosome id in "
+                             f"{args.remove_indices}")
     return args
 
 
@@ -229,6 +259,22 @@ if __name__ == "__main__":
     x_valid = utils.merge_chroms(args.chrom_valid, args.genome)
     y_train = utils.merge_chroms(args.chrom_train, args.labels)
     y_valid = utils.merge_chroms(args.chrom_valid, args.labels)
+    if args.remove_indices is not None:
+        with np.load(args.remove_indices) as f:
+            with np.load(args.labels) as s:
+                remove_indices_train, remove_indices_valid = [], []
+                total_len_train, total_len_valid = 0, 0
+                for k in args.chrom_train:
+                    remove_indices_train.append(f[k] + total_len_train)
+                    total_len_train += len(s[k]) + 1
+                remove_indices_train = np.concatenate(remove_indices_train)
+                for k in args.chrom_valid:
+                    remove_indices_valid.append(f[k] + total_len_valid)
+                    total_len_valid += len(s[k]) + 1
+                remove_indices_valid = np.concatenate(remove_indices_valid)
+    else:
+        remove_indices_train = None
+        remove_indices_valid = None
     generator_train = tf_utils.WindowGenerator(
         data=x_train,
         labels=y_train,
@@ -237,8 +283,13 @@ if __name__ == "__main__":
         max_data=args.max_train,
         same_samples=args.same_samples,
         balance=args.balance,
+        n_classes=args.n_classes,
         strand=args.strand,
-        head_interval=args.head_interval)
+        head_interval=args.head_interval,
+        remove0s=args.remove0s,
+        removeNs=args.removeNs,
+        remove_indices=remove_indices_train,
+        seed=args.seed)
     generator_valid = tf_utils.WindowGenerator(
         data=x_valid,
         labels=y_valid,
@@ -248,6 +299,9 @@ if __name__ == "__main__":
         same_samples=True,
         strand=args.strand,
         head_interval=args.head_interval,
+        remove0s=args.remove0s,
+        removeNs=args.removeNs,
+        remove_indices=remove_indices_valid,
         seed=0)
     # Create callbacks during training
     callbacks_list = [
