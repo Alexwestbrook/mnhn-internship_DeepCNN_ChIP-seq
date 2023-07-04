@@ -230,6 +230,9 @@ if __name__ == "__main__":
         except RuntimeError as e:
             print(e)
 
+    # Set random seed for tensorflow model initialisation
+    if args.seed is not None:
+        tf.random.set_seed(args.seed)
     # Build model with chosen strategy
     model_dict = {
         'mnase_model': models.mnase_model,
