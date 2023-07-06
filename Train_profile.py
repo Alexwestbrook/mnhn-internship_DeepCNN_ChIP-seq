@@ -241,7 +241,9 @@ if __name__ == "__main__":
         'mnase_Maxime_decreasing': models.mnase_Maxime_decreasing,
         'mnase_Maxime_increasing': models.mnase_Maxime_increasing,
         'mnase_Etienne': models.mnase_Etienne,
-        'bassenji_Etienne': models.bassenji_Etienne
+        'bassenji_Etienne': models.bassenji_Etienne,
+        'mnase_Etienne_sigmoid': models.mnase_Etienne_sigmoid,
+        'bassenji_sigmoid': models.bassenji_sigmoid
     }
     model_builder = model_dict[args.architecture]
     if args.distribute:
