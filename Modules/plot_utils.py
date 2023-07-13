@@ -165,9 +165,14 @@ def plot_2mer_df(df, columns=None, group=None):
     return fig, axes
 
 
-def save_fig_and_values(fig, filename):
-    pngfile = utils.safe_filename(str(filename) + '.png')
+def save_fig_and_values(fig, filename, format='png'):
+    if isinstance(format, str):
+        imgfile = utils.safe_filename(str(filename) + f'.{format}')
+        fig.savefig(imgfile, bbox_inches='tight')
+    else:
+        for form in format:
+            imgfile = utils.safe_filename(str(filename) + f'.{form}')
+            fig.savefig(imgfile, bbox_inches='tight')
     picklefile = utils.safe_filename(str(filename) + '.pickle')
-    fig.savefig(pngfile, bbox_inches='tight')
     with open(picklefile, 'wb') as f:
         pickle.dump(fig, f)
