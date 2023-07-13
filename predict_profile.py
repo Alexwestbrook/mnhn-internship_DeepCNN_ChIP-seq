@@ -65,6 +65,11 @@ def parsing():
         default=None,
         type=int)
     parser.add_argument(
+        "-mid", "--middle",
+        action='store_true',
+        help="Indicates to use only predictions in the middle half of the "
+             "window, only if head_interval is set")
+    parser.add_argument(
         "-b", "--batch_size",
         help="Number of samples to use for predicting in parallel, default to "
              "1024",
@@ -123,10 +128,14 @@ if __name__ == "__main__":
             if args.strand in ['for', 'both']:
                 all_preds[chr_id] = tf_utils.predict(
                     model, one_hot_chr, winsize, batch_size=args.batch_size,
-                    head_interval=args.head_interval)
+                    head_interval=args.head_interval, middle=args.middle)
             if args.strand in ['rev', 'both']:
                 all_preds[f'{chr_id}_rev'] = tf_utils.predict(
                     model, one_hot_chr, winsize, batch_size=args.batch_size,
-                    head_interval=args.head_interval, reverse=True)
-    np.savez_compressed(Path(args.output, f"preds_on_{args.genome.name}"),
-                        **all_preds)
+                    head_interval=args.head_interval, middle=args.middle,
+                    reverse=True)
+    if args.middle:
+        output_file = Path(args.output, f"preds_mid_on_{args.genome.name}")
+    else:
+        output_file = Path(args.output, f"preds_on_{args.genome.name}")
+    np.savez_compressed(output_file, **all_preds)
