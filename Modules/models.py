@@ -674,7 +674,7 @@ def bassenji_Etienne(winsize=32768, **kwargs):
     return model
 
 
-def mnase_Etienne_sigmomid(winsize=2001, **kwargs):
+def mnase_Etienne_sigmoid(winsize=2001, **kwargs):
     kernel_init = VarianceScaling()
     model = Sequential([
         Conv1D(64, kernel_size=3, padding="same", activation='relu',
