@@ -748,18 +748,40 @@ class PredGenerator(Sequence):
 
 
 def predict(model, one_hot_chr, winsize, head_interval=None, reverse=False,
-            batch_size=1024):
+            batch_size=1024, middle=False):
     if winsize > len(one_hot_chr):
         raise ValueError('sequence too small')
     if reverse:
         one_hot_chr = one_hot_chr[::-1, ::-1]
-    if head_interval:
+    pred = np.zeros(len(one_hot_chr), dtype='float32')
+    if head_interval is not None and middle:
+        X = utils.strided_sliding_window_view(
+            one_hot_chr,
+            (winsize, 4),
+            stride=winsize//2,
+            sliding_len=head_interval).reshape(-1, winsize, 4)
+        n_heads = winsize // head_interval
+        y = model.predict(X).squeeze()[:, n_heads//4:3*n_heads//4]
+        y = np.transpose(y.reshape(-1, head_interval, n_heads//2),
+                         [0, 2, 1]).ravel()
+        pred[winsize//4:len(y)+winsize//4] = y
+        # Get last window
+        leftover = len(pred) - (len(y) + winsize//4)
+        min_leftover = winsize//4 + head_interval - 1
+        if leftover > min_leftover:
+            X = utils.strided_sliding_window_view(
+                one_hot_chr[-winsize-head_interval+1:],
+                (winsize, 4),
+                stride=winsize//2,
+                sliding_len=head_interval).squeeze()
+            y = model.predict(X).squeeze().T.ravel()
+            pred[-leftover:-min_leftover] = y[-leftover+min_leftover:]
+    elif head_interval is not None:
         X = utils.strided_sliding_window_view(
             one_hot_chr,
             (winsize, 4),
             stride=winsize,
             sliding_len=head_interval).reshape(-1, winsize, 4)
-        pred = np.zeros(len(one_hot_chr), dtype='float32')
         y = model.predict(X).squeeze()
         n_heads = y.shape[-1]
         y = np.transpose(y.reshape(-1, head_interval, n_heads),
@@ -777,7 +799,6 @@ def predict(model, one_hot_chr, winsize, head_interval=None, reverse=False,
             pred[-leftover:-head_interval+1] = y[-leftover+head_interval-1:]
     else:
         X = PredGenerator(one_hot_chr, winsize, batch_size)
-        pred = np.zeros(len(one_hot_chr), dtype='float32')
         pred[winsize//2:-(winsize//2)] = model.predict(X).ravel()
     if reverse:
         return pred[::-1]
