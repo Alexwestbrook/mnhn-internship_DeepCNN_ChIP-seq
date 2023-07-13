@@ -927,7 +927,9 @@ def GC_content(one_hot_reads: np.ndarray, order: int = 'ACGT') -> np.ndarray:
     gc : np.ndarray, shape=(n,)
         1D-array of gc content for each read
     """
-    assert (len(one_hot_reads.shape) == 3 and one_hot_reads.shape[2] == 4)
+    if one_hot_reads.ndim == 2:
+        one_hot_reads = np.expand_dims(one_hot_reads, axis=0)
+    assert one_hot_reads.ndim == 3 and one_hot_reads.shape[-1] == 4
     # Compute content of each base
     content = np.sum(one_hot_reads, axis=1)  # shape (nb_reads, 4)
     g_idx, c_idx = order.find('G'), order.find('C')
@@ -2372,6 +2374,20 @@ def ref_kmer_frequencies(freq_nucs, k=2):
 
 def random_shuffles(array, n):
     return array[np.random.rand(n, len(array)).argsort(axis=1)]
+
+
+def shuffle_along_axis(arr, axis=0):
+    """Shuffles a multi-dimensional array along specified axis"""
+    assert isinstance(axis, int) and axis >= -1
+    if axis == -1:
+        axis = arr.ndim - 1
+    assert arr.ndim > axis
+    return arr[
+        tuple(np.expand_dims(np.arange(arr.shape[dim]),
+                             axis=tuple(i for i in range(axis+1)
+                                        if i != dim))
+              for dim in range(axis))
+        + (np.random.rand(*arr.shape[:axis+1]).argsort(axis=axis),)]
 
 
 def string_to_char_array(seq):
