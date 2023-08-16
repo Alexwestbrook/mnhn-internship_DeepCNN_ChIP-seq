@@ -9,15 +9,15 @@
 
 paired_end=false
 threads=1
-while getopts "i:d:w:1:2:o:pt:" option; do
+while getopts "x:d:w:1:2:o:bp:" option; do
     case $option in
-        i) # index of reference genome
+        x) # index of reference genome
             index=$OPTARG;;
         d) # directory containing the sequences
             data_dir=$OPTARG
             writing_dir=$data_dir;;
         w) # directory in which to write files,
-           # if no writing access in data_dir
+           # otherwise in data_dir
             writing_dir=$OPTARG;;
         1) # fastq file containing reads to align
             fastq_file1=$OPTARG;;
@@ -25,9 +25,9 @@ while getopts "i:d:w:1:2:o:pt:" option; do
             fastq_file2=$OPTARG;;
         o) # prefix of output_file
             out_prefix=$OPTARG;;
-        p) # indicate paired-end
+        b) # indicate paired-end
             paired_end=true;;
-        t) # number of threads to use
+        p) # number of threads to use
             threads=$OPTARG;;
         \?) # Invalid option
             echo "Error: Invalid option"
