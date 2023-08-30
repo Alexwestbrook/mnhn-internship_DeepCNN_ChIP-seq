@@ -30,3 +30,6 @@ script -a -c "$bash_command" $log_file
 samtools faidx $fasta
 cut -f1,2 $fasta.fai > $chromsizes
 
+# bam to BigWig
+bamCoverage -p $threads -b $file.bam -o $file.bw --binSize 1 --extendReads
+
