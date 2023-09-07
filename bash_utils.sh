@@ -33,3 +33,7 @@ cut -f1,2 $fasta.fai > $chromsizes
 # bam to BigWig
 bamCoverage -p $threads -b $file.bam -o $file.bw --binSize 1 --extendReads
 
+# check for adapter in compressed fastq (TruSeq example)
+gunzip -c $fastq1.gz | grep AGATCGGAAGAGCACACGTCTGAACTCCAGTCA
+gunzip -c $fastq2.gz | grep AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
+
