@@ -89,3 +89,11 @@
 #     prefetch SRR14678$i
 #     fasterq-dump SRR14678$i --outdir ../shared_folder/H3K9me3-GSE175752/raw_data/IP/
 # done
+
+#### S.Cerevisiae repeats 601
+# prefetch SRR13645559
+# fasterq-dump SRR13645559 --outfile ../shared_folder/JB_seqdes/Projet_Julien/MNase_601/SRR13645559_167
+# prefetch SRR13645549
+# fasterq-dump SRR13645549 --outfile ../shared_folder/JB_seqdes/Projet_Julien/MNase_601/SRR13645549_197
+# prefetch SRR13645545
+# fasterq-dump SRR13645545 --outfile ../shared_folder/JB_seqdes/Projet_Julien/MNase_601/SRR13645545_237
