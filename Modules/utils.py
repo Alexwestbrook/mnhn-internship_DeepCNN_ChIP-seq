@@ -2517,59 +2517,109 @@ def random_seq_strict_GC(n_seqs, seq_length, gc):
     return random_shuffles(ref_seq, n_seqs)
 
 
-def random_sequences(n_seqs, seq_length, freq_nucs, freq_dinucs, seed=None):
+def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out='seq'):
     """Generate random DNA sequences with custom kmer distribution.
 
-    Currently only supports 2-mer distribution.
+    Tested for k=2 or 3.
 
     Parameters
     ----------
     n_seqs : int
         Number of sequences to generate
     seq_length : int
-        Length of the sequence to generate
-    freq_nucs : Series
-        Series indexed by the bases 'ACGT', contains frequencies or occurences
-        of each base
-    freq_dinucs : Series
-        Series indexed by a 2-level MultiIndex with the bases 'ACGT' on each
-        level, contains frequencies or occurences of each 2-mer
+        Length of the sequences to generate, must be greater than k
+    freq_kmers : Series
+        Series indexed by a k-level MultiIndex with the bases 'ACGT' on each
+        level, contains frequencies or occurences of each k-mer
+    seed : int, default=None
+        Seed to use for random number generation
+    out : {'seq', 'idx', 'one_hot'}
+        Output format, 'seq' for nucleotide characters, 'idx' for indices into
+        'ACGTN' or 'one_hot' for one-hot encoded bases
 
     Returns
     -------
-    seq : ndarray, shape=(`n_seqs`, `seq_length`)
-        Generated sequences as a 2D-array of characters
+    ndarray, shape=(`n_seqs`, `seq_length`)
+        Generated sequences as a 2D-array of characters, of indices into
+        'ACGTN' or 3D-array of one-hot encoded bases
 
     """
     # Array of bases for fast indexing
     letters = np.array(list('ACGTN'))
 
-    # Cumulative distribution of each base
-    p_cum_nucs = freq_nucs.cumsum(axis=0) / freq_nucs.sum(axis=0)
+    # Get value of k
+    k = freq_kmers.index.nlevels
 
-    # Cumulative distribution of each base, given the previous
-    groups = freq_dinucs.groupby(level=0)
+    # Cumulative distribution of each base, given the previous k-1
+    groups = freq_kmers.groupby(level=list(i for i in range(k-1)))
     sum = groups.transform("sum")
     cumsum = groups.transform("cumsum")
-    p_cum_dinucs = cumsum / sum
-    # Convert to 2D-array
-    arr_dinucs = np.zeros((4, 4))
-    for i in range(4):
-        arr_dinucs[i] = np.asarray(p_cum_dinucs.loc[letters[i]])
-
-    # Empty sequences
-    seqs = np.array([5]*seq_length*n_seqs).reshape(n_seqs, seq_length)
-    # Generate all random numbers at start
+    p_cum_kmers = cumsum / sum
+    # Convert to kD-array
+    arr_kmers = np.zeros(tuple([4] * k))
+    for tup in it.product(range(4), repeat=k):
+        arr_kmers[tup] = np.asarray(
+            p_cum_kmers.loc[tuple(letters[i] for i in tup)])
+    # Set seed
     if seed is not None:
         np.random.seed(seed)
-    r = np.random.random((n_seqs, seq_length))
-    # Get first base given base distribution and first random number
-    seqs[:, 0] = np.argmax(np.asarray(p_cum_nucs) >= r[:, [0]*4], axis=1)
-    # Get other bases given 2-mer distribution, previous base and random
+    # Empty sequences
+    seqs = np.array([5]*seq_length*n_seqs).reshape(n_seqs, seq_length)
+    # Get first k-mer given k-mer distribution
+    r_start = np.random.choice(len(freq_kmers), n_seqs,
+                               p=freq_kmers / freq_kmers.sum())
+    seqs[:, :k] = np.array(list(it.product(range(4), repeat=k)))[r_start]
+    # Generate random numbers for all iterations
+    r = np.random.random((n_seqs, seq_length - k))
+    # Get other bases given k-mer distribution, previous (k-1)-mer and random
     # numbers
-    for i in range(1, seq_length):
-        seqs[:, i] = np.argmax(arr_dinucs[seqs[:, i-1]] >= r[:, [i]*4], axis=1)
-    return letters[seqs]
+    for i in range(k, seq_length):
+        seqs[:, i] = np.argmax(
+            arr_kmers[tuple(arr.ravel()
+                            for arr in np.split(seqs[:, i-k+1:i], k-1, axis=1))
+                      ] >= r[:, [i-k]*4],
+            axis=1)
+    if out == 'idx':
+        return seqs
+    elif out == 'seq':
+        return letters[seqs]
+    else:
+        return np.eye(4, dtype=int)[seqs]
+
+
+def random_sequences_as(one_hots, n_seqs, seq_length, k,
+                        order='ACGT', seed=None, out='one_hot'):
+    """Generate random DNA sequences with kmer distribution similar to input.
+
+    Tested for k=2 or 3.
+
+    Parameters
+    ----------
+    n_seqs : int
+        Number of sequences to generate
+    seq_length : int
+        Length of the sequences to generate, must be greater than k
+    k : int
+        Length of k-mers to consider
+    one_hots : list-like
+        Must be a list, dictionnary or array of one-hot encoded sequences.
+    order : str, default='ACGT'
+        Order of bases for one-hot encoding
+    seed : int, default=None
+        Seed to use for random number generation
+    out : {'one_hot', 'seq', 'idx'}
+        Output format, 'seq' for nucleotide characters, 'idx' for indices into
+        'ACGTN' or 'one_hot' for one-hot encoded bases. Default "one_hot"
+        makes order parameter irrelevant.
+
+    Returns
+    -------
+    ndarray, shape=(`n_seqs`, `seq_length`)
+        Generated sequences as a 2D-array of characters, of indices into
+        'ACGTN' or 3D-array of one-hot encoded bases
+    """
+    freq_kmers = kmer_counts(one_hots, k, order, includeN=False)
+    return random_sequences(n_seqs, seq_length, freq_kmers, seed, out)
 
 
 # Other utils
