@@ -1879,8 +1879,10 @@ def strided_window_view(x, window_shape, stride,
                         axis=None, *, subok=False, writeable=False):
     """Variant of `sliding_window_view` which supports stride parameter.
 
-    The axis parameter doesn't work, the stride is always considered on the
-    first axis, it also doesn't support multiple windowing on same axis"""
+    The axis parameter doesn't work, the stride can be of same shape as
+    window_shape, providing different stride in each dimension. If shorter
+    than window_shape, stride will be filled with ones. it also doesn't
+    support multiple windowing on same axis"""
     window_shape = (tuple(window_shape)
                     if np.iterable(window_shape)
                     else (window_shape,))
@@ -1905,11 +1907,23 @@ def strided_window_view(x, window_shape, stride,
                              f'axis; got {len(window_shape)} window_shape '
                              f'elements and {len(axis)} axes elements.')
 
+    # ADDED THIS ####
+    stride = (tuple(stride)
+              if np.iterable(stride)
+              else (stride,))
+    stride_array = np.array(stride)
+    if np.any(stride_array < 0):
+        raise ValueError('`stride` cannot contain negative values')
+    if len(stride) > len(window_shape):
+        raise ValueError('`stride` cannot be longer than `window_shape`')
+    elif len(stride) < len(window_shape):
+        stride += (1,) * (len(window_shape) - len(stride))
+    ########################
+
     # CHANGED THIS LINE ####
     # out_strides = x.strides + tuple(x.strides[ax] for ax in axis)
     # TO ###################
-    out_strides = ((x.strides[0]*stride, )
-                   + tuple(x.strides[1:])
+    out_strides = (tuple(x.strides[ax]*stride[ax] for ax in range(x.ndim))
                    + tuple(x.strides[ax] for ax in axis))
     ########################
 
@@ -1923,7 +1937,7 @@ def strided_window_view(x, window_shape, stride,
         # x_shape_trimmed[ax] -= dim - 1
         # TO ###################
         x_shape_trimmed[ax] = int(np.ceil(
-            (x_shape_trimmed[ax] - dim + 1) / stride))
+            (x_shape_trimmed[ax] - dim + 1) / stride[ax]))
         ########################
     out_shape = tuple(x_shape_trimmed) + window_shape
     return as_strided(x, strides=out_strides, shape=out_shape,
@@ -1934,11 +1948,10 @@ def strided_sliding_window_view(x, window_shape, stride, sliding_len,
                                 axis=None, *, subok=False, writeable=False):
     """Variant of `strided_window_view` which slides in between strides.
 
-    This will provide blocks of slliding window of `sliding_len` windows,
+    This will provide blocks of sliding window of `sliding_len` windows,
     with first windows spaced by `stride`
-    The axis parameter doesn't work, the stride and slide are always
-    considered on the first axis, it also doesn't support multiple windowing
-    on same axis."""
+    The axis parameter determines where the stride and slide are performed, it
+    can only be a single value."""
     window_shape = (tuple(window_shape)
                     if np.iterable(window_shape)
                     else (window_shape,))
@@ -1949,26 +1962,47 @@ def strided_sliding_window_view(x, window_shape, stride, sliding_len,
     if np.any(window_shape_array < 0):
         raise ValueError('`window_shape` cannot contain negative values')
 
+    # ADDED THIS ####
+    stride = (tuple(stride)
+              if np.iterable(stride)
+              else (stride,))
+    stride_array = np.array(stride)
+    if np.any(stride_array < 0):
+        raise ValueError('`stride` cannot contain negative values')
+    if len(stride) == 1:
+        stride += (1,)
+    elif len(stride) > 2:
+        raise ValueError('`stride` cannot be of length greater than 2')
+    if sliding_len % stride[1] != 0:
+        raise ValueError('second `stride` must divide `sliding_len` exactly')
+    # CHANGED THIS ####
+    # if axis is None:
+    #     axis = tuple(range(x.ndim))
+    #     if len(window_shape) != len(axis):
+    #         raise ValueError(f'Since axis is `None`, must provide '
+    #                          f'window_shape for all dimensions of `x`; '
+    #                          f'got {len(window_shape)} window_shape '
+    #                          f'elements and `x.ndim` is {x.ndim}.')
+    # else:
+    #     axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
+    #     if len(window_shape) != len(axis):
+    #         raise ValueError(f'Must provide matching length window_shape '
+    #                          f'and axis; got {len(window_shape)} '
+    #                          f'window_shape elements and {len(axis)} axes '
+    #                          f'elements.')
+    # TO ###################
     if axis is None:
-        axis = tuple(range(x.ndim))
-        if len(window_shape) != len(axis):
-            raise ValueError(f'Since axis is `None`, must provide '
-                             f'window_shape for all dimensions of `x`; '
-                             f'got {len(window_shape)} window_shape elements '
-                             f'and `x.ndim` is {x.ndim}.')
-    else:
-        axis = normalize_axis_tuple(axis, x.ndim, allow_duplicate=True)
-        if len(window_shape) != len(axis):
-            raise ValueError(f'Must provide matching length window_shape and '
-                             f'axis; got {len(window_shape)} window_shape '
-                             f'elements and {len(axis)} axes elements.')
+        axis = 0
+    ########################
 
     # CHANGED THIS LINE ####
     # out_strides = ((x.strides[0]*stride, )
     #                + tuple(x.strides[1:])
     #                + tuple(x.strides[ax] for ax in axis))
     # TO ###################
-    out_strides = (x.strides[0]*stride, x.strides[0]) + x.strides
+    out_strides = (x.strides[:axis]
+                   + (x.strides[axis]*stride[0], x.strides[axis]*stride[1])
+                   + x.strides[axis:])
     ########################
 
     # CHANGED THIS ####
@@ -1980,13 +2014,16 @@ def strided_sliding_window_view(x, window_shape, stride, sliding_len,
     #             'window shape cannot be larger than input array shape')
     #     x_shape_trimmed[ax] = int(np.ceil(
     #         (x_shape_trimmed[ax] - dim + 1) / stride))
+    # out_shape = tuple(x_shape_trimmed) + window_shape
     # TO ###################
-    x_shape_trimmed = [(len(x)
-                        - window_shape[0]
-                        - sliding_len + 1) // stride + 1,
-                       sliding_len]
+    x_shape_trimmed = [(x.shape[axis]
+                        - window_shape[axis]
+                        - sliding_len + stride[1]) // stride[0] + 1,
+                       sliding_len // stride[1]]
+    out_shape = (window_shape[:axis]
+                 + tuple(x_shape_trimmed)
+                 + window_shape[axis:])
     ########################
-    out_shape = tuple(x_shape_trimmed) + window_shape
     return as_strided(x, strides=out_strides, shape=out_shape,
                       subok=subok, writeable=writeable)
 
@@ -2580,11 +2617,11 @@ def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out='seq'):
                       ] >= r[:, [i-k]*4],
             axis=1)
     if out == 'idx':
-        return seqs
+        return np.asarray(seqs, dtype=np.int8)
     elif out == 'seq':
         return letters[seqs]
-    else:
-        return np.eye(4, dtype=int)[seqs]
+    elif out == 'one_hot':
+        return np.eye(4, dtype=bool)[seqs]
 
 
 def random_sequences_as(one_hots, n_seqs, seq_length, k,
