@@ -60,7 +60,7 @@ def parsing():
         "--steps", type=int, default=100,
         help="number of steps to perform")
     parser.add_argument(
-        "--stride_pred", type=int, default=1,
+        "--stride", type=int, default=1,
         help="specifies a stride in predictions to go faster")
     parser.add_argument(
         "-mid", "--middle_pred", action='store_true',
@@ -87,7 +87,7 @@ def parsing():
     assert (len(args.one_hot_order) == 4
             and set(args.one_hot_order) == set('ACGT'))
     for item in [args.k, args.n_seqs, args.length, args.steps,
-                 args.stride_pred, args.batch_size]:
+                 args.stride, args.batch_size]:
         assert item >= 1
     assert args.temperature > 0
     if args.target == []:
@@ -122,7 +122,7 @@ def tf_idx_to_one_hot(idx, order='ACGT'):
 
 def get_profile(seqs, model, winsize, head_interval, reverse=False,
                 middle=True, batch_size=1000, one_hot_order='ACGT',
-                stride_pred=1):
+                stride=1):
     seqs = seqs.copy()
     n_heads = winsize // head_interval
     if reverse:
@@ -139,22 +139,22 @@ def get_profile(seqs, model, winsize, head_interval, reverse=False,
     else:
         strides = winsize
         out_heads = n_heads
-    if stride_pred != 1:
+    if stride != 1:
         # Do not predict all bases, but randomize which ones are predicted
         # each time
-        start = np.random.randint(0, stride_pred)
-        stop = start - stride_pred + 1
+        start = np.random.randint(0, stride)
+        stop = start - stride + 1
         if stop == 0:
             stop = seqs.shape[-1]
-        slides_per_seq = head_interval // stride_pred
-        print(f'Predicting with stride {stride_pred} and offset {start}')
+        slides_per_seq = head_interval // stride
+        print(f'Predicting with stride {stride} and offset {start}')
         slides = utils.strided_sliding_window_view(
             seqs[:, :, start:stop],
             seqs.shape[:-1] + (winsize,),
-            stride=(strides, stride_pred),
+            stride=(strides, stride),
             sliding_len=head_interval,
             axis=-1).reshape(-1, slides_per_seq, winsize)
-        batch_size *= stride_pred
+        batch_size *= stride
     else:
         slides = utils.strided_sliding_window_view(
             seqs,
@@ -186,23 +186,18 @@ def rmse(y_true, y_pred):
     return np.sqrt(np.mean((y_true - y_pred)**2, axis=-1))
 
 
-def select(seqs, for_profile, rev_profile, target, mut_energy, temperature,
-           weights, loss):
-    gc_energy = GC_energy(seqs)
-    for_energy = loss(target[:for_profile.shape[-1]], for_profile)
-    rev_energy = loss(target[-rev_profile.shape[-1]:], rev_profile)
-    energies = [gc_energy, for_energy, rev_energy, mut_energy]
+def select(energies, weights, temperature):
     tot_energy = sum(w*e for w, e in zip(weights, energies))
     prob = np.exp(-tot_energy / temperature)
     prob /= np.sum(prob, axis=-1, keepdims=True)
     cumprob = np.cumsum(prob, axis=-1)
     r = np.random.rand(len(prob)).reshape(-1, 1)
-    selected_indices = np.argmax(r <= cumprob, axis=-1)
-    selected_energies = np.stack(
-        [en[np.arange(len(seqs)), selected_indices]
+    sel_idx = np.argmax(r <= cumprob, axis=-1)
+    sel_energies = np.stack(
+        [en[np.arange(len(en)), sel_idx]
          for en in [tot_energy] + energies],
         axis=1)
-    return selected_indices, selected_energies
+    return sel_idx, sel_energies
 
 
 if __name__ == "__main__":
@@ -241,7 +236,7 @@ if __name__ == "__main__":
         custom_objects={'correlate': correlate, 'mae_cor': mae_cor})
     winsize = model.input_shape[1]
     head_interval = winsize // model.output_shape[1]
-    assert head_interval % args.stride_pred == 0
+    assert head_interval % args.stride == 0
     # Generate and save start sequences
     if args.seed != -1:
         np.random.seed(args.seed)
@@ -265,39 +260,42 @@ if __name__ == "__main__":
         # Predict on forward and reverse strands
         preds = get_profile(
             seqs, model, winsize, head_interval, batch_size=args.batch_size,
-            stride_pred=args.stride_pred, one_hot_order=args.one_hot_order,
+            stride=args.stride, one_hot_order=args.one_hot_order,
             middle=args.middle_pred)
         preds_rev = get_profile(
             seqs, model, winsize, head_interval, batch_size=args.batch_size,
-            stride_pred=args.stride_pred, one_hot_order=args.one_hot_order,
+            stride=args.stride, one_hot_order=args.one_hot_order,
             middle=args.middle_pred, reverse=True)
+        # Compute energy
+        gc_energy = GC_energy(seqs)
+        for_energy = args.loss(args.target[:preds.shape[-1]], preds)
+        rev_energy = args.loss(args.target[-preds_rev.shape[-1]:], preds_rev)
+        energy_list = [gc_energy, for_energy, rev_energy, mut_energy]
         # Choose best mutation by kMC method
-        indices, energies = select(seqs, preds, preds_rev, args.target,
-                                   mut_energy, args.temperature, args.weights,
-                                   args.loss)
+        sel_idx, sel_energies = select(energy_list, args.weights,
+                                       args.temperature)
         # Keep selected sequence and increment seen_bases
-        seqs = seqs[np.arange(len(seqs)), indices]
+        seqs = seqs[np.arange(len(seqs)), sel_idx]
         seen_bases[np.arange(len(seqs)),
-                   indices // 3,
-                   seqs[np.arange(len(seqs)), indices // 3]] += 1
+                   sel_idx // 3,
+                   seqs[np.arange(len(seqs)), sel_idx // 3]] += 1
         # Save sequence, energy and plot profile
-        np.save(Path(args.output_dir, f"seen_bases_step{i}.npy"), seen_bases)
         np.save(Path(args.output_dir, f"mut_seqs_step{i}.npy"), seqs)
         with open(Path(args.output_dir, 'energy.txt'), 'a') as f:
-            f.write(f'{energies}\n')
+            f.write(f'{sel_energies}\n')
         fig, axes = plt.subplots(nrow, ncol, figsize=(10, 3),
                                  facecolor='w', layout='tight', sharey=True)
         if args.n_seqs == 1:
-            pfor = preds[0, indices].squeeze()
-            prev = preds_rev[0, indices].squeeze()
+            pfor = preds[0, sel_idx].squeeze()
+            prev = preds_rev[0, sel_idx].squeeze()
             axes.plot(pfor, label='forward')
             axes.plot(np.arange(head_interval, len(prev)+head_interval),
                       prev, label='reverse', alpha=0.8)
             axes.legend()
         else:
             for ax, pfor, prev in zip(axes.flatten(),
-                                      preds[np.arange(len(seqs)), indices],
-                                      preds_rev[np.arange(len(seqs)), indices]
+                                      preds[np.arange(len(seqs)), sel_idx],
+                                      preds_rev[np.arange(len(seqs)), sel_idx]
                                       ):
                 ax.plot(pfor, label='forward')
                 ax.plot(np.arange(head_interval, len(prev)+head_interval),
