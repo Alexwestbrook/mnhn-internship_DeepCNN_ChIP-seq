@@ -2119,6 +2119,53 @@ def moving_sum(x, n=2, axis=None):
     return ret[n - 1:]
 
 
+def repeat_along_diag(a, r):
+    """Construct a matrix by repeating a sub_matrix along the diagonal.
+
+    References
+    ----------
+    https://stackoverflow.com/questions/33508322/create-block-diagonal-numpy-array-from-a-given-numpy-array
+    """
+    m, n = a.shape
+    out = np.zeros((r, m, r, n), dtype=a.dtype)
+    diag = np.einsum('ijik->ijk', out)
+    diag[:] = a
+    return out.reshape(-1, n*r)
+
+
+def exp_normalize(x, axis=-1):
+    res = np.exp(x - np.max(x))
+    return res / np.sum(res, axis=axis, keepdims=True)
+
+
+def simple_slice(arr, slc, axis):
+    """Take a slice along an axis of an array.
+
+    Parameters
+    ----------
+    arr: ndarray
+        Array to take the slice from
+    slc: slice
+        Slice to take from the array
+    axis: int
+        axis along which to perform the slicing
+
+    Returns
+    -------
+    ndarray
+        A sliced view into the original array
+
+    References
+    ----------
+    https://stackoverflow.com/questions/24398708/slicing-a-numpy-array-along-a-dynamically-specified-axis
+    """
+    # this does the same as np.take() except only supports simple slicing, not
+    # advanced indexing, and thus is much faster
+    full_slc = [slice(None)] * arr.ndim
+    full_slc[axis] = slc
+    return arr[tuple(full_slc)]
+
+
 def clip_to_nonzero_min(array):
     array[array == 0] = array[array != 0].min()
     return array
