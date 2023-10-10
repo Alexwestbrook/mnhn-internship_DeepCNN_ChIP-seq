@@ -3,11 +3,57 @@
 scripts_dir='/home/alex/mnhn-internship_DeepCNN_ChIP-seq'
 data_dir='/home/alex/shared_folder'
 
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test22 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.0005 -mid --stride 128 --seed 0
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test23 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.001 -mid --stride 128 --seed 0
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test24 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.002 -mid --stride 128 --seed 0
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test25 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.005 -mid --stride 128 --seed 0
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test26 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.01 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test22 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.0005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test23 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.001 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test24 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.002 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test25 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test26 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.01 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test27 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.0001 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test28 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.00005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test29 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 500 -temp 0.00001 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test30 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 50 -temp 0.0005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test31 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 50 -temp 0.0005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test32 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 50 -temp 0.0005 -mid --stride 8 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test33 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 50 -temp 0.0005 -mid --stride 128 --seed 0 -dist
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test34 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 50 -temp 0.0005 -mid --stride 128 --seed 0 -dist
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test35 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first2.npy --steps 50 -temp 0.0005 -mid --stride 8 --seed 0 -dist
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test36 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test37 -nseq 1 -l 3000 --steps 10 -temp 0.0005 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test38 -nseq 1 -l 3000 --steps 10 -temp 0.0005 -mid --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test39 -nseq 1 -l 3000 --steps 10 -temp 0.0005 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test40 -nseq 1 -l 3000 --steps 10 -temp 0.0005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test41 -nseq 1 -l 5000 --steps 100 -temp 0.0005 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test42 -nseq 1 -l 5000 --steps 100 -temp 0.0005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test43 -nseq 10 -l 5000 --steps 500 -temp 0.0001 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test44 -nseq 10 -l 5000 --steps 500 -temp 0.0001 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test45 -nseq 1 -l 5000 --steps 500 -temp 0.0002 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test46 -nseq 1 -l 5000 --steps 500 -temp 0.0002 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test47 -nseq 1 -l 5000 --steps 500 -temp 0.00005 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test48 -nseq 1 -l 5000 --steps 500 -temp 0.00005 -mid --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test49 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.01
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test50 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.005
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test51 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.002
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test52 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.001
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test53 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.0005
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test54 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.0001
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test55 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.00005
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test56 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.00001
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test57 -nseq 2 -l 2175 --steps 500 -temp 0.01 --stride 128 --seed 0
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test58 -nseq 2 -l 2175 --steps 500 -temp 0.005 --stride 128 --seed 0
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test59 -nseq 2 -l 2175 --steps 500 -temp 0.002 --stride 128 --seed 0
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test60 -nseq 2 -l 2175 --steps 500 -temp 0.001 --stride 128 --seed 0
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test61 -nseq 2 -l 2175 --steps 500 -temp 0.0005 --stride 128 --seed 0
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test62 -nseq 2 -l 2175 --steps 500 -temp 0.0002 --stride 128 --seed 0
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test63 -nseq 2 -l 2175 --steps 500 -temp 0.0001 --stride 128 --seed 0
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test64 -nseq 2 -l 2175 --steps 500 -temp 0.00005 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test65 -nseq 2 -l 5000 --steps 500 -temp 0.01 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test66 -nseq 2 -l 5000 --steps 500 -temp 0.005 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test67 -nseq 2 -l 5000 --steps 500 -temp 0.002 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test68 -nseq 2 -l 5000 --steps 500 -temp 0.001 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test69 -nseq 2 -l 5000 --steps 500 -temp 0.0005 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test70 -nseq 2 -l 5000 --steps 500 -temp 0.0002 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test71 -nseq 2 -l 5000 --steps 500 -temp 0.0001 --stride 128 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test72 -nseq 2 -l 5000 --steps 500 -temp 0.00005 --stride 128 --seed 0
 
 # writing_dir='../'
 # bbmap_dir='../bbmap'
