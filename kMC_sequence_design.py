@@ -517,7 +517,7 @@ def main(args):
         def get_profile(seqs, reverse=False):
             return get_profile_hint(
                 seqs, model, winsize, head_interval, reverse=reverse,
-                middle=args.middle, stride=args.stride,
+                middle=args.middle_pred, stride=args.stride,
                 batch_size=args.batch_size,
                 one_hot_converter=one_hot_converter)
     # Generate and save start sequences
