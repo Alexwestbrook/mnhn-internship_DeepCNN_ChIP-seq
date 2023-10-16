@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 from pathlib import Path
+import gc
 import tempfile
 import numpy as np
+import time
 
 import tensorflow as tf
 from keras.engine import data_adapter
@@ -724,12 +726,14 @@ class PredGenerator(Sequence):
     def __init__(self,
                  data,
                  winsize,
-                 batch_size):
+                 batch_size,
+                 extradims=None):
         self.data = data
         self.winsize = winsize
         self.batch_size = batch_size
         self.indexes = np.arange(self.winsize // 2,
                                  len(data) - (self.winsize // 2))
+        self.extradims = extradims
 
     def __len__(self):
         return int(np.ceil(len(self.data) / self.batch_size))
@@ -743,12 +747,233 @@ class PredGenerator(Sequence):
             + np.arange(-(self.winsize//2), self.winsize//2 + 1).reshape(1, -1)
         )
         batch_x = self.data[window_indices]
+        if self.extradims is not None:
+            batch_x = np.expand_dims(batch_x, axis=self.extradims)
         batch_y = np.zeros((len(batch_x), 1))
         return batch_x, batch_y
 
 
+class PredGeneratorFromIdx(Sequence):
+    def __init__(self,
+                 data,
+                 winsize,
+                 batch_size,
+                 one_hot_converter,
+                 stride=1,
+                 offset=0,
+                 head_interval=None,
+                 jump_stride=None):
+        assert offset >= 0 and offset < stride
+        assert winsize > 0
+        if head_interval is not None:
+            if jump_stride is None:
+                jump_stride = winsize
+            assert jump_stride <= winsize and jump_stride > 0
+            assert head_interval > 0
+            assert head_interval % stride == 0
+            assert jump_stride % head_interval == 0
+            assert winsize % head_interval == 0
+            self.n_heads = winsize // head_interval
+            self.slide_length = head_interval // stride
+            self.n_kept_heads = jump_stride // head_interval
+            # Last position where a window can be taken
+            last_valid_pos = data.shape[-1] - winsize
+            # Last position where a full slide of window can be taken
+            last_slide_start = last_valid_pos - head_interval + stride
+            # Adjust last_slide_start to offset
+            last_slide_start -= (last_slide_start - offset) % stride
+            if last_valid_pos < 0:
+                raise ValueError(f"Data length ({data.shape[-1]}) must be "
+                                 f"longer than winsize ({winsize})")
+            if last_slide_start < offset:
+                raise ValueError(f"No valid slide for length "
+                                 f"{data.shape[-1]} with offset {offset}")
+            slide = np.arange(0, head_interval, stride)
+            slide_starts = np.arange(offset,
+                                     last_slide_start + 1,
+                                     jump_stride)
+            # Add last possible slide_start (some values may be recomputed)
+            if slide_starts[-1] < last_slide_start:
+                slide_starts = np.append(slide_starts, last_slide_start)
+                self.last_jump = (last_slide_start - offset) % jump_stride
+            else:
+                self.last_jump = jump_stride
+            self.n_jumps = len(slide_starts)
+            # Window positions for a single sequence
+            positions = (slide.reshape(1, -1)
+                         + slide_starts.reshape(-1, 1)).ravel()
+            # Array to add by broadcasting to each position to get all indexes
+            # of the window
+            self.window = np.arange(0, winsize)
+        else:
+            # Window positions for a single sequence
+            positions = np.arange(winsize // 2 + offset,
+                                  data.shape[-1] - (winsize // 2),
+                                  stride)
+            # Array to add by broadcasting to each position to get all indexes
+            # of the window
+            self.window = np.arange(-(winsize//2), winsize//2 + 1)
+        # If data is multidimensionnal, consider all dimensions but the last
+        # to be different sequences. Flatten the data and propagate window
+        # positions accross all sequences
+        self.n_seqs = np.product(np.array(data.shape[:-1]), dtype=int)
+        increments = np.arange(0,
+                               self.n_seqs*data.shape[-1],
+                               data.shape[-1])
+        # Window positions for all sequences in the flattened data
+        self.indexes = (positions.reshape(1, -1)
+                        + increments.reshape(-1, 1)).ravel()
+        self.original_shape = data.shape
+        self.data = data.ravel()
+        self.winsize = winsize
+        self.batch_size = batch_size
+        self.one_hot_converter = one_hot_converter
+        self.stride = stride
+        self.offset = offset
+        self.head_interval = head_interval
+        self.jump_stride = jump_stride
+
+    def __len__(self):
+        return int(np.ceil(len(self.data) / self.batch_size))
+
+    def __getitem__(self, idx):
+        # Get window positions
+        batch_idx = self.indexes[idx*self.batch_size:(idx+1)*self.batch_size]
+        # Get full window indices
+        window_indices = (batch_idx.reshape(-1, 1)
+                          + self.window.reshape(1, -1))
+        batch_x = self.data[window_indices]
+        # Convert to one_hot
+        batch_x = self.one_hot_converter(batch_x)
+        batch_y = np.zeros((len(batch_x), 1), dtype=batch_x.dtype)
+        return batch_x, batch_y
+
+    def reshaper(self, preds, kept_heads_start=None):
+        if self.head_interval is not None:
+            # Reshape (n_windows, n_heads, 1)
+            # => (n_seqs, n_jumps, slide_length, n_heads)
+            preds = preds.reshape(self.n_seqs, self.n_jumps,
+                                  self.slide_length, self.n_heads)
+            if kept_heads_start is not None:
+                # Select only specific heads
+                kept_heads_stop = kept_heads_start + self.n_kept_heads
+                assert (kept_heads_start >= 0
+                        and kept_heads_stop <= self.n_heads)
+                preds = preds[:, :, :, kept_heads_start:kept_heads_stop]
+            else:
+                # Keep all heads
+                assert self.n_kept_heads == self.n_heads
+            # Transpose slide_length and n_heads before flattening them to
+            # get proper sequence order, last dimension is pred_length_per_jump
+            preds = np.transpose(preds, [0, 1, 3, 2])
+            preds = preds.reshape((self.n_seqs, self.n_jumps, -1))
+            # Seperate last jump to truncate its beginning then put it back
+            first_part = preds[:, :-1, :].reshape(self.n_seqs, -1)  # ndim=2
+            last_part = preds[:, -1, -(self.last_jump // self.stride):]
+            preds = np.concatenate([first_part, last_part],
+                                   axis=1)  # shape (n_seqs, pred_length)
+        # Return back in original shape, last dimension being pred_length
+        return preds.reshape(self.original_shape[:-1] + (-1,))
+
+
+def get_profile(seqs, model, winsize, head_interval=None, middle=True,
+                reverse=False, stride=1, offset=None, batch_size=1024,
+                one_hot_converter=utils.np_idx_to_one_hot, seed=None,
+                verbose=False):
+    """Predict profile.
+
+    Parameters
+    ----------
+    seqs : ndarray
+        Array of indexes into 'ACGT', sequences to predict on are read on the
+        last axis
+    model
+        Tensorflow model instance supporting the predict method
+    winsize : int
+        Input length of the model
+    head_interval : int, default=None
+        Spacing between outputs of the model, for a model with multiple
+        outputs starting at first window position and with regular spacing.
+        If None, model must have a single output in the middle of the window.
+    middle : bool, default=True
+        Whether to use only the middle half of output heads for deriving
+        predictions. This results in no predictions on sequence edges. If
+        head_interval is not set, this parameter is ignored.
+    reverse : bool, default=False
+        If True predict on reverse strand. Default is False for predicting on
+        forward strand.
+    stride : int, default=1
+        Stride to use for prediction. Using a value other than 1 will result
+        in bases being skipped and make prediction faster.
+    offset : int, default=None
+        Offset for start of prediciton, will be forced to be positive and
+        smaller than stride by taking the modulo. Default value of None will
+        result in a random offset being chosen.
+    batch_size : int, default=1024
+        Number of windows to feed at once to the model for prediction.
+    one_hot_converter : function, default=np_idx_to_one_hot
+        Function taking as input an array of indexes into 'ACGT' with shape
+        (n_windows, window_length) and converts it to the required model input
+        format.
+    seed : int, default=None
+        Value of seed to use for choosing random offset.
+    verbose : bool, default=False
+        If True, print information messages.
+
+    Returns
+    -------
+    ndarray
+        Array of predictions with same shape as seqs, except on the last
+        dimension, containing predictions for that sequence.
+    """
+    # Maybe reverse complement the sequences
+    if reverse:
+        # Copy sequence array before modification
+        seqs = seqs.copy()
+        seqs[seqs == 0] = -1
+        seqs[seqs == 3] = 0
+        seqs[seqs == -1] = 3
+        seqs[seqs == 1] = -1
+        seqs[seqs == 2] = 1
+        seqs[seqs == -1] = 2
+        seqs = np.flip(seqs, axis=-1)
+    if offset is None:
+        # Randomize offset
+        if seed is not None:
+            np.random.seed(seed)
+        offset = np.random.randint(0, stride)
+    else:
+        offset %= stride
+    if verbose:
+        print(f'Predicting with stride {stride} and offset {offset}')
+    if head_interval is None:
+        # Single output model
+        jump_stride = None
+        kept_heads_start = None
+    else:
+        # Multiple output model with regular spacing
+        if middle:
+            # Make predictions only on middle heads
+            jump_stride = winsize // 2
+            kept_heads_start = 4
+        else:
+            # Make predictions on all heads
+            jump_stride = winsize
+            kept_heads_start = 0
+    # Build a generator for prediction
+    gen = PredGeneratorFromIdx(
+        seqs, winsize, batch_size, one_hot_converter, stride=stride,
+        offset=offset, head_interval=head_interval, jump_stride=jump_stride)
+    preds = model.predict(gen)
+    preds = gen.reshaper(preds, kept_heads_start)
+    # Maybe reverse predictions
+    if reverse:
+        preds = np.flip(preds, axis=-1)
+    return preds
+
+
 def predict(model, one_hot_chr, winsize, head_interval=None, reverse=False,
-            batch_size=1024, middle=False):
+            batch_size=1024, middle=False, extradims=None):
     if winsize > len(one_hot_chr):
         raise ValueError('sequence too small')
     if reverse:
@@ -798,7 +1023,7 @@ def predict(model, one_hot_chr, winsize, head_interval=None, reverse=False,
             y = model.predict(X).squeeze().T.ravel()
             pred[-leftover:-head_interval+1] = y[-leftover+head_interval-1:]
     else:
-        X = PredGenerator(one_hot_chr, winsize, batch_size)
+        X = PredGenerator(one_hot_chr, winsize, batch_size, extradims)
         pred[winsize//2:-(winsize//2)] = model.predict(X).ravel()
     if reverse:
         return pred[::-1]
