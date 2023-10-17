@@ -302,7 +302,6 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
     if middle:
         pred_start += winsize // 4
         pred_stop += winsize // 4
-    print(pred_start, pred_stop)
     # Add flanking sequences to make prediction along the entire sequence, and
     # update distances
     if flanks is not None:
@@ -314,8 +313,6 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
         seqs2D = np.hstack([np.tile(flank_left, (len(seqs2D), 1)),
                             seqs2D,
                             np.tile(flank_right, (len(seqs2D), 1))])
-    print(len(flank_left), len(flank_right), seqs2D.shape)
-    print(pred_start, pred_stop)
     # Determine indices of predictions along the sequence axis
     if return_index:
         indices = np.arange(pred_start + offset,
@@ -323,7 +320,6 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
                             stride)
         if reverse:
             indices = np.flip(seqs.shape[-1] - indices)
-    print(indices)
     # Maybe reverse complement the sequences
     if reverse:
         seqs2D[seqs2D == 0] = -1
@@ -704,7 +700,7 @@ def main(args):
                 one_hot_converter=one_hot_converter, offset=offset,
                 verbose=args.verbose, return_index=True, flanks=flanks)
     # Extract flanking sequences
-    if args.flanks:
+    if args.flanks is not None:
         with np.load(args.flanks) as f:
             flank_left = f['left']
             flank_right = f['right']
@@ -712,6 +708,8 @@ def main(args):
                     and flank_left.ndim <= 2)
             if flank_left.ndim == 2:
                 assert len(flank_left) == len(flank_right)
+    else:
+        flanks = None
     # Generate and save start sequences
     if args.seed != -1:
         np.random.seed(args.seed)
@@ -739,12 +737,14 @@ def main(args):
             print(f'Step {step}')
         # Generate all mutations, and associated mutation energy
         seqs, mut_energy = all_mutations(seqs, seen_bases)
-        if args.flanks:
+        if args.flanks is not None:
             if flank_left.ndim == 1:
                 flanks = (flank_left, flank_right)
             else:
                 flank_idx = np.random.randint(0, len(flank_left))
                 flanks = (flank_left[flank_idx], flank_right[flank_idx])
+                if args.verbose:
+                    print(f"Using flank_idx {flank_idx}")
         # Predict on forward and reverse strands
         preds, indices = predicter(
             seqs, offset=np.random.randint(0, args.stride), flanks=flanks)
