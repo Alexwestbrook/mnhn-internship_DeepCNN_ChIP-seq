@@ -51,13 +51,13 @@ def parsing():
         help="value of k for kmer distribution, must be provided to read the "
              "kmer_file correctly")
     parser.add_argument(
-        "-nseq", "--n_seqs", type=int, default=1,
+        "-n", "--n_seqs", type=int, default=1,
         help="number of sequences to generate simultaneously")
     parser.add_argument(
         "-l", "--length", type=int, default=2175,
         help="length of the sequences to generate")
     parser.add_argument(
-        "--start_seqs", type=str,
+        "-start", "--start_seqs", type=str,
         help="numpy binary file containing starting sequences as indexes with "
              "shape (n_seqs, length). If set overrides kmer_file, k, n_seqs "
              "and length.")
@@ -68,14 +68,19 @@ def parsing():
         "-dist", "--distribute", action='store_true',
         help="indicates to use MirrorStrategy for prediction")
     parser.add_argument(
-        "--stride", type=int, default=1,
+        "-s", "--stride", type=int, default=1,
         help="specifies a stride in predictions to go faster")
     parser.add_argument(
         "-mid", "--middle_pred", action='store_true',
         help="specifies to predict only on middle window")
     parser.add_argument(
-        "-targ", "--target", type=float, nargs='+',
-        help="target profile for the designed sequences")
+        "--flanks", type=str,
+        help="file with flanking sequences to use for prediction")
+    parser.add_argument(
+        "-targ", "--target", type=float, nargs='+', default=[0],
+        help="target profile for the designed sequences. If a single value, "
+             "consider a flat target for the entire sequence, otherwise must "
+             "be of same length as the sequences.")
     parser.add_argument(
         "-targ_gc", "--target_gc", type=float, default=0.3834,
         help="target GC content for the designed sequences")
@@ -86,7 +91,7 @@ def parsing():
         "-w", "--weights", type=float, nargs=4, default=[1, 1, 1, 1],
         help="weights for the energy terms in order E_gc, E_for, E_rev, E_mut")
     parser.add_argument(
-        "-temp", "--temperature", type=float, default=0.1,
+        "-t", "--temperature", type=float, default=0.1,
         help="temperature for kMC")
     parser.add_argument(
         "-maxopt", "--max_options", type=int,
@@ -95,6 +100,9 @@ def parsing():
     parser.add_argument(
         "-b", "--batch_size", type=int, default=1024,
         help="number of mutations to predict on at once")
+    parser.add_argument(
+        "-c", "--chunk_size", type=int, default=128000,
+        help="number of sequence slides that can fit into memory")
     parser.add_argument(
         "--seed", type=int, default=-1,
         help="seed to use for random generations")
@@ -105,18 +113,19 @@ def parsing():
     assert (len(args.one_hot_order) == 4
             and set(args.one_hot_order) == set('ACGT'))
     for item in [args.k, args.n_seqs, args.length, args.steps,
-                 args.stride, args.batch_size]:
+                 args.stride, args.batch_size, args.chunk_size]:
         assert item >= 1
     assert args.temperature > 0
-    if args.target is None:
-        args.target = np.zeros(args.length)
-    else:
-        args.target = np.array(args.target, dtype=float)
     if args.start_seqs is not None:
         seqs = np.load(args.start_seqs)
         assert seqs.ndim == 2
         args.n_seqs, args.length = seqs.shape
         args.k, args.kmer_file = None, None
+    if len(args.target) == 1:
+        args.target = np.full(args.length, args.target[0], dtype=float)
+    else:
+        assert len(args.target) == args.length
+        args.target = np.array(args.target, dtype=float)
     return args
 
 
@@ -222,9 +231,10 @@ def np_idx_to_one_hot(idx, order='ACGT', extradims=None):
 
 
 def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
-                     middle=True, stride=1, batch_size=100000,
-                     one_hot_converter=np_idx_to_one_hot, offset=None,
-                     seed=None, verbose=False):
+                     middle=False, stride=1, batch_size=1024,
+                     chunk_size=128000, one_hot_converter=np_idx_to_one_hot,
+                     offset=None, seed=None, verbose=False,
+                     return_index=False, flanks=None):
     """Predict profile.
 
     Parameters
@@ -242,17 +252,18 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
     reverse : bool, default=False
         If True predict on reverse strand. Default is False for predicting on
         forward strand.
-    middle : bool, default=True
+    middle : bool, default=False
         Whether to use only the middle half of output heads for deriving
         predictions. This results in no predictions on sequence edges.
     stride : int, default=1
         Stride to use for prediction. Using a value other than 1 will result
         in bases being skipped and make prediction faster
-    batch_size : int, default=1000
+    batch_size : int, default=1024
+        Batch_size for model.predict().
+    chunk_size : int, default=128000
         Number of full sequences to feed to model.predict() at once. This is
-        different from the model batch_size, which is derived inside
-        model.predict(). The constraint here is the total number of one-hot
-        encoded sequence slides that can fit into memory.
+        different from the model batch_size. The constraint here is the total
+        number of one-hot encoded sequence slides that can fit into memory.
     one_hot_converter : function, default=np_idx_to_one_hot
         Function taking as input an array of indexes into 'ACGT' with shape
         (n_windows, window_length) and converts it to the required model input
@@ -265,15 +276,54 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
         Value of seed to use for choosing random offset.
     verbose : bool, default=False
         If True, print information messages.
+    return_index : bool, default=False
+        If True, return indices corresponding to the predictions.
+    flanks : tuple of array, default=None
+        Tuple of 2 arrays flank_keft and flank_right to be added at the start
+        and end respectively of each sequence to get prediction on the entire
+        sequence.
 
     Returns
     -------
-    ndarray
+    preds : ndarray
         Array of predictions with same shape as seqs, except on the last
         dimension, containing predictions for that sequence.
+    indices : ndarray
+        Array of indices of preds into seqs to be taken with
+        np.take_along_axis, only provided if return_index is True.
     """
     # Copy sequence array and make 2D with sequence along the 2nd axis
     seqs2D = seqs.reshape(-1, seqs.shape[-1]).copy()
+    # pred_start: distance between fisrt prediction and sequence start
+    # pred_stop: distance between last prediction and sequence end
+    pred_start = 0
+    pred_stop = head_interval - 1
+    # Increase distances in case of middle predictions
+    if middle:
+        pred_start += winsize // 4
+        pred_stop += winsize // 4
+    print(pred_start, pred_stop)
+    # Add flanking sequences to make prediction along the entire sequence, and
+    # update distances
+    if flanks is not None:
+        flank_left, flank_right = flanks
+        flank_left = flank_left[seqs2D.shape[-1]-pred_start:]
+        pred_start -= len(flank_left)
+        flank_right = flank_right[:pred_stop]
+        pred_stop -= len(flank_right)
+        seqs2D = np.hstack([np.tile(flank_left, (len(seqs2D), 1)),
+                            seqs2D,
+                            np.tile(flank_right, (len(seqs2D), 1))])
+    print(len(flank_left), len(flank_right), seqs2D.shape)
+    print(pred_start, pred_stop)
+    # Determine indices of predictions along the sequence axis
+    if return_index:
+        indices = np.arange(pred_start + offset,
+                            seqs.shape[-1] - pred_stop,
+                            stride)
+        if reverse:
+            indices = np.flip(seqs.shape[-1] - indices)
+    print(indices)
     # Maybe reverse complement the sequences
     if reverse:
         seqs2D[seqs2D == 0] = -1
@@ -283,6 +333,7 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
         seqs2D[seqs2D == 2] = 1
         seqs2D[seqs2D == -1] = 2
         seqs2D = np.flip(seqs2D, axis=-1)
+    # Determine offset for prediction
     if offset is None:
         # Randomize offset
         if seed is not None:
@@ -292,8 +343,9 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
         offset %= stride
     if verbose:
         print(f'Predicting with stride {stride} and offset {offset}')
-    # Determine number of heads, of kept heads and length to jump once sliding
-    # prediction is done
+    # Determine number of windows in a slide, number of heads, of kept heads
+    # and length to jump once a slide is done
+    slide_length = head_interval // stride
     n_heads = winsize // head_interval
     if middle:
         jump_stride = winsize // 2
@@ -301,45 +353,43 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
     else:
         jump_stride = winsize
         n_kept_heads = n_heads
-    # Determine number of slides for reshaping
-    slide_length = head_interval // stride
-    # Get windows to predict on
-    slides = utils.strided_sliding_window_view(
+    # Get windows to predict on, and split them into chunks
+    windows = utils.strided_sliding_window_view(
         seqs2D[:, offset:],
         (len(seqs2D), winsize),
         stride=(jump_stride, stride),
         sliding_len=head_interval,
         axis=-1).reshape(-1, winsize)
-    # Split slides into batches
-    splits = np.split(slides,
-                      np.arange(batch_size, len(slides), batch_size))
+    chunks = np.split(windows,
+                      np.arange(chunk_size, len(windows), chunk_size))
 
     # Deal with the last slide
     # Last position where a window can be taken
     last_valid_pos = seqs2D.shape[-1] - winsize
     # Last position where a full slide can be taken
     last_slide_start = last_valid_pos - head_interval + stride
-    # Adjust last_slide_start to offset
+    # Adjust last_slide_start to offset (for continuity)
     last_slide_start -= (last_slide_start - offset) % stride
-    # Difference between last slide in `slides` and last_slide_start
+    # Distance between last slide in `slides` and last_slide_start
     last_jump = (last_slide_start - offset) % jump_stride
-    # Add extra slides if there is still a window to predict on
+    # Add extra windows if there is still a window to predict on
     if last_jump != 0:
-        extra_slides = utils.strided_sliding_window_view(
+        extra_windows = utils.strided_sliding_window_view(
             seqs2D[:, last_slide_start:],
             (len(seqs2D), winsize),
             stride=(jump_stride, stride),
             sliding_len=head_interval,
             axis=-1).reshape(-1, winsize)
-        splits += np.split(
-            extra_slides,
-            np.arange(batch_size, len(extra_slides), batch_size))
+        chunks += np.split(
+            extra_windows,
+            np.arange(chunk_size, len(extra_windows), chunk_size))
 
     # Make predictions
     preds = []
-    for split in splits:
+    for chunk in chunks:
         # Convert to one-hot and predict
-        pred = model.predict(one_hot_converter(split)).squeeze()
+        pred = model.predict(one_hot_converter(chunk),
+                             batch_size=batch_size).squeeze()
         # Collect garbage to prevent memory leak from model.predict()
         gc.collect()
         preds.append(pred)
@@ -361,7 +411,10 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
     # Maybe reverse predictions
     if reverse:
         preds = np.flip(preds, axis=-1)
-    return preds
+    if return_index:
+        return preds, indices
+    else:
+        return preds
 
 
 def get_profile_hint_old(seqs, model, winsize, head_interval, reverse=False,
@@ -631,25 +684,34 @@ def main(args):
             idx, order=args.one_hot_order, extradims=extradims)
 
     if model.output_shape[1] == 1:
-        fig_offset = 0
 
-        def predicter(seqs, reverse=False, offset=None):
+        def predicter(seqs, reverse=False, offset=None, flanks=None):
             return tf_utils.get_profile(
                 seqs, model, winsize, reverse=reverse, stride=args.stride,
                 batch_size=args.batch_size, verbose=args.verbose,
-                one_hot_converter=one_hot_converter, offset=offset)
+                one_hot_converter=one_hot_converter, offset=offset,
+                flanks=flanks)
+
     else:
         head_interval = winsize // model.output_shape[1]
         assert head_interval % args.stride == 0
-        fig_offset = head_interval - args.stride
 
-        def predicter(seqs, reverse=False, offset=None):
+        def predicter(seqs, reverse=False, offset=None, flanks=None):
             return get_profile_hint(
                 seqs, model, winsize, head_interval=head_interval,
                 middle=args.middle_pred, reverse=reverse, stride=args.stride,
-                batch_size=args.batch_size, verbose=args.verbose,
-                one_hot_converter=one_hot_converter, offset=offset)
-
+                batch_size=args.batch_size, chunk_size=args.chunk_size,
+                one_hot_converter=one_hot_converter, offset=offset,
+                verbose=args.verbose, return_index=True, flanks=flanks)
+    # Extract flanking sequences
+    if args.flanks:
+        with np.load(args.flanks) as f:
+            flank_left = f['left']
+            flank_right = f['right']
+            assert (flank_left.ndim == flank_right.ndim
+                    and flank_left.ndim <= 2)
+            if flank_left.ndim == 2:
+                assert len(flank_left) == len(flank_right)
     # Generate and save start sequences
     if args.seed != -1:
         np.random.seed(args.seed)
@@ -677,14 +739,22 @@ def main(args):
             print(f'Step {step}')
         # Generate all mutations, and associated mutation energy
         seqs, mut_energy = all_mutations(seqs, seen_bases)
+        if args.flanks:
+            if flank_left.ndim == 1:
+                flanks = (flank_left, flank_right)
+            else:
+                flank_idx = np.random.randint(0, len(flank_left))
+                flanks = (flank_left[flank_idx], flank_right[flank_idx])
         # Predict on forward and reverse strands
-        preds = predicter(seqs, offset=np.random.randint(0, args.stride))
-        preds_rev = predicter(seqs, offset=np.random.randint(0, args.stride),
-                              reverse=True)
+        preds, indices = predicter(
+            seqs, offset=np.random.randint(0, args.stride), flanks=flanks)
+        preds_rev, indices_rev = predicter(
+            seqs, offset=np.random.randint(0, args.stride), flanks=flanks,
+            reverse=True)
         # Compute energy components
         gc_energy = GC_energy(seqs, args.target_gc)
-        for_energy = args.loss(args.target[:preds.shape[-1]], preds)
-        rev_energy = args.loss(args.target[-preds_rev.shape[-1]:], preds_rev)
+        for_energy = args.loss(args.target[indices], preds)
+        rev_energy = args.loss(args.target[indices_rev], preds_rev)
         energy_list = [gc_energy, for_energy, rev_energy, mut_energy]
         # Choose best mutation by kMC method
         sel_idx, sel_energies = select(energy_list, args.weights,
@@ -707,20 +777,16 @@ def main(args):
         if args.n_seqs == 1:
             pfor = np.repeat(preds[0, sel_idx].squeeze(), args.stride)
             prev = np.repeat(preds_rev[0, sel_idx].squeeze(), args.stride)
-            axes.plot(pfor, label='forward')
-            axes.plot(np.arange(fig_offset, len(prev)+fig_offset),
-                      prev, label='reverse', alpha=0.8)
+            axes.plot(indices, pfor, label='forward')
+            axes.plot(indices_rev, prev, label='reverse', alpha=0.8)
             axes.legend()
         else:
             for ax, pfor, prev in zip(axes.flatten(),
                                       preds[np.arange(len(seqs)), sel_idx],
                                       preds_rev[np.arange(len(seqs)), sel_idx]
                                       ):
-                pfor = np.repeat(pfor, args.stride)
-                prev = np.repeat(prev, args.stride)
-                ax.plot(pfor, label='forward')
-                ax.plot(np.arange(fig_offset, len(prev)+fig_offset),
-                        prev, label='reverse', alpha=0.8)
+                ax.plot(indices, pfor, label='forward')
+                ax.plot(indices_rev, prev, label='reverse', alpha=0.8)
                 ax.legend()
         fig.savefig(Path(args.output_dir, "pred_figs",
                          f"mut_preds_step{step}.png"),
