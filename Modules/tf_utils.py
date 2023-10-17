@@ -875,11 +875,30 @@ class PredGeneratorFromIdx(Sequence):
         # Return back in original shape, last dimension being pred_length
         return preds.reshape(self.original_shape[:-1] + (-1,))
 
+    def get_indices(self, reverse=False, kept_heads_start=None):
+        if self.head_interval is not None:
+            pred_start = 0
+            pred_stop = self.head_interval - 1
+            if kept_heads_start is not None:
+                pred_start += kept_heads_start*self.head_interval
+                pred_stop += (self.n_heads
+                              - self.n_kept_heads
+                              - kept_heads_start)*self.head_interval
+        else:
+            pred_start = self.winsize // 2
+            pred_stop = self.winsize // 2
+        positions = np.arange(pred_start + self.offset,
+                              self.original_shape[-1] - pred_stop,
+                              self.stride)
+        if reverse:
+            positions = np.flip(self.original_shape[-1] - positions + 1)
+        return positions
 
-def get_profile(seqs, model, winsize, head_interval=None, middle=True,
+
+def get_profile(seqs, model, winsize, head_interval=None, middle=False,
                 reverse=False, stride=1, offset=None, batch_size=1024,
                 one_hot_converter=utils.np_idx_to_one_hot, seed=None,
-                verbose=False):
+                verbose=False, return_index=False):
     """Predict profile.
 
     Parameters
@@ -895,7 +914,7 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=True,
         Spacing between outputs of the model, for a model with multiple
         outputs starting at first window position and with regular spacing.
         If None, model must have a single output in the middle of the window.
-    middle : bool, default=True
+    middle : bool, default=False
         Whether to use only the middle half of output heads for deriving
         predictions. This results in no predictions on sequence edges. If
         head_interval is not set, this parameter is ignored.
@@ -919,12 +938,17 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=True,
         Value of seed to use for choosing random offset.
     verbose : bool, default=False
         If True, print information messages.
+    return_index : bool, default=False
+        If True, return indices corresponding to the predictions.
 
     Returns
     -------
-    ndarray
+    preds : ndarray
         Array of predictions with same shape as seqs, except on the last
         dimension, containing predictions for that sequence.
+    indices : ndarray
+        Array of indices of preds into seqs to be taken with
+        np.take_along_axis, only provided if return_index is True.
     """
     # Maybe reverse complement the sequences
     if reverse:
@@ -969,7 +993,12 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=True,
     # Maybe reverse predictions
     if reverse:
         preds = np.flip(preds, axis=-1)
-    return preds
+    # Maybe return indices
+    if return_index:
+        indices = gen.get_indices(reverse, kept_heads_start)
+        return preds, indices
+    else:
+        return preds
 
 
 def predict(model, one_hot_chr, winsize, head_interval=None, reverse=False,
