@@ -319,7 +319,7 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
                             seqs.shape[-1] - pred_stop,
                             stride)
         if reverse:
-            indices = np.flip(seqs.shape[-1] - indices)
+            indices = np.flip(seqs.shape[-1] - indices - 1)
     # Maybe reverse complement the sequences
     if reverse:
         seqs2D[seqs2D == 0] = -1
