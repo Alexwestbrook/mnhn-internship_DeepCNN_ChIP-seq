@@ -719,7 +719,7 @@ def main(args):
         freq_kmer = pd.read_csv(args.kmer_file,
                                 index_col=[i for i in range(args.k)])
         seqs = utils.random_sequences(args.n_seqs, args.length,
-                                      freq_kmer['W303'], out='idx')
+                                      freq_kmer.iloc[:, 0], out='idx')
         np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
     # Initialize array of already seen bases for each position
     seen_bases = np.eye(4, dtype=int)[seqs]
