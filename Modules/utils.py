@@ -2164,7 +2164,7 @@ def repeat_along_diag(a, r):
 
 
 def exp_normalize(x, axis=-1):
-    res = np.exp(x - np.max(x))
+    res = np.exp(x - np.max(x, axis=axis, keepdims=True))
     return res / np.sum(res, axis=axis, keepdims=True)
 
 
