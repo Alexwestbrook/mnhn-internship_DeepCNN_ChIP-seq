@@ -306,7 +306,7 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
     # update distances
     if flanks is not None:
         flank_left, flank_right = flanks
-        flank_left = flank_left[seqs2D.shape[-1]-pred_start:]
+        flank_left = flank_left[len(flank_left)-pred_start:]
         pred_start -= len(flank_left)
         flank_right = flank_right[:pred_stop]
         pred_stop -= len(flank_right)
