@@ -891,7 +891,7 @@ class PredGeneratorFromIdx(Sequence):
                               self.original_shape[-1] - pred_stop,
                               self.stride)
         if reverse:
-            positions = np.flip(self.original_shape[-1] - positions + 1)
+            positions = np.flip(self.original_shape[-1] - positions - 1)
         return positions
 
 
