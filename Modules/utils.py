@@ -2658,6 +2658,7 @@ def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out='seq'):
         'ACGTN' or 3D-array of one-hot encoded bases
 
     """
+    assert n_seqs >= 1 and seq_length >= 0
     # Array of bases for fast indexing
     letters = np.array(list('ACGTN'))
 
@@ -2682,9 +2683,11 @@ def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out='seq'):
     # Get first k-mer given k-mer distribution
     r_start = np.random.choice(len(freq_kmers), n_seqs,
                                p=freq_kmers / freq_kmers.sum())
-    seqs[:, :k] = np.array(list(it.product(range(4), repeat=k)))[r_start]
+    seqs[:, :k] = np.array(
+        list(it.product(range(4), repeat=k)))[r_start, :seq_length]
     # Generate random numbers for all iterations
-    r = np.random.random((n_seqs, seq_length - k))
+    if seq_length > k:
+        r = np.random.random((n_seqs, seq_length - k))
     # Get other bases given k-mer distribution, previous (k-1)-mer and random
     # numbers
     for i in range(k, seq_length):
