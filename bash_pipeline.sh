@@ -21,18 +21,38 @@ data_dir='/home/alex/shared_folder'
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp2e-4 -n 2 -l 4000 --steps 500 -t 0.0002 -s 128 --seed 1 -v
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp1e-4 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 --seed 1 -v
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp5e-5 -n 2 -l 4000 --steps 500 -t 0.00005 -s 128 --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp2e-4_mid -n 2 -l 4000 --steps 500 -t 0.0002 -s 128 -mid --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp1e-4_mid -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp5e-5_mid -n 2 -l 4000 --steps 500 -t 0.00005 -s 128 -mid --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp2e-4 -n 2 -l 4000 --steps 500 -t 0.0002 -s 128 -targ 1 --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp1e-4 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -targ 1 --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp5e-5 -n 2 -l 4000 --steps 500 -t 0.00005 -s 128 -targ 1 --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp2e-4_mid -n 2 -l 4000 --steps 500 -t 0.0002 -s 128 -mid -targ 1 --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp1e-4_mid -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -mid -targ 1 --seed 1 -v
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp5e-5_mid -n 2 -l 4000 --steps 500 -t 0.00005 -s 128 -mid -targ 1 --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp2e-4_mid -n 2 -l 4000 --steps 500 -t 0.0002 -s 128 -mid --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp1e-4_mid -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/lowpol_4kb_temp5e-5_mid -n 2 -l 4000 --steps 500 -t 0.00005 -s 128 -mid --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp2e-4 -n 2 -l 4000 --steps 500 -t 0.0002 -s 128 -targ 1 --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp1e-4 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -targ 1 --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp5e-5 -n 2 -l 4000 --steps 500 -t 0.00005 -s 128 -targ 1 --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp2e-4_mid -n 2 -l 4000 --steps 500 -t 0.0002 -s 128 -mid -targ 1 --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp1e-4_mid -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -mid -targ 1 --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/highpol_4kb_temp5e-5_mid -n 2 -l 4000 --steps 500 -t 0.00005 -s 128 -mid -targ 1 --seed 1 -v
 
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test89 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 --seed 1 -v --flanks $data_dir/SCerevisiae/genome/W303_Mmmyco_random1kbflanks_ACGTidx.npz
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test90 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 1 -v --flanks $data_dir/SCerevisiae/genome/W303_Mmmyco_random1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test89 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 --seed 1 -v --flanks $data_dir/SCerevisiae/genome/W303_Mmmyco_random1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test90 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 1 -v --flanks $data_dir/SCerevisiae/genome/W303_Mmmyco_random1kbflanks_ACGTidx.npz
+
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test91 -m $data_dir/JB_seqdes/weight_CNN_RNA_seq_2001_12_8_4_SRR7131299.hdf5 -ord ATGC -n 2 -l 4000 --steps 50 -t 0.0001 -s 100 --seed 1 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test92 -m $data_dir/JB_seqdes/weight_CNN_RNA_seq_2001_12_8_4_SRR7131299.hdf5 -ord ATGC -n 2 -l 4000 --steps 500 -t 0.0001 -s 100 --seed 1 -v --flanks random
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test93 -n 1 -l 4000 --steps 500 -t 0.0001 -s 128 --seed 1 -v --flanks random
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test94 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 --seed 1 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_midpeak1kb.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test95 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 100 --seed 1 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_sharpnuc147_linker20.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test96 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 10 -t 0.0001 -s 100 --seed 1 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_sharpnuc147_linker20.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test97 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 10 -t 0.0001 -s 16 --seed 1 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_sharpnuc147_linker20.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test98 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 10 -t 0.0001 -s 16 --seed 1 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_sharpnuc147_linker20_middepleted1kb.npz
+
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 2 -v
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 3 -v --flanks random
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_highpol_10seq -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 4 -v  -targ 1
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_highpol_10seq_randomflanks -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 5 -v -targ 1 --flanks random
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_peakpol200bp_10seq -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 6 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_midpeak200b.npz
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_peakpol200bp_10seq_randomflanks -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 7 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_midpeak200b.npz --flanks random
+
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test99 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 1 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_sharpnuc147_linker20.npz
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test100 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 1 -v --target_file $data_dir/SCerevisiae/generated/targets/4kb_sharpnuc147_linker20_middepleted1kb.npz
+
 
 # writing_dir='../'
 # bbmap_dir='../bbmap'
