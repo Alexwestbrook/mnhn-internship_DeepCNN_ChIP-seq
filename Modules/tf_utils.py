@@ -155,6 +155,21 @@ def correlate(y_true, y_pred):
     return sigma_XY/(sigma_X*sigma_Y + K.epsilon())
 
 
+def np_mae_cor(y_true, y_pred, axis=-1):
+    """Numpy equivalent of mae_cor"""
+    X = y_true - np.mean(y_true)
+    Y = y_pred - np.mean(y_pred, axis=axis, keepdims=True)
+
+    sigma_XY = np.sum(X*Y, axis=axis)
+    sigma_X = np.sqrt(np.sum(X*X))
+    sigma_Y = np.sqrt(np.sum(Y*Y, axis=axis))
+
+    cor = sigma_XY/(sigma_X*sigma_Y + np.finfo(y_pred.dtype).eps)
+    mae = np.mean(np.abs(y_true - y_pred), axis=axis)
+
+    return (1 - cor) + mae
+
+
 # Generators
 class DataGenerator(Sequence):
     def __init__(self,
@@ -761,8 +776,20 @@ class PredGeneratorFromIdx(Sequence):
                  one_hot_converter,
                  stride=1,
                  offset=0,
+                 reverse=False,
                  head_interval=None,
                  jump_stride=None):
+        # Maybe reverse complement the data
+        if reverse:
+            # Copy data array before modification
+            data = data.copy()
+            data[data == 0] = -1
+            data[data == 3] = 0
+            data[data == -1] = 3
+            data[data == 1] = -1
+            data[data == 2] = 1
+            data[data == -1] = 2
+            data = np.flip(data, axis=-1)
         assert offset >= 0 and offset < stride
         assert winsize > 0
         if head_interval is not None:
@@ -830,6 +857,7 @@ class PredGeneratorFromIdx(Sequence):
         self.one_hot_converter = one_hot_converter
         self.stride = stride
         self.offset = offset
+        self.reverse = reverse
         self.head_interval = head_interval
         self.jump_stride = jump_stride
 
@@ -872,10 +900,14 @@ class PredGeneratorFromIdx(Sequence):
             last_part = preds[:, -1, -(self.last_jump // self.stride):]
             preds = np.concatenate([first_part, last_part],
                                    axis=1)  # shape (n_seqs, pred_length)
-        # Return back in original shape, last dimension being pred_length
-        return preds.reshape(self.original_shape[:-1] + (-1,))
+        # Put back in original shape, last dimension being pred_length
+        preds = preds.reshape(self.original_shape[:-1] + (-1,))
+        # Maybe reverse predictions
+        if self.reverse:
+            preds = np.flip(preds, axis=-1)
+        return preds
 
-    def get_indices(self, reverse=False, kept_heads_start=None):
+    def get_indices(self, kept_heads_start=None):
         if self.head_interval is not None:
             pred_start = 0
             pred_stop = self.head_interval - 1
@@ -890,7 +922,7 @@ class PredGeneratorFromIdx(Sequence):
         positions = np.arange(pred_start + self.offset,
                               self.original_shape[-1] - pred_stop,
                               self.stride)
-        if reverse:
+        if self.reverse:
             positions = np.flip(self.original_shape[-1] - positions - 1)
         return positions
 
@@ -898,7 +930,7 @@ class PredGeneratorFromIdx(Sequence):
 def get_profile(seqs, model, winsize, head_interval=None, middle=False,
                 reverse=False, stride=1, offset=None, batch_size=1024,
                 one_hot_converter=utils.np_idx_to_one_hot, seed=None,
-                verbose=False, return_index=False):
+                verbose=False, return_index=False, flanks=None):
     """Predict profile.
 
     Parameters
@@ -940,6 +972,10 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=False,
         If True, print information messages.
     return_index : bool, default=False
         If True, return indices corresponding to the predictions.
+    flanks : tuple of array, default=None
+        Tuple of 2 arrays flank_keft and flank_right to be added at the start
+        and end respectively of each sequence to get prediction on the entire
+        sequence.
 
     Returns
     -------
@@ -950,17 +986,7 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=False,
         Array of indices of preds into seqs to be taken with
         np.take_along_axis, only provided if return_index is True.
     """
-    # Maybe reverse complement the sequences
-    if reverse:
-        # Copy sequence array before modification
-        seqs = seqs.copy()
-        seqs[seqs == 0] = -1
-        seqs[seqs == 3] = 0
-        seqs[seqs == -1] = 3
-        seqs[seqs == 1] = -1
-        seqs[seqs == 2] = 1
-        seqs[seqs == -1] = 2
-        seqs = np.flip(seqs, axis=-1)
+    # Dertermine offset for prediction
     if offset is None:
         # Randomize offset
         if seed is not None:
@@ -970,32 +996,53 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=False,
         offset %= stride
     if verbose:
         print(f'Predicting with stride {stride} and offset {offset}')
+    # Determine mode specific parameters
     if head_interval is None:
         # Single output model
         jump_stride = None
         kept_heads_start = None
+        pred_start = winsize // 2
+        pred_stop = winsize // 2
     else:
         # Multiple output model with regular spacing
         if middle:
             # Make predictions only on middle heads
             jump_stride = winsize // 2
             kept_heads_start = 4
+            pred_start = winsize // 4
+            pred_stop = winsize // 4 + head_interval - 1
         else:
             # Make predictions on all heads
             jump_stride = winsize
             kept_heads_start = 0
+            pred_start = 0
+            pred_stop = head_interval - 1
+    # Add flanking sequences to make prediction along the entire sequence, and
+    # update distances
+    if flanks is not None:
+        flank_left, flank_right = flanks
+        flank_left = flank_left[len(flank_left)-pred_start:]
+        flank_right = flank_right[:pred_stop]
+        seqs = np.concatenate(
+            [np.tile(flank_left, seqs.shape[:-1] + (1,)),
+             seqs,
+             np.tile(flank_right, seqs.shape[:-1] + (1,))],
+            axis=-1)
     # Build a generator for prediction
     gen = PredGeneratorFromIdx(
         seqs, winsize, batch_size, one_hot_converter, stride=stride,
-        offset=offset, head_interval=head_interval, jump_stride=jump_stride)
+        offset=offset, reverse=reverse, head_interval=head_interval,
+        jump_stride=jump_stride)
     preds = model.predict(gen)
     preds = gen.reshaper(preds, kept_heads_start)
-    # Maybe reverse predictions
-    if reverse:
-        preds = np.flip(preds, axis=-1)
     # Maybe return indices
     if return_index:
-        indices = gen.get_indices(reverse, kept_heads_start)
+        indices = gen.get_indices(kept_heads_start)
+        if flanks is not None:
+            if reverse:
+                indices -= len(flank_right)
+            else:
+                indices -= len(flank_left)
         return preds, indices
     else:
         return preds
