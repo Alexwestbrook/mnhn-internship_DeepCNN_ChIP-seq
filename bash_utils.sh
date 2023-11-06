@@ -37,3 +37,9 @@ bamCoverage -p $threads -b $file.bam -o $file.bw --binSize 1 --extendReads
 gunzip -c $fastq1.gz | grep AGATCGGAAGAGCACACGTCTGAACTCCAGTCA
 gunzip -c $fastq2.gz | grep AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT
 
+# Dealing with background processes
+jobs # see background processes
+disown -p $pid # perd l'ownership du process
+# Ctrl + Z stops current terminal process (pause) then type
+bg %1 # bg is enough, 1 is the job number
+# to resume as background process
