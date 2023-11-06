@@ -4,8 +4,9 @@ import tensorflow as tf
 import keras.backend as K
 from tensorflow.keras import Sequential
 from tensorflow.keras.losses import binary_crossentropy
+import tensorflow.keras.layers as kl
 from tensorflow.keras.layers import Conv1D, MaxPool1D, concatenate, Dropout, \
-    Dense, Input, Flatten, BatchNormalization, Concatenate
+    Dense, Input, Flatten, BatchNormalization, Concatenate, add
 from tensorflow.keras.initializers import VarianceScaling
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import Model
@@ -30,7 +31,8 @@ def build_model(model_name,
         'mnase_model': mnase_model,
         'Yann_original': Yann_original,
         'Yann_with_init': Yann_with_init,
-        'Yann_with_init_and_padding': Yann_with_init_and_padding
+        'Yann_with_init_and_padding': Yann_with_init_and_padding,
+        'BPNet': BPNet
     }
     model = model_dict[model_name](
         read_length=read_length,
@@ -926,6 +928,40 @@ def Yann_with_init_and_padding(read_length=101,
                                           T=T,
                                           start_reweighting=start_reweighting,
                                           name='Yann_with_init_and_padding')
+    return model
+
+
+def BPNet(winsize=32768, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The uncompiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = kl.Input(shape=(winsize, 4))
+
+    x1 = kl.Conv1D(64, kernel_size=25, padding="same", activation='relu',
+                   kernel_initializer=kernel_init)(input_layer)
+
+    for dil in range(8):
+        x2 = kl.Conv1D(64, kernel_size=3, dilation_rate=2**dil, padding="same",
+                       activation='relu', kernel_initializer=kernel_init)(x1)
+        x2, x1 = kl.add([x1, x2]), x2
+
+    x = kl.Reshape((-1, 1, 64))(x)
+    x = kl.Conv2DTranspose(1, kernel_size=25, padding='same',
+                           kernel_initializer=kernel_init)(x)
+    x = kl.Reshape((-1, 1))
+    model = tf.keras.Model(input_layer, x)
     return model
 
 
