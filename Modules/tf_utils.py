@@ -1020,14 +1020,25 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=False,
     # Add flanking sequences to make prediction along the entire sequence, and
     # update distances
     if flanks is not None:
-        flank_left, flank_right = flanks
-        flank_left = flank_left[len(flank_left)-pred_start:]
-        flank_right = flank_right[:pred_stop]
-        seqs = np.concatenate(
-            [np.tile(flank_left, seqs.shape[:-1] + (1,)),
-             seqs,
-             np.tile(flank_right, seqs.shape[:-1] + (1,))],
-            axis=-1)
+        if reverse:
+            leftpad, rightpad = pred_stop, pred_start
+        else:
+            leftpad, rightpad = pred_start, pred_stop
+        if flanks == 'self':
+            flank_left = np.tile(seqs, leftpad // seqs.shape[-1] + 1)
+            flank_left = np.take(flank_left, np.arange(-leftpad, 0), axis=-1)
+            flank_right = np.tile(seqs, rightpad // seqs.shape[-1] + 1)
+            flank_right = np.take(flank_right, np.arange(0, rightpad), axis=-1)
+            seqs = np.concatenate([flank_left, seqs, flank_right], axis=-1)
+        elif flanks is not None:
+            flank_left, flank_right = flanks
+            flank_left = flank_left[len(flank_left)-leftpad:]
+            flank_right = flank_right[:rightpad]
+            seqs = np.concatenate(
+                [np.tile(flank_left, seqs.shape[:-1] + (1,)),
+                 seqs,
+                 np.tile(flank_right, seqs.shape[:-1] + (1,))],
+                axis=-1)
     # Build a generator for prediction
     gen = PredGeneratorFromIdx(
         seqs, winsize, batch_size, one_hot_converter, stride=stride,
@@ -1039,10 +1050,7 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=False,
     if return_index:
         indices = gen.get_indices(kept_heads_start)
         if flanks is not None:
-            if reverse:
-                indices -= len(flank_right)
-            else:
-                indices -= len(flank_left)
+            indices -= flank_left.shape[-1]
         return preds, indices
     else:
         return preds
