@@ -1009,7 +1009,7 @@ def z_score(preds, rel_indices=None):
     return (preds - mean)/std
 
 
-def smooth(values, window_size, mode='linear', sigma=1):
+def smooth(values, window_size, mode='linear', sigma=1, padding='same'):
     if mode == 'linear':
         box = np.ones(window_size) / window_size
     elif mode == 'gaussian':
@@ -1022,7 +1022,7 @@ def smooth(values, window_size, mode='linear', sigma=1):
         box /= np.sum(box)
     else:
         raise NameError("Invalid mode")
-    return convolve(values, box, mode='same')
+    return convolve(values, box, mode=padding)
 
 
 def binned_alignment_count_from_coord(coord: np.ndarray,
@@ -2326,6 +2326,119 @@ def indices_from_starts_ends(starts, ends):
 def indices_from_peaks(peaks):
     # ends must be excluded, ends-starts>0
     return indices_from_starts_ends(peaks[:, 0], peaks[:, 1])
+
+
+def apply_on_index(func, *args, length=None, neutral=0):
+    """Applies a function on arrays specified as indices and values.
+
+    Parameters
+    ----------
+    func : callable
+        Function to compute on arrays, must take the number of values as first
+        argument, then as many arrays as provided in args.
+    args : tuple of tuple of arrays
+        Each argument represents an array, it must be a tuple
+        (indices, values) for each array. Indices must be 1D, values can be
+        multi-dimensional, in which case indices will be taken along the last
+        axis.
+    length : int, default=None
+        Length of the output array. If None, the smallest possible length is
+        inferred from the indices in args.
+    neutral : int, default=0
+        Neutral element for the desired operation. This function requires that
+        func has a neutral element.
+
+    Returns
+    -------
+    ndarray
+        Result array of the full length, including nans where none of the
+        arrays had any values.
+    """
+    idxes, vals = zip(*args)
+    if length is None:
+        length = np.max([np.max(idx) for idx in idxes]) + 1
+    n_per_pos = np.zeros((1, length))
+    newvals = []
+    for idx, val in args:
+        val2D = val.reshape(-1, val.shape[-1])
+        newval = np.full((len(val2D), length), neutral, dtype=val.dtype)
+        newval[:, idx] = val2D
+        n_per_pos[0, idx] += 1
+        newvals.append(newval)
+    res = func(n_per_pos, *newvals)
+    res = np.where(n_per_pos == 0, np.nan, res)
+    return res.reshape(vals[0].shape[:-1] + (-1,))
+
+
+def mean_on_index(*args, length=None):
+    """Computes the mean of arrays specified as indices and values.
+
+    Parameters
+    ----------
+    args : tuple of tuple of arrays
+        Each argument represents an array, it must be a tuple
+        (indices, values) for each array. Indices must be 1D, values can be
+        multi-dimensional, in which case indices will be taken along the last
+        axis.
+    length : int, default=None
+        Length of the output array. If None, the smallest possible length is
+        inferred from the indices in args.
+
+    Returns
+    -------
+    ndarray
+        Result array of the full length, including nans where none of the
+        arrays had any values.
+    """
+    return apply_on_index(lambda n, *args: sum(args)/n, *args, length=length)
+
+
+def geometric_mean_on_index(*args, length=None):
+    """Computes the geometric mean of arrays specified as indices and values.
+
+    Parameters
+    ----------
+    args : tuple of tuple of arrays
+        Each argument represents an array, it must be a tuple
+        (indices, values) for each array. Indices must be 1D, values can be
+        multi-dimensional, in which case indices will be taken along the last
+        axis.
+    length : int, default=None
+        Length of the output array. If None, the smallest possible length is
+        inferred from the indices in args.
+
+    Returns
+    -------
+    ndarray
+        Result array of the full length, including nans where none of the
+        arrays had any values.
+    """
+    return apply_on_index(lambda n, *args: np.product(args, axis=0)**(1/n),
+                          *args, length=length, neutral=1)
+
+
+def max_on_index(*args, length=None):
+    """Computes the mx of arrays specified as indices and values.
+
+    Parameters
+    ----------
+    args : tuple of tuple of arrays
+        Each argument represents an array, it must be a tuple
+        (indices, values) for each array. Indices must be 1D, values can be
+        multi-dimensional, in which case indices will be taken along the last
+        axis.
+    length : int, default=None
+        Length of the output array. If None, the smallest possible length is
+        inferred from the indices in args.
+
+    Returns
+    -------
+    ndarray
+        Result array of the full length, including nans where none of the
+        arrays had any values.
+    """
+    return apply_on_index(lambda n, *args: np.max(args, axis=0),
+                          *args, length=length, neutral=-np.inf)
 
 
 # Random sequences generation
