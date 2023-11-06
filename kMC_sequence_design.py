@@ -74,8 +74,9 @@ def parsing():
         help="specifies to predict only on middle window")
     parser.add_argument(
         "--flanks", type=str,
-        help="file with flanking sequences to use for prediction, or 'random' "
-             "to get random flanks with specified kmer distribution")
+        help="file with flanking sequences to use for prediction, can also be "
+             "'random' to get random flanks with specified kmer distribution "
+             "or 'self' to use itself as flank as in tandem repeats")
     parser.add_argument(
         "-targ", "--target", type=float, nargs='+', default=[0],
         help="target profile for the designed sequences. If a single value, "
@@ -88,6 +89,38 @@ def parsing():
              "and reverse. If a single value, consider a flat target for the "
              "entire sequence, otherwise must be of same length as the "
              "sequences.")
+    parser.add_argument(
+        "-amp", "--amplitude", type=float, default=1,
+        help="amplitude for target profile")
+    parser.add_argument(
+        "-ilen", "--insertlen", type=int,
+        help="length of insert in target")
+    parser.add_argument(
+        "-ishape", "--insertshape", type=str, default='linear',
+        help="shape of insert. Must be either 'block', 'deplete', "
+             "'linear', 'sigmoid' or 'gaussian'")
+    parser.add_argument(
+        "-istart", "--insertstart", type=int,
+        help="Index of the position where the insert should start")
+    parser.add_argument(
+        "-bg", "--background", type=str, nargs=2, default=['low', 'low'],
+        help="background signal to put at the left and right of the insert")
+    parser.add_argument(
+        "-stdf", "--std_factor", type=float, default=1/4,
+        help="standard deviation for gaussian peak as fraction of length")
+    parser.add_argument(
+        "-sigs", "--sig_spread", type=float, default=6,
+        help="absolute value to compute the sigmoid up to on each side")
+    parser.add_argument(
+        "-per", "--period", type=int,
+        help="period of the target, makes it multipeak")
+    parser.add_argument(
+        "-plen", "--periodlen", type=int,
+        help="length of periodic peak in target")
+    parser.add_argument(
+        "-pshape", "--periodshape", type=str, default='gaussian',
+        help="shape of periodic peak. Must be either 'block', 'deplete', "
+             "'linear', 'sigmoid' or 'gaussian'")
     parser.add_argument(
         "--target_file", type=str,
         help="numpy binary file containing the target profile for the "
@@ -113,6 +146,10 @@ def parsing():
         help="maximum number of options to apply nonzero probability to. Only "
              "best options are kept for selection. Set to -1 for no maximum.")
     parser.add_argument(
+        "--mutfree_pos_file", type=str,
+        help="Numpy binary file with positions where mutations can be "
+             "performed.")
+    parser.add_argument(
         "-b", "--batch_size", type=int, default=1024,
         help="number of mutations to predict on at once")
     parser.add_argument(
@@ -130,7 +167,8 @@ def parsing():
             and set(args.one_hot_order) == set('ACGT'))
     for item in [args.k, args.n_seqs, args.length, args.steps,
                  args.stride, args.max_options, args.batch_size,
-                 args.chunk_size]:
+                 args.chunk_size, args.period, args.periodlen,
+                 args.insertstart]:
         assert item is None or item >= 1
     assert args.temperature > 0
     assert args.target_gc < 1 and args.target_gc > 0
@@ -150,6 +188,14 @@ def parsing():
                 args.target_rev = f['reverse']
         if args.start_seqs is None:
             args.length = len(args.target)
+    elif args.insertlen is not None:
+        args.target = make_target(
+            args.length, args.insertlen, args.amplitude,
+            ishape=args.insertshape, insertstart=args.insertstart,
+            background=args.background, period=args.period,
+            pinsertlen=args.periodlen, pshape=args.periodshape,
+            std_factor=args.std_factor, sig_spread=args.sig_spread)
+        args.target_rev = args.target
     else:
         # Forward target
         if len(args.target) == 1:
@@ -191,7 +237,7 @@ def GC_energy(seqs, target_gc):
                   - target_gc)
 
 
-def all_mutations(seqs, seen_bases):
+def all_mutations(seqs, seen_bases, mutfree_pos=None):
     """Perform all possible mutations and associate each its mutation energy.
 
     Mutation energy of a mutation X -> Y is defined as the number of times Y
@@ -206,6 +252,8 @@ def all_mutations(seqs, seen_bases):
     seen_bases : ndarray, shape=(n, l, 4)
         Array of occurence of each base at each position during the
         optimization process of each sequence
+    mutfree_pos : ndarray, default=None
+        Array of positions in length where mutations can be taken
 
     Returns
     -------
@@ -237,6 +285,12 @@ def all_mutations(seqs, seen_bases):
     # Select values associated with each base in seen_bases
     mut_energy = np.take_along_axis(seen_bases, mut_idx, axis=-1
                                     ).reshape(n_seqs, 3*length)
+    # Keep mutations only at specific positions
+    if mutfree_pos is not None:
+        mutfree_pos = np.ravel(mutfree_pos.reshape(-1, 1) * 3
+                               + np.arange(3).reshape(1, -1))
+        mutated = mutated[:, mutfree_pos]
+        mut_energy = mut_energy[:, mutfree_pos]
     return mutated, mut_energy
 
 
@@ -502,7 +556,7 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
         If True, print information messages.
     return_index : bool, default=False
         If True, return indices corresponding to the predictions.
-    flanks : tuple of array, default=None
+    flanks : tuple of array or 'self', default=None
         Tuple of 2 arrays flank_keft and flank_right to be added at the start
         and end respectively of each sequence to get prediction on the entire
         sequence.
@@ -528,7 +582,7 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
         offset %= stride
     if verbose:
         print(f'Predicting with stride {stride} and offset {offset}')
-    # pred_start: distance between fisrt prediction and sequence start
+    # pred_start: distance between first prediction and sequence start
     # pred_stop: distance between last prediction and sequence end
     if head_interval is not None:
         pred_start = 0
@@ -543,21 +597,32 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
     # Add flanking sequences to make prediction along the entire sequence, and
     # update distances
     if flanks is not None:
-        flank_left, flank_right = flanks
-        flank_left = flank_left[len(flank_left)-pred_start:]
-        pred_start -= len(flank_left)
-        flank_right = flank_right[:pred_stop]
-        pred_stop -= len(flank_right)
-        seqs2D = np.hstack([np.tile(flank_left, (len(seqs2D), 1)),
-                            seqs2D,
-                            np.tile(flank_right, (len(seqs2D), 1))])
+        if reverse:
+            leftpad, rightpad = pred_stop, pred_start
+        else:
+            leftpad, rightpad = pred_start, pred_stop
+        if flanks == 'self':
+            flank_left = np.tile(seqs2D, leftpad // seqs2D.shape[-1] + 1)
+            flank_left = flank_left[:, flank_left.shape[-1]-leftpad:]
+            flank_right = np.tile(seqs2D, rightpad // seqs2D.shape[-1] + 1)
+            flank_right = flank_right[:, :rightpad]
+            seqs2D = np.hstack([flank_left, seqs2D, flank_right])
+        else:
+            flank_left, flank_right = flanks
+            flank_left = flank_left[len(flank_left)-leftpad:]
+            flank_right = flank_right[:rightpad]
+            seqs2D = np.hstack([np.tile(flank_left, (len(seqs2D), 1)),
+                                seqs2D,
+                                np.tile(flank_right, (len(seqs2D), 1))])
     # Determine indices of predictions along the sequence axis
     if return_index:
         indices = np.arange(pred_start + offset,
-                            seqs.shape[-1] - pred_stop,
+                            seqs2D.shape[-1] - pred_stop,
                             stride)
         if reverse:
-            indices = np.flip(seqs.shape[-1] - indices - 1)
+            indices = np.flip(seqs2D.shape[-1] - indices - 1)
+        if flanks is not None:
+            indices -= flank_left.shape[-1]
     # Maybe reverse complement the sequences
     if reverse:
         seqs2D[seqs2D == 0] = -1
@@ -666,6 +731,68 @@ def rmse(y_true, y_pred):
         Array of same shape as y_true and y_pred but with last axis removed
     """
     return np.sqrt(np.mean((y_true - y_pred)**2, axis=-1))
+
+
+def make_shape(length, amplitude, shape='linear', background=['low', 'low'],
+               std_factor=1/4, sig_spread=6):
+    base_length = length
+    if background[0] == background[1]:
+        length = (length+1) // 2
+    if shape == 'block':
+        arr = np.full(length, amplitude)
+    elif shape == 'deplete':
+        arr = np.zeros(length)
+    elif shape == 'linear':
+        arr = np.linspace(0, amplitude, length)
+    elif shape == 'gaussian':
+        if background[0] != background[1]:
+            base_length = length*2 + 1
+        arr = np.exp(-(np.arange(length) - (base_length-1)/2)**2
+                     / (2*(base_length*std_factor)**2))
+        arr -= np.min(arr)
+        arr *= amplitude / np.max(arr)
+    elif shape == 'sigmoid':
+        x = np.linspace(-sig_spread, sig_spread, length)
+        arr = np.exp(x) / (1 + np.exp(x))
+        arr -= np.min(arr)
+        arr *= amplitude / np.max(arr)
+    if background[0] == 'high':
+        arr = amplitude - arr
+    if background[0] == background[1]:
+        if base_length % 2 != 0:
+            return np.concatenate([arr, arr[-2::-1]])
+        else:
+            return np.concatenate([arr, arr[::-1]])
+    else:
+        return arr
+
+
+def make_target(length, insertlen, amplitude, ishape='linear',
+                insertstart=None, period=None, pinsertlen=147,
+                pshape='gaussian', background=['low', 'low'], **kwargs):
+    if insertstart is None:
+        insertstart = (length - insertlen + 1) // 2
+    rightlen = length - insertlen - insertstart
+    if period is not None:
+        if insertlen == 0:
+            insertlen = period - pinsertlen
+            insertstart = (length - insertlen + 1) // 2
+            rightlen = length - insertlen - insertstart
+        insert = make_shape(insertlen, amplitude, shape='deplete')
+        pinsert = make_shape(pinsertlen, amplitude, shape=pshape, **kwargs)
+        tile = np.concatenate([pinsert, np.zeros(period - len(pinsert))])
+        backgr = np.tile(tile, length // (period) + 1)
+        leftside = backgr[insertstart-1::-1]
+        rightside = backgr[:rightlen]
+    else:
+        insert = make_shape(insertlen, amplitude, shape=ishape,
+                            background=background, **kwargs)
+        backgr_dict = {'low': lambda x: np.zeros(x),
+                       'high': lambda x: np.full(x, amplitude)}
+        leftside = backgr_dict[background[0]](insertstart)
+        rightside = backgr_dict[background[1]](rightlen)
+    target = np.concatenate([leftside, insert, rightside])
+    return target[:length]
 
 
 def select(energies, weights, temperature, step=None, maxoptions=None):
@@ -780,17 +907,15 @@ def main(args):
             one_hot_converter=one_hot_converter, offset=offset,
             verbose=args.verbose, return_index=True, flanks=flanks)
     # Extract flanking sequences
-    if args.flanks == 'random':
+    if args.flanks in ['random', 'self']:
         if head_interval is not None:
-            leftpad = 0
-            rightpad = head_interval - 1
+            pad = head_interval - 1
             # Increase distances in case of middle predictions
             if args.middle_pred:
-                leftpad += winsize // 4
-                rightpad += winsize // 4
+                pad += winsize // 4
         else:
-            leftpad = winsize // 2
-            rightpad = winsize // 2
+            pad = winsize // 2
+        flanks = args.flanks
     elif args.flanks is not None:
         with np.load(args.flanks) as f:
             flank_left = f['left']
@@ -804,6 +929,11 @@ def main(args):
                 flanks = (flank_left, flank_right)
     else:
         flanks = None
+    # Extract positions where mutations can be performed
+    if args.mutfree_pos_file is not None:
+        mutfree_pos = np.load(args.mutfree_pos_file)
+    else:
+        mutfree_pos = None
     # Extract kmer distribution
     freq_kmer = pd.read_csv(args.kmer_file,
                             index_col=[i for i in range(args.k)])
@@ -826,13 +956,12 @@ def main(args):
             print(time.time() - t0)
             print(f'Step {step}')
         # Generate all mutations, and associated mutation energy
-        seqs, mut_energy = all_mutations(seqs, seen_bases)
+        seqs, mut_energy = all_mutations(seqs, seen_bases, mutfree_pos)
         # Predict on forward and reverse strands
-        if args.flanks == 'random':
-            flanks = (utils.random_sequences(1, leftpad, freq_kmer.iloc[:, 0],
-                                             out='idx').ravel(),
-                      utils.random_sequences(1, rightpad, freq_kmer.iloc[:, 0],
-                                             out='idx').ravel())
+        if flanks == 'random':
+            randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0],
+                                              out='idx')
+            flanks = (randseqs[0], randseqs[1])
         elif flanks == 'choose_idx':
             flank_idx = np.random.randint(0, len(flank_left))
             flanks = (flank_left[flank_idx], flank_right[flank_idx])
