@@ -79,6 +79,7 @@ data_dir='/home/alex/shared_folder'
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test123 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 -v -ilen 500 -per 167 -plen 147 -pshape gaussian --seed 9
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test124 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 -v -ilen 1000 -per 167 -plen 147 -pshape gaussian --seed 9
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test125 -n 2 -l 4000 --steps 500 -t 0.0001 -s 128 -mid -v -targ 0 --flanks self --seed 9
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_selfflank -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid -v -targ 0 --flanks self --seed 10
 
 
 # writing_dir='../'
