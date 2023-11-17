@@ -3,8 +3,7 @@ import os
 from pathlib import Path
 from collections import defaultdict
 import itertools as it
-import warnings
-from typing import Callable, Optional, Union
+from typing import Callable
 import re
 import json
 
@@ -1470,14 +1469,17 @@ def sliding_correlation(X, Y, offsets):
 
 def fast_sliding_correlation(X, Y, offsets):
     """Higher memory footprint, will crash with too much data"""
+    # The correlation is computed on as many values for each offset. 
+    # The results may be different depending on the max and min offset
     min_offset = np.min(offsets)
     max_offset = np.max(offsets)
-    max_len = len(X) - max_offset + min_offset
-    offsets -= min_offset
+    negmin = max(-min_offset, 0)
+    max_len = len(X) - max_offset - negmin
+    offsets += negmin
     windows = offsets.reshape(-1, 1) + np.arange(max_len).reshape(1, -1)
     X_slides = X[windows]
     slide_corrs = lineWiseCorrcoef(
-        X_slides, Y[-min_offset:-min_offset + max_len])
+        X_slides, Y[negmin : negmin + max_len])
     return slide_corrs
 
 
@@ -1505,7 +1507,7 @@ def make_peaks(peak_mask: np.ndarray,
     peak_mask : ndarray
         1D-array of boolean values along the chromosome
     length_thres : int, default=1
-        Minimum length required for peaks, any peak below or equal to that
+        Minimum length required for peaks, any peak strictly below that
         length will be discarded
     tol : int, default=1
         Distance between consecutive peaks under which the peaks are merged
@@ -1533,7 +1535,7 @@ def make_peaks(peak_mask: np.ndarray,
     # # Check that change_idx contains as many starts as ends
     # assert (len(change_idx) % 2 == 0)
     # Merge consecutive peaks if their distance is below a threshold
-    if tol != 0:
+    if tol > 1:
         # Compute difference between end of peak and start of next one
         diffs = change_idx[2::2] - change_idx[1:-1:2]
         # Get index when difference is below threshold, see below for matching
@@ -1551,7 +1553,7 @@ def make_peaks(peak_mask: np.ndarray,
     peaks = np.reshape(change_idx, (-1, 2))
     # Compute lengths of peaks and remove the ones below given threshold
     lengths = np.diff(peaks, axis=1).ravel()
-    peaks = peaks[lengths > length_thres]
+    peaks = peaks[lengths >= length_thres]
     return peaks
 
 
@@ -2202,7 +2204,7 @@ def clip_to_nonzero_min(array):
 
 
 def nb_boolean_true_clusters(array: np.ndarray) -> int:
-    """Compute the number of clusters or True values in array.
+    """Compute the number of clusters of True values in array.
 
     Parameters
     ----------
@@ -2679,7 +2681,7 @@ def dinuc_shuffle(seq, num_shufs=None, rng=None):
     L x D array).
     From github.com/kundajelab/deeplift/blob/master/deeplift/dinuc_shuffle.py
     """
-    if type(seq) is str:
+    if isinstance(seq, str):
         arr = string_to_char_array(seq)
     elif type(seq) is np.ndarray and len(seq.shape) == 2:
         seq_len, one_hot_dim = seq.shape
@@ -2703,7 +2705,7 @@ def dinuc_shuffle(seq, num_shufs=None, rng=None):
         inds = np.where(mask)[0]
         shuf_next_inds.append(inds + 1)  # Add 1 for next token
 
-    if type(seq) is str:
+    if isinstance(seq, str):
         all_results = []
     else:
         all_results = np.empty(
@@ -2730,7 +2732,7 @@ def dinuc_shuffle(seq, num_shufs=None, rng=None):
             counters[t] += 1
             result[j] = tokens[ind]
 
-        if type(seq) is str:
+        if isinstance(seq, str):
             all_results.append(char_array_to_string(chars[result]))
         else:
             all_results[i] = tokens_to_one_hot(chars[result], one_hot_dim)
