@@ -10,7 +10,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import tensorflow as tf
 
-from Modules import utils, tf_utils
+from Modules import utils
 from Modules.tf_utils import mae_cor, correlate, np_mae_cor
 
 
@@ -753,7 +753,7 @@ def make_shape(length, amplitude, shape='linear', background=['low', 'low'],
         arr *= amplitude / np.max(arr)
     elif shape == 'sigmoid':
         x = np.linspace(-sig_spread, sig_spread, length)
-        arr = np.exp(x) / (1 + np.exp(x))
+        arr = 1 / (1 + np.exp(-x))
         arr -= np.min(arr)
         arr *= amplitude / np.max(arr)
     if background[0] == 'high':
@@ -945,7 +945,7 @@ def main(args):
     else:
         seqs = utils.random_sequences(args.n_seqs, args.length,
                                       freq_kmer.iloc[:, 0], out='idx')
-        np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
+    np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
     # Initialize array of already seen bases for each position
     seen_bases = np.eye(4, dtype=int)[seqs]
     # Determine figure parameters
