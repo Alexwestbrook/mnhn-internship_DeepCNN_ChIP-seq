@@ -187,13 +187,13 @@ def one_hot_encode(seq, length=None, one_hot_type=bool, order='ACGT'):
     for i, base in enumerate(seq):
         if i >= length:
             break
-        if base == order[0]:
+        if base.upper() == order[0]:
             one_hot[i, 0] = 1
-        elif base == order[1]:
+        elif base.upper() == order[1]:
             one_hot[i, 1] = 1
-        elif base == order[2]:
+        elif base.upper() == order[2]:
             one_hot[i, 2] = 1
-        elif base == order[3]:
+        elif base.upper() == order[3]:
             one_hot[i, 3] = 1
     return one_hot
 
@@ -441,16 +441,92 @@ def np_idx_to_one_hot(idx, order='ACGT', extradims=None):
     Returns
     -------
     ndarray
-        Array with same shape as idx, in one-hot format.
+        Array in one-hot format.
     """
     assert (len(order) == 4 and set(order) == set('ACGT'))
-    converter = np.zeros((4, 4), dtype=bool)
+    converter = np.zeros((5, 4), dtype=bool)
     for i, c in enumerate('ACGT'):
         converter[i, order.find(c)] = 1
     one_hot = converter[idx]
     if extradims is not None:
         one_hot = np.expand_dims(one_hot, axis=extradims)
     return one_hot
+
+
+def one_hot_to_idx(one_hot, order='ACGT'):
+    """Convert array in one-hot format into indexes.
+
+    Parameters
+    ----------
+    one_hot : ndarray
+        Array of one-hot encoded DNA, with one_hot values along last axis
+    order : str, default='ACGT'
+        String representation of the order in which to encode bases. Default
+        value of 'ACGT' means that A has the representation with 1 in first
+        position, C with 1 in second position, etc...
+
+    Returns
+    -------
+    ndarray
+        Array of indexes with same shape as one_hot, with last axis collapsed.
+    """
+    if order != 'ACGT':
+        converter = np.zeros(4, dtype=int)
+        for i, c in enumerate('ACGT'):
+            converter[order.find(c)] = i
+        one_hot = one_hot[..., converter]
+    return np.argmax(one_hot, axis=-1) + 4 * (np.sum(one_hot, axis=-1) != 1)
+
+
+def RC_one_hot(one_hot, order):
+    """Compute reverse complement of one_hot array.
+
+    Parameters
+    ----------
+    one_hot : ndarray, shape=(n, 4)
+        Array of one-hot encoded DNA, with one_hot values along last axis
+    order : str, default='ACGT'
+        String representation of the order in which to encode bases. Default
+        value of 'ACGT' means that A has the representation with 1 in first
+        position, C with 1 in second position, etc...
+
+    Returns
+    -------
+    ndarray
+        Reverse complement of one_hot.
+    """
+    # Dictionary mapping base to its complement
+    base_to_comp = dict(zip('ACGT', 'TGCA'))
+    # Array to reorder one_hot columns
+    converter = np.zeros(4, dtype=int)
+    for i, c in enumerate(order):
+        converter[order.find(base_to_comp[c])] = i
+    return one_hot[::-1, converter]
+
+
+def RCdna(s):
+    """Reverse complement a string DNA sequence"""
+    res = []
+    for c in s[::-1]:
+        if c == 'A':
+            res.append('T')
+        elif c == 'a':
+            res.append('t')
+        elif c == 'C':
+            res.append('G')
+        elif c == 'c':
+            res.append('g')
+        elif c == 'G':
+            res.append('C')
+        elif c == 'g':
+            res.append('c')
+        elif c == 'T':
+            res.append('A')
+        elif c == 't':
+            res.append('a')
+        else:
+            res.append(c)
+    return ''.join(res)
 
 
 # Sequence manipulation
@@ -743,6 +819,24 @@ def write_fasta(seqs: dict,
                     f.write(f'{seq[i:i + wrap]}\n')
             else:
                 f.write(f'{seq}\n')
+
+
+def read_fasta(file):
+    """Parse a fasta file as a dictionary."""
+    with open(file) as f:
+        genome = {}
+        seq, seqname = '', ''
+        for line in f:
+            if line.startswith('>'):
+                if seqname != '' or seq != '':
+                    genome[seqname] = seq
+                seqname = line[1:].rstrip()
+                seq = ''
+            else:
+                seq += line.rstrip()
+        if seq != '':
+            genome[seqname] = seq
+    return genome
 
 
 def parse_bed_peaks(bed_file,
