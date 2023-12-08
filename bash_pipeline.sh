@@ -82,8 +82,20 @@ data_dir='/home/alex/shared_folder'
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_selfflank -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid -v -targ 0 --flanks self --seed 10
 
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test126 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -targ 0 --seed 0
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test127 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape gaussian --seed 0
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test128 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape sigmoid -bg low high --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test127 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape gaussian --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test128 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape sigmoid -bg low high --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test129 --start_seqs $data_dir/SCerevisiae/generated/test122/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -targ 0 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test130 --start_seqs $data_dir/SCerevisiae/generated/test122/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape gaussian --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test131 --start_seqs $data_dir/SCerevisiae/generated/test122/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape sigmoid -bg low high --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test132 --start_seqs $data_dir/SCerevisiae/generated/test123/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -targ 0 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test133 --start_seqs $data_dir/SCerevisiae/generated/test123/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape gaussian --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test134 --start_seqs $data_dir/SCerevisiae/generated/test123/designed_seqs/mut_seqs_step499.npy --steps 500 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape sigmoid -bg low high --seed 0
+
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test135 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 3 -t 0.0001 -s 128 -mid -v -targ 0 --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test136 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 3 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape gaussian --seed 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test137 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 3 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape sigmoid -bg low high --seed 0
+
+
 
 # writing_dir='../'
 # bbmap_dir='../bbmap'
