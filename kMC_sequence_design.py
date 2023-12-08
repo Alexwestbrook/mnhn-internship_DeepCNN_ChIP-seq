@@ -142,10 +142,6 @@ def parsing():
         "-t", "--temperature", type=float, default=0.1,
         help="temperature for kMC")
     parser.add_argument(
-        "-maxopt", "--max_options", type=int,
-        help="maximum number of options to apply nonzero probability to. Only "
-             "best options are kept for selection. Set to -1 for no maximum.")
-    parser.add_argument(
         "--mutfree_pos_file", type=str,
         help="Numpy binary file with positions where mutations can be "
              "performed.")
@@ -165,10 +161,10 @@ def parsing():
     # Basic checks
     assert (len(args.one_hot_order) == 4
             and set(args.one_hot_order) == set('ACGT'))
-    for item in [args.k, args.n_seqs, args.length, args.steps,
-                 args.stride, args.max_options, args.batch_size,
-                 args.chunk_size, args.period, args.periodlen,
-                 args.insertstart]:
+    for item in [args.k, args.n_seqs, args.length,
+                 args.steps, args.stride,
+                 args.batch_size, args.chunk_size,
+                 args.period, args.periodlen, args.insertstart]:
         assert item is None or item >= 1
     assert args.temperature > 0
     assert args.target_gc < 1 and args.target_gc > 0
@@ -795,7 +791,7 @@ def make_target(length, insertlen, amplitude, ishape='linear',
     return target[:length]
 
 
-def select(energies, weights, temperature, step=None, maxoptions=None):
+def select(energies, weights, cur_energy, temperature, step=None):
     """Choose a mutation with low energy based on kMC method.
 
     Parameters
@@ -805,13 +801,13 @@ def select(energies, weights, temperature, step=None, maxoptions=None):
         be of shape (n_seqs, n_mutations)
     weights : array_like, len=n_energies
         Value of weights for each energy component.
+    cur_energy : ndarray, shape=(n_seqs)
+        Energies of the sequences before mutation.
     temperature : float
         Temperature to use for deriving probabilities from energies in the kMC
     step : int, default=None
         Step index in the optimisation process. If set, the computed
         probabilities will be save to a file.
-    maxoptions : int, default=None
-        Maximum number of options to give nonzero probabilities to.
 
     Returns
     -------
@@ -829,12 +825,11 @@ def select(energies, weights, temperature, step=None, maxoptions=None):
     """
     # Compute energy and probability
     tot_energy = sum(w*e for w, e in zip(weights, energies))
-    if maxoptions is not None:
-        thres = np.partition(tot_energy, maxoptions, axis=-1)[:, maxoptions]
-        tot_energy[tot_energy > np.expand_dims(thres, axis=-1)] = np.inf
-    prob = utils.exp_normalize(-tot_energy / temperature)
+    old_prob = utils.exp_normalize(-tot_energy / temperature)
+    prob = utils.exp_normalize((cur_energy.reshape(-1, 1) - tot_energy) / temperature)
     # Maybe save probabilities
     if step is not None:
+        np.save(Path(args.output_dir, "probs", f'old_prob_step{step}.npy'), old_prob)
         np.save(Path(args.output_dir, "probs", f'prob_step{step}.npy'), prob)
     # Select by the position of a random number in the cumulative sum
     cumprob = np.cumsum(prob, axis=-1)
@@ -946,6 +941,31 @@ def main(args):
         seqs = utils.random_sequences(args.n_seqs, args.length,
                                       freq_kmer.iloc[:, 0], out='idx')
     np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
+    # Compute energy of start sequences
+    # Predict on forward and reverse strands
+    if flanks == 'random':
+        randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0],
+                                            out='idx')
+        flanks = (randseqs[0], randseqs[1])
+    elif flanks == 'choose_idx':
+        flank_idx = np.random.randint(0, len(flank_left))
+        flanks = (flank_left[flank_idx], flank_right[flank_idx])
+        if args.verbose:
+            print(f"Using flank_idx {flank_idx}")
+    preds, indices = predicter(
+        seqs, offset=np.random.randint(0, args.stride), flanks=flanks)
+    preds_rev, indices_rev = predicter(
+        seqs, offset=np.random.randint(0, args.stride), flanks=flanks,
+        reverse=True)
+    # Compute energy
+    gc_energy = GC_energy(seqs, args.target_gc)
+    for_energy = args.loss(args.target[indices], preds)
+    rev_energy = args.loss(args.target_rev[indices_rev], preds_rev)
+    energy_list = [gc_energy, for_energy, rev_energy, np.zeros(args.n_seqs)]
+    cur_energy = sum(w*e for w, e in zip(args.weights, energy_list))
+    with open(Path(args.output_dir, 'energy.txt'), 'a') as f:
+        np.savetxt(f, np.stack([cur_energy] + energy_list, axis=1), fmt='%-8e',
+                   delimiter='\t', header='start')
     # Initialize array of already seen bases for each position
     seen_bases = np.eye(4, dtype=int)[seqs]
     # Determine figure parameters
@@ -978,9 +998,9 @@ def main(args):
         rev_energy = args.loss(args.target_rev[indices_rev], preds_rev)
         energy_list = [gc_energy, for_energy, rev_energy, mut_energy]
         # Choose best mutation by kMC method
-        sel_idx, sel_energies = select(energy_list, args.weights,
-                                       args.temperature, step=step,
-                                       maxoptions=args.max_options)
+        sel_idx, sel_energies = select(energy_list, args.weights, cur_energy,
+                                       args.temperature, step=step)
+        cur_energy = sel_energies[:, 0]
         # Keep selected sequence and increment seen_bases
         seqs = seqs[np.arange(len(seqs)), sel_idx]
         seen_bases[np.arange(len(seqs)),
