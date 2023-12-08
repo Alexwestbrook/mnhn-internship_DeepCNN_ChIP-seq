@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 from pathlib import Path
-import gc
+# import gc
 import tempfile
 import numpy as np
-import time
+# import time
 
 import tensorflow as tf
 from keras.engine import data_adapter
@@ -1057,11 +1057,14 @@ def get_profile(seqs, model, winsize, head_interval=None, middle=False,
 
 
 def predict(model, one_hot_chr, winsize, head_interval=None, reverse=False,
-            batch_size=1024, middle=False, extradims=None):
+            batch_size=1024, middle=False, extradims=None, order='ACGT'):
     if winsize > len(one_hot_chr):
         raise ValueError('sequence too small')
     if reverse:
-        one_hot_chr = one_hot_chr[::-1, ::-1]
+        if order == 'ACGT':
+            one_hot_chr = one_hot_chr[::-1, ::-1]
+        else:
+            one_hot_chr = utils.RC_one_hot(one_hot_chr, order)
     pred = np.zeros(len(one_hot_chr), dtype='float32')
     if head_interval is not None and middle:
         X = utils.strided_sliding_window_view(
