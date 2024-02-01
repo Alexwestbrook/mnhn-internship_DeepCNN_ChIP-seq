@@ -1344,7 +1344,7 @@ def downsample_enrichment_analysis(
 ):
     # Convert divs to fracs
     if divs is not None:
-        fracs = 1 / np.array(fracs)
+        fracs = 1 / np.array(divs)
     # Build resulting DataFrame
     mindex = pd.MultiIndex.from_product([binsizes, fracs])
     if reverse:
