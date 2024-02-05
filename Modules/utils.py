@@ -1197,7 +1197,9 @@ def exact_alignment_count_from_coord(
 
 
 def bin_values(values: np.ndarray, binsize: int, func=np.mean) -> np.ndarray:
-    if len(values) % binsize == 0:
+    if len(values) < binsize:
+        binned_values = func(values)
+    elif len(values) % binsize == 0:
         binned_values = func(strided_window_view(values, binsize, binsize), axis=1)
     else:
         binned_values = np.append(
