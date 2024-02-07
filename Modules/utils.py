@@ -839,7 +839,12 @@ def parse_bed_peaks(bed_file, window_size=None, remove_duplicates=False, based1=
         chr_peaks = {}
         for line in f:
             line = line.rstrip()
-            chr_id, start, end, _, score, *_ = line.split("\t")
+            splits = line.split("\t")
+            if len(splits) >= 5:
+                chr_id, start, end, _, score, *_ = splits
+            else:
+                chr_id, start, end, *_ = splits
+                score = -1
             start, end, score = int(start), int(end), int(score)
             if chr_id in chr_peaks.keys():
                 chr_peaks[chr_id].append(np.array([start, end, score]))
