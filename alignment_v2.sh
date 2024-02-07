@@ -45,6 +45,6 @@ else
     out_prefix=$writing_dir/$out_prefix
     bowtie2 -p $threads -x $index -U $data_dir/$fastq_file1 -S $out_prefix.sam
 fi
-samtools view -bS $out_prefix.sam | samtools sort -o $out_prefix.sorted.bam
+samtools view -@ $threads -bS $out_prefix.sam | samtools sort -@ $threads-o $out_prefix.sorted.bam
 rm $out_prefix.sam
-samtools index $out_prefix.sorted.bam
+samtools index -@ $threads $out_prefix.sorted.bam
