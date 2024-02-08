@@ -956,6 +956,67 @@ def parse_bam(
     return chr_coord
 
 
+def split_bam(bam_file, n_splits):
+    """Split a bam file into multiple equally covered bam files
+
+    Parameters
+    ----------
+    bam_file: str
+        Pathname of the bam file to split
+    n_splits: int
+        Number of files to split the bam into.
+    """
+    # Build split filenames from the input filename
+    bam_file_path = Path(bam_file)
+    stem = bam_file_path.stem
+    if stem.endswith(".sorted"):
+        stem = stem[:-7]
+    prefix = str(Path(bam_file_path.parent, stem))
+    split_names = [f"{prefix}_{i}.bam" for i in range(n_splits)]
+
+    with pysam.AlignmentFile(bam_file, "rb") as f:
+        # Build the split files with the input file's header and keep handles
+        split_files = [
+            pysam.AlignmentFile(name, "wb", template=f) for name in split_names
+        ]
+        # Build an iterator to randomly choose where to write next read, while balancing each file
+        n_query_names = (f.mapped + f.unmapped - f.nocoordinate) / 2
+        shuffled_file_idx = balanced_randint(n_splits, size=n_query_names)
+        iter_file_idx = iter(shuffled_file_idx)
+        # Loop over all reads to write them to the split files
+        seen = {}
+        for read in f.fetch():
+            if read.query_name in seen:
+                # The mate is already seen, write them both to a file
+                try:
+                    next_file_idx = next(iter_file_idx)
+                except StopIteration:
+                    # If Iterator is exhausted, select random file without worrying about balancing
+                    next_file_idx = np.random.randint(10)
+                fw = split_files[next_file_idx]
+                fw.write(seen[read.query_name])
+                fw.write(read)
+                # Remove from the dictionary to save space
+                seen.pop(read.query_name)
+            else:
+                # Cache read in dictionary waiting for its mate
+                seen[read.query_name] = read
+        # Write reads for which mates couldn't be found
+        print(f"{len(seen)} reads have no mate")
+        # Extend iterator if needed
+        shuffled_file_idx = list(iter_file_idx)
+        extra_file_idx = balanced_randint(
+            n_splits, size=len(seen) - len(shuffled_file_idx)
+        )
+        shuffled_file_idx = np.concatenate((shuffled_file_idx, extra_file_idx))
+        iter_file_idx = iter(shuffled_file_idx)
+        for read in seen.values():
+            split_files[next(iter_file_idx)].write(read)
+        # Close the split files
+        for fw in split_files:
+            fw.close()
+
+
 def inspect_bam_mapq(bam_file):
     mapqs = defaultdict(int)
     with pysam.AlignmentFile(bam_file, "rb") as f:
@@ -3032,6 +3093,43 @@ def random_sequences_as(
     """
     freq_kmers = kmer_counts(one_hots, k, order, includeN=False)
     return random_sequences(n_seqs, seq_length, freq_kmers, seed, out)
+
+
+def balanced_randint(low, high=None, size=1, dtype=int):
+    """Return random integers from low to high in a balanced manner.
+
+    The resulting array is balanced in the sense that each integer will appear the same
+    number of times, give or take 1 whenever the size isn't a multiple of the number of
+    integers.
+
+    Parameters
+    ----------
+    low: int
+        Lowest (signed) integer to be drawn from the distribution (unless high=None, in
+        which case this parameter is one above the highest integer)
+    high: int, optional
+        If provided, one above the largest (signed) integer to be drawn from the
+        distribution (see above for behavior if high=None).
+    size: int, optional
+        Output length. Default is 1.
+    dtype: type, optional
+        Desired dtype of the result. Byteorder must be native. The default value is int.
+
+    Returns
+    -------
+    out: np.ndarray
+        Array of randomly ordered integer values
+    """
+    if size <= 0:
+        return np.array([], dtype=dtype)
+    if high is None:
+        high = low
+        low = 0
+    q, r = divmod(size, (high - low))
+    extras = np.random.choice(np.arange(low, high, dtype=dtype), size=r, replace=False)
+    res = np.concatenate((np.repeat(np.arange(high - low, dtype=dtype), q), extras))
+    np.random.shuffle(res)
+    return res
 
 
 # Other utils
