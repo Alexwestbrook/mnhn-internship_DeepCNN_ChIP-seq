@@ -1027,13 +1027,12 @@ def inspect_bam_mapq(bam_file):
 
 def load_bw(filename, nantonum=True):
     labels = {}
-    bw = pyBigWig.open(str(filename))
-    for chr_id in bw.chroms():
-        if nantonum:
-            labels[chr_id] = np.nan_to_num(bw.values(chr_id, 0, -1, numpy=True))
-        else:
-            labels[chr_id] = bw.values(chr_id, 0, -1, numpy=True)
-    bw.close()
+    with pyBigWig.open(str(filename)) as bw:
+        for chr_id in bw.chroms():
+            if nantonum:
+                labels[chr_id] = np.nan_to_num(bw.values(chr_id, 0, -1, numpy=True))
+            else:
+                labels[chr_id] = bw.values(chr_id, 0, -1, numpy=True)
     return labels
 
 
@@ -1262,17 +1261,14 @@ def exact_alignment_count_from_coord(
     return np.cumsum(start_ends)[:-1]
 
 
-def bin_values(values: np.ndarray, binsize: int, func=np.mean) -> np.ndarray:
-    if len(values) < binsize:
-        binned_values = func(values)
-    elif len(values) % binsize == 0:
-        binned_values = func(strided_window_view(values, binsize, binsize), axis=1)
-    else:
-        binned_values = np.append(
-            func(strided_window_view(values, binsize, binsize), axis=1),
-            func(values[-(len(values) % binsize) :]),
-        )
-    return binned_values
+def bin_values(array: np.ndarray, binsize: int, func=np.mean):
+    if binsize <= 0:
+        raise ValueError("binsize must be greater than 0")
+    nbins, r = divmod(len(array), binsize)
+    res = func(array[: nbins * binsize].reshape(nbins, binsize), axis=1)
+    if r != 0:
+        res = np.append(res, func(array[-r:]))
+    return res
 
 
 def full_genome_binned_preds(pred_file, chr_sizes_file, binsize, chr_ids):
