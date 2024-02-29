@@ -1262,6 +1262,23 @@ def exact_alignment_count_from_coord(
 
 
 def bin_values(array: np.ndarray, binsize: int, func=np.mean):
+    """Compute summary statistics on bins of an array
+
+    If array length isn't divisible by binsize, the last bin will be smaller
+
+    Parameters
+    ----------
+    array: np.ndarray
+        1D input data
+    binsize: int
+        length of bins to consider, must be greater than 0
+    func: callable
+        function computing summary statistic, must support axis parameter
+        (ex: np.mean, np.sum)
+
+    Returns
+    -------
+    """
     if binsize <= 0:
         raise ValueError("binsize must be greater than 0")
     nbins, r = divmod(len(array), binsize)
@@ -2404,7 +2421,40 @@ def simple_slice(arr, slc, axis):
     return arr[tuple(full_slc)]
 
 
-def clip_to_nonzero_min(array):
+def zero_to_epsilon(array: np.ndarray, copy: bool = True) -> np.ndarray:
+    """Change all zero values to the minimal non-zero value.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        Input array
+
+    Returns
+    -------
+    np.ndarray
+        Array with zeros replaced
+    """
+    if copy:
+        array = array.copy()
+    array[array == 0] = np.finfo(array.dtype).eps
+    return array
+
+
+def clip_to_nonzero_min(array: np.ndarray, copy: bool = True) -> np.ndarray:
+    """Change all zero values to the minimal non-zero value.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        Input array
+
+    Returns
+    -------
+    np.ndarray
+        Array with zeros replaced
+    """
+    if copy:
+        array = array.copy()
     array[array == 0] = array[array != 0].min()
     return array
 
@@ -2442,7 +2492,9 @@ def random_rounding(array: np.ndarray) -> np.ndarray:
     return rounded
 
 
-def integer_histogram_sample(array: np.ndarray, frac: float) -> np.ndarray:
+def integer_histogram_sample(
+    array: np.ndarray, frac: float, return_complement: bool = False
+) -> np.ndarray:
     """Sample a random fraction of a histogram with integer-only values.
 
     The sampled histogram is a an array of integers of same shape as the
@@ -2451,26 +2503,28 @@ def integer_histogram_sample(array: np.ndarray, frac: float) -> np.ndarray:
 
     Parameters
     ----------
-    array : array_like
+    array : np.ndarray
         1D-array of integer values.
     frac : float
         fraction of the histogram to sample, the cumulative sum of the sampled
         histogram will be the rounded fraction of the original one
+    return_complement: bool
+        If True, return the complement sample as well
 
     Returns
     -------
-    np.ndarray
+    np.ndarray or tuple of np.ndarray
         1D-array of same length as `array`, containing the sampled histogram
-        values
+        values, or if return_complement is set, a tuple containing the sample
+        and its complement
     """
-    positions = np.repeat(np.arange(array.size, dtype=int), array)
-    rng = np.random.default_rng()
-    if frac <= 0.5:
+
+    def get_subhistogram(frac):
         sampled_pos = rng.choice(
             positions, size=round(len(positions) * frac), replace=False
         )
         histogram = (
-            coo_matrix(
+            scipy.sparse.coo_matrix(
                 (
                     np.ones(len(sampled_pos), dtype=int),
                     (sampled_pos, np.zeros(len(sampled_pos), dtype=int)),
@@ -2481,22 +2535,42 @@ def integer_histogram_sample(array: np.ndarray, frac: float) -> np.ndarray:
             .ravel()
         )
         return histogram
+
+    positions = np.repeat(np.arange(len(array), dtype=int), array)
+    rng = np.random.default_rng()
+    # get_subhistogram complexity is linear in frac, computing complement may save time
+    if frac <= 0.5:
+        res = get_subhistogram(frac)
+        if return_complement:
+            return res, array - res
+        else:
+            return res
     else:
-        sampled_pos = rng.choice(
-            positions, size=round(len(positions) * (1 - frac)), replace=False
-        )
-        histogram = (
-            coo_matrix(
-                (
-                    np.ones(len(sampled_pos), dtype=int),
-                    (sampled_pos, np.zeros(len(sampled_pos), dtype=int)),
-                ),
-                shape=(len(array), 1),
-            )
-            .toarray()
-            .ravel()
-        )
-        return array - histogram
+        comp = get_subhistogram(1 - frac)
+        if return_complement:
+            return array - comp, comp
+        else:
+            return array - comp
+
+
+def integer_histogram_serie_sample(
+    counts, frac: float = 0.5, return_complement: bool = False, dtype=np.int32
+) -> pd.Series:
+    """
+    counts: pd.Series
+    """
+    s1 = pd.Series(data=0, index=counts.index, dtype=dtype)
+
+    gb = counts[counts > 0].groupby(counts)
+    for value, g in gb:
+        # indices = g.index
+        s1[g.index] = np.random.binomial(value, frac, size=len(g))
+
+    if return_complement:
+        s2 = counts - s1
+        return s1.astype(dtype), s2.astype(dtype)
+    else:
+        return s1.astype(dtype)
 
 
 def integer_histogram_sample_vect(array: np.ndarray, frac: np.ndarray) -> np.ndarray:
@@ -3126,6 +3200,29 @@ def balanced_randint(low, high=None, size=1, dtype=int):
     res = np.concatenate((np.repeat(np.arange(high - low, dtype=dtype), q), extras))
     np.random.shuffle(res)
     return res
+
+
+def nanpearson(a, b):
+    nan_a = np.isnan(a)
+    nan_b = np.isnan(b)
+    if np.any(nan_a != nan_b):
+        a = np.array(a, dtype=float).copy()
+        b = np.array(b, dtype=float).copy()
+        nan_mask = nan_a | nan_b
+        a[nan_mask] = np.nan
+        b[nan_mask] = np.nan
+    A = a - np.nanmean(a)
+    B = b - np.nanmean(b)
+    std_AB = np.nansum(A * B)
+    std_A = np.sqrt(np.nansum(A * A))
+    std_B = np.sqrt(np.nansum(B * B))
+    return std_AB / (std_A * std_B + np.finfo(float).eps)
+
+
+def nan_compress(array_list):
+    """Remove all indices where at least one array is nan"""
+    keep = ~np.logical_or.reduce(tuple(np.isnan(a) for a in array_list))
+    return [np.compress(keep, array) for array in array_list]
 
 
 # Other utils
@@ -5624,5 +5721,36 @@ def kmer_counts_test(orders=["ACGT", "ATCG"], fasts=[True, False]):
         )
 
 
+def nanpearson_test():
+    arr1 = np.array([np.nan, 2, 3, 5, np.nan])
+    arr2 = np.array([np.nan, 1, 4, 5, 3])
+    arr3 = np.array([2, 3, 5, 1, 4])
+    arr4 = np.array([3, 3, 5, 1, 2])
+    assert np.allclose(nanpearson(arr1, arr2), pearsonr(arr1[1:4], arr2[1:4])[0])
+    assert np.allclose(
+        nanpearson(arr1[1:], arr2[1:]), pearsonr(arr1[1:4], arr2[1:4])[0]
+    )
+    assert np.allclose(
+        nanpearson(arr1[1:4], arr2[1:4]), pearsonr(arr1[1:4], arr2[1:4])[0]
+    )
+    assert np.allclose(
+        nanpearson(arr1[:4], arr2[:4]), pearsonr(arr1[1:4], arr2[1:4])[0]
+    )
+    assert np.allclose(nanpearson(arr1, arr3), pearsonr(arr1[1:4], arr3[1:4])[0])
+    assert np.allclose(
+        nanpearson(arr1[1:], arr3[1:]), pearsonr(arr1[1:4], arr3[1:4])[0]
+    )
+    assert np.allclose(
+        nanpearson(arr1[1:4], arr3[1:4]), pearsonr(arr1[1:4], arr3[1:4])[0]
+    )
+    assert np.allclose(
+        nanpearson(arr1[:4], arr3[:4]), pearsonr(arr1[1:4], arr3[1:4])[0]
+    )
+    assert np.allclose(nanpearson(arr2, arr3), pearsonr(arr2[1:], arr3[1:])[0])
+    assert np.allclose(nanpearson(arr2[1:], arr3[1:]), pearsonr(arr2[1:], arr3[1:])[0])
+    assert np.allclose(nanpearson(arr3, arr4), pearsonr(arr3, arr4)[0])
+
+
 if __name__ == "__main__":
     kmer_counts_test()
+    nanpearson_test()
