@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 from pathlib import Path
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -52,7 +53,26 @@ def parsing():
     return args
 
 
-def bin_values(array: np.ndarray, binsize: int, func=np.mean):
+def bin_values(array: np.ndarray, binsize: int, func=np.mean) -> np.ndarray:
+    """Compute summary statistics on bins of an array
+
+    If array length isn't divisible by binsize, the last bin will be smaller
+
+    Parameters
+    ----------
+    array: np.ndarray
+        1D input data
+    binsize: int
+        length of bins, must be greater than 0
+    func: callable
+        function computing summary statistic, must support axis parameter
+        (ex: np.mean, np.sum)
+
+    Returns
+    -------
+    res, np.ndarray
+        Binned array
+    """
     if binsize <= 0:
         raise ValueError("binsize must be greater than 0")
     nbins, r = divmod(len(array), binsize)
@@ -75,14 +95,30 @@ def nb_boolean_true_clusters(array: np.ndarray) -> int:
     int
         number of clusters of True values
     """
+    # Clusters ~ switches in value / 2
     res = np.sum(np.diff(array)) // 2
+    # Add one if at least a cluster is on the edge
     if array[0] or array[-1]:
         res += 1
     return res
 
 
-def clip_to_nonzero_min(array):
-    array[array == 0] = array[array != 0].min()
+def zero_to_epsilon(array: np.ndarray, copy: bool = True) -> np.ndarray:
+    """Change all zero values to the minimal non-zero value.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        Input array
+
+    Returns
+    -------
+    np.ndarray
+        Array with zeros replaced
+    """
+    if copy:
+        array = array.copy()
+    array[array == 0] = np.finfo(array.dtype).eps
     return array
 
 
@@ -107,9 +143,8 @@ def integer_histogram_sample(array: np.ndarray, frac: float) -> np.ndarray:
         1D-array of same length as `array`, containing the sampled histogram
         values
     """
-    positions = np.repeat(np.arange(array.size, dtype=int), array)
-    rng = np.random.default_rng()
-    if frac <= 0.5:
+
+    def get_subhistogram(frac):
         sampled_pos = rng.choice(
             positions, size=round(len(positions) * frac), replace=False
         )
@@ -125,25 +160,31 @@ def integer_histogram_sample(array: np.ndarray, frac: float) -> np.ndarray:
             .ravel()
         )
         return histogram
+
+    positions = np.repeat(np.arange(len(array), dtype=int), array)
+    rng = np.random.default_rng()
+    # get_subhistogram complexity is linear in frac, computing complement may save time
+    if frac <= 0.5:
+        return get_subhistogram(frac)
     else:
-        sampled_pos = rng.choice(
-            positions, size=round(len(positions) * (1 - frac)), replace=False
-        )
-        histogram = (
-            scipy.sparse.coo_matrix(
-                (
-                    np.ones(len(sampled_pos), dtype=int),
-                    (sampled_pos, np.zeros(len(sampled_pos), dtype=int)),
-                ),
-                shape=(len(array), 1),
-            )
-            .toarray()
-            .ravel()
-        )
-        return array - histogram
+        return array - get_subhistogram(1 - frac)
 
 
 def get_binned_counts(file, binsize):
+    """Extract sum of counts by bin in file on all contigs
+
+    Parameters
+    ----------
+    file: str
+        bigwig file of counts
+    binsize: int
+        length of bins, must be greater than 0
+
+    Returns
+    -------
+    np.ndarray
+        concatenation of binned counts per chromosome
+    """
     with pyBigWig.open(file) as bw:
         counts = [
             bin_values(bw.values(chr_id, 0, -1, numpy=True), binsize, func=np.sum)
@@ -152,31 +193,40 @@ def get_binned_counts(file, binsize):
     return np.concatenate(counts)
 
 
-def binom_enrichment(frac, total, cov, use_fdr=False):
-    p_binom = np.sum(frac) / cov
-    pval = clip_to_nonzero_min(1 - scipy.stats.binom.cdf(frac - 1, total, p_binom))
-    # Extract significant IP bins
+def binom_enrichment(
+    k_array: np.ndarray,
+    n_array: np.ndarray,
+    n_sum: int,
+    use_fdr: bool = False,
+    signif_thres: float = 0.05,
+) -> Tuple[int, int]:
+    p_binom = np.sum(k_array) / n_sum
+    pval = zero_to_epsilon(
+        1 - scipy.stats.binom.cdf(k_array - 1, n_array, p_binom), copy=False
+    )
+    # Extract significant bins
     if use_fdr:
         # correct with q-value on non-empty bins
-        valid_bins = total != 0
-        signif = np.zeros(len(frac), dtype=bool)
+        valid_bins = n_array != 0
+        signif = np.zeros(len(k_array), dtype=bool)
         signif[valid_bins], *_ = multitest.multipletests(
             pval[valid_bins], method="fdr_bh"
         )
     else:
-        signif = np.array(pval < 0.05)
+        signif = np.array(pval < signif_thres)
     n_signif = np.sum(signif)
     n_signif_clust = nb_boolean_true_clusters(signif)
     return n_signif, n_signif_clust
 
 
 def downsample_enrichment_analysis(
-    ip_file,
-    ctrl_file,
-    binsizes=[1000],
+    ip_file: str,
+    ctrl_file: str,
+    binsizes: List[int] = [1000],
     fracs=[1],
     divs=None,
     use_fdr=False,
+    signif_thres=0.05,
 ):
     # Convert divs to fracs
     if divs is not None:
@@ -201,16 +251,24 @@ def downsample_enrichment_analysis(
         ctrl_counts = get_binned_counts(ctrl_file, binsize)
         for frac in fracs:
             # Randomly sample alignment histogram
-            frac_ip = integer_histogram_sample(ip_counts, frac)
-            frac_ctrl = integer_histogram_sample(ctrl_counts, frac)
+            ip_subcounts = integer_histogram_sample(ip_counts, frac)
+            ctrl_subcounts = integer_histogram_sample(ctrl_counts, frac)
             # Compute number of significant bins
-            total = frac_ip + frac_ctrl
-            cov = np.sum(total)
+            total_subcounts = ip_subcounts + ctrl_subcounts
+            total_sum = np.sum(total_subcounts)
             n_signif_ip, n_signif_ip_clust = binom_enrichment(
-                frac_ip, total, cov, use_fdr=use_fdr
+                ip_subcounts,
+                total_subcounts,
+                total_sum,
+                use_fdr=use_fdr,
+                signif_thres=signif_thres,
             )
             n_signif_ctrl, n_signif_ctrl_clust = binom_enrichment(
-                frac_ctrl, total, cov, use_fdr=use_fdr
+                ctrl_subcounts,
+                total_subcounts,
+                total_sum,
+                use_fdr=use_fdr,
+                signif_thres=signif_thres,
             )
             # Save results
             res.loc[binsize, frac] = [
@@ -219,7 +277,7 @@ def downsample_enrichment_analysis(
                 len(ip_counts) - n_signif_ip - n_signif_ctrl,
                 n_signif_ctrl,
                 n_signif_ctrl_clust,
-                cov,
+                total_sum,
             ]
     return res
 
