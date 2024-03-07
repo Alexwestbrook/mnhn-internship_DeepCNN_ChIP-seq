@@ -524,9 +524,9 @@ class CenterFragment(writeBedGraph.WriteBedGraph):
 
 class MidFragments(writeBedGraph.WriteBedGraph):
     """
-    Class to redefine the get_fragment_from_read for the --MNase case
+    Class to redefine the get_fragment_from_read for the --MidPoints case
 
-    The coverage of the fragment is defined as the 2 or 3 basepairs at the
+    The coverage of the fragment is defined as the basepair at the
     center of the fragment length.
     """
 
