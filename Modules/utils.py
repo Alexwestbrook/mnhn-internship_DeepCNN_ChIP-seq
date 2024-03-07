@@ -1017,6 +1017,44 @@ def split_bam(bam_file, n_splits):
             fw.close()
 
 
+def sample_bam(bam_file, frac, out_file):
+    """Randomly sample a fraction of reads in a bam file.
+
+    For frac=0.5, it takes 2s per 1M reads
+
+    Parameters
+    ----------
+    bam_file: str
+        Pathname of the bam file to split.
+    frac: float
+        Fraction of the bam to sample.
+    out_file: str
+        Pathname of the output file
+    """
+    with pysam.AlignmentFile(bam_file, "rb") as f:
+        # Build output file
+        with pysam.AlignmentFile(out_file, "wb", template=f) as fw:
+            # Loop over all reads to write them to the split files
+            seen = {}
+            for read in f.fetch():
+                if read.query_name in seen:
+                    # choose whether to write the pair or not
+                    if np.random.rand() < frac:
+                        fw.write(seen[read.query_name])
+                        fw.write(read)
+                    # Remove from the dictionary to save space
+                    seen.pop(read.query_name)
+                else:
+                    # Cache read in dictionary waiting for its mate
+                    seen[read.query_name] = read
+            # Write reads for which mates couldn't be found
+            print(f"{len(seen)} reads have no mate")
+            for read in seen.values():
+                if np.random.rand() < frac:
+                    fw.write(seen[read.query_name])
+                    fw.write(read)
+
+
 def inspect_bam_mapq(bam_file):
     mapqs = defaultdict(int)
     with pysam.AlignmentFile(bam_file, "rb") as f:
@@ -2495,7 +2533,7 @@ def random_rounding(array: np.ndarray) -> np.ndarray:
 def integer_histogram_sample(
     array: np.ndarray, frac: float, return_complement: bool = False
 ) -> np.ndarray:
-    """Sample a random fraction of a histogram with integer-only values.
+    """Randomly sample a fraction of a histogram with integer-only values.
 
     The sampled histogram is a an array of integers of same shape as the
     original histogram, with all values smaller of equal to original histogram
@@ -2519,7 +2557,7 @@ def integer_histogram_sample(
         and its complement
     """
 
-    def get_subhistogram(frac):
+    def get_subhistogram(frac: int) -> np.ndarray:
         sampled_pos = rng.choice(
             positions, size=round(len(positions) * frac), replace=False
         )
@@ -2554,10 +2592,35 @@ def integer_histogram_sample(
 
 
 def integer_histogram_serie_sample(
-    counts, frac: float = 0.5, return_complement: bool = False, dtype=np.int32
+    counts: pd.Series,
+    frac: float = 0.5,
+    return_complement: bool = False,
+    dtype=np.int32,
 ) -> pd.Series:
-    """
-    counts: pd.Series
+    """Randomly sample a fraction of a histogram with integer-only values.
+
+    The sampled histogram is a an series of integers of same shape as the
+    original histogram, with all values smaller of equal to original histogram
+    values. This version is faster than integer_histogram_sample when there are
+    not too many unique values relative to the total count of the histogram. It
+    also uses less memory.
+
+    Parameters
+    ----------
+    counts : pd.Series
+        series of integer values.
+    frac : float
+        fraction of the histogram to sample, the cumulative sum of the sampled
+        histogram will be the rounded fraction of the original one
+    return_complement: bool
+        If True, return the complement sample as well
+
+    Returns
+    -------
+    pd.Series or tuple of pd.Series
+        Series of same length as `counts`, containing the sampled histogram
+        values, or if return_complement is set, a tuple containing the sample
+        and its complement
     """
     s1 = pd.Series(data=0, index=counts.index, dtype=dtype)
 
@@ -3203,6 +3266,7 @@ def balanced_randint(low, high=None, size=1, dtype=int):
 
 
 def nanpearson(a, b):
+    """Compute pearson correlation coefficient on arrays with nans"""
     nan_a = np.isnan(a)
     nan_b = np.isnan(b)
     if np.any(nan_a != nan_b):
