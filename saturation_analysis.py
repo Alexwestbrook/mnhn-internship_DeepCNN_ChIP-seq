@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 import argparse
+import datetime
+import json
+import socket
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -46,8 +49,38 @@ def parsing():
         "--binsizes",
         type=int,
         nargs="+",
-        required=True,
-        help="bigwig file of mid point counts in control (input)",
+        default=[1000],
+        help="binsizes at which to evaluate binomial enrichment",
+    )
+    parser.add_argument(
+        "-f",
+        "--fracs",
+        type=float,
+        nargs="+",
+        default=[1],
+        help="Fractions of counts to consider for downsampling",
+    )
+    parser.add_argument(
+        "-d",
+        "--divs",
+        type=float,
+        nargs="+",
+        help="Alternative to fracs, to specify by which numbers the counts "
+        "should be divided for downsampling. Will be converted to fractions.",
+    )
+    parser.add_argument(
+        "-fdr",
+        "--use_fdr",
+        action="store_true",
+        help="If True, correct pvalues to control false discovery rate "
+        "with Benjamini-Hochberg correction",
+    )
+    parser.add_argument(
+        "-thres",
+        "--signif_thres",
+        type=float,
+        default=0.05,
+        help="Threshold to consider pvalues as significant",
     )
     args = parser.parse_args()
     return args
@@ -82,6 +115,137 @@ def bin_values(array: np.ndarray, binsize: int, func=np.mean) -> np.ndarray:
     return res
 
 
+def get_binned_counts(file: str, binsize: int) -> np.ndarray:
+    """Extract sum of counts by bin in file on all contigs
+
+    Parameters
+    ----------
+    file: str
+        bigwig file of counts
+    binsize: int
+        length of bins, must be greater than 0
+
+    Returns
+    -------
+    np.ndarray
+        concatenation of binned counts per chromosome
+    """
+    with pyBigWig.open(file) as bw:
+        counts = [
+            bin_values(
+                bw.values(chr_id, 0, -1, numpy=True).astype(int), binsize, func=np.sum
+            )
+            for chr_id in bw.chroms()
+        ]
+    return np.concatenate(counts)
+
+
+def integer_histogram_sample(
+    array: np.ndarray, frac: float, return_complement: bool = False
+) -> np.ndarray:
+    """Randomly sample a fraction of a histogram with integer-only values.
+
+    The sampled histogram is a an array of integers of same shape as the
+    original histogram, with all values smaller of equal to original histogram
+    values.
+
+    Parameters
+    ----------
+    array : np.ndarray
+        1D-array of integer values.
+    frac : float
+        fraction of the histogram to sample, the cumulative sum of the sampled
+        histogram will be the rounded fraction of the original one
+    return_complement: bool
+        If True, return the complement sample as well
+
+    Returns
+    -------
+    np.ndarray or tuple of np.ndarray
+        1D-array of same length as `array`, containing the sampled histogram
+        values, or if return_complement is set, a tuple containing the sample
+        and its complement
+    """
+
+    def get_subhistogram(frac: int) -> np.ndarray:
+        sampled_pos = rng.choice(
+            positions, size=round(len(positions) * frac), replace=False
+        )
+        histogram = (
+            scipy.sparse.coo_matrix(
+                (
+                    np.ones(len(sampled_pos), dtype=int),
+                    (sampled_pos, np.zeros(len(sampled_pos), dtype=int)),
+                ),
+                shape=(len(array), 1),
+            )
+            .toarray()
+            .ravel()
+        )
+        return histogram
+
+    positions = np.repeat(np.arange(len(array), dtype=int), array)
+    rng = np.random.default_rng()
+    # get_subhistogram complexity is linear in frac, computing complement may save time
+    if frac <= 0.5:
+        res = get_subhistogram(frac)
+        if return_complement:
+            return res, array - res
+        else:
+            return res
+    else:
+        comp = get_subhistogram(1 - frac)
+        if return_complement:
+            return array - comp, comp
+        else:
+            return array - comp
+
+
+def integer_histogram_serie_sample(
+    counts: pd.Series,
+    frac: float = 0.5,
+    return_complement: bool = False,
+    dtype=np.int32,
+) -> pd.Series:
+    """Randomly sample a fraction of a histogram with integer-only values.
+
+    The sampled histogram is a an series of integers of same shape as the
+    original histogram, with all values smaller of equal to original histogram
+    values. This version is faster than integer_histogram_sample when there are
+    not too many unique values relative to the total count of the histogram. It
+    also uses less memory.
+
+    Parameters
+    ----------
+    counts : pd.Series
+        series of integer values.
+    frac : float
+        fraction of the histogram to sample, the cumulative sum of the sampled
+        histogram will be the rounded fraction of the original one
+    return_complement: bool
+        If True, return the complement sample as well
+
+    Returns
+    -------
+    pd.Series or tuple of pd.Series
+        Series of same length as `counts`, containing the sampled histogram
+        values, or if return_complement is set, a tuple containing the sample
+        and its complement
+    """
+    s1 = pd.Series(data=0, index=counts.index, dtype=dtype)
+
+    gb = counts[counts > 0].groupby(counts)
+    for value, g in gb:
+        # indices = g.index
+        s1[g.index] = np.random.binomial(value, frac, size=len(g))
+
+    if return_complement:
+        s2 = counts - s1
+        return s1.astype(dtype), s2.astype(dtype)
+    else:
+        return s1.astype(dtype)
+
+
 def nb_boolean_true_clusters(array: np.ndarray) -> int:
     """Compute the number of clusters of True values in array.
 
@@ -103,107 +267,62 @@ def nb_boolean_true_clusters(array: np.ndarray) -> int:
     return res
 
 
-def zero_to_epsilon(array: np.ndarray, copy: bool = True) -> np.ndarray:
-    """Change all zero values to the minimal non-zero value.
+def binom_pval(
+    k_array: np.ndarray,
+    n_array: np.ndarray,
+    p_binom: float,
+) -> Tuple[int, int]:
+    """Compute arraywise pvalue according to binomial distribution.
 
     Parameters
     ----------
-    array : np.ndarray
-        Input array
+    k_array: np.ndarray
+        1D-array of number of successes
+    n_array: np.ndarray
+        1D-array of sample sizes
+    p_binom: float
+        Probabilitity of success
 
     Returns
     -------
     np.ndarray
-        Array with zeros replaced
+        1D-array of pvalues
     """
-    if copy:
-        array = array.copy()
-    array[array == 0] = np.finfo(array.dtype).eps
-    return array
-
-
-def integer_histogram_sample(array: np.ndarray, frac: float) -> np.ndarray:
-    """Sample a random fraction of a histogram with integer-only values.
-
-    The sampled histogram is a an array of integers of same shape as the
-    original histogram, with all values smaller of equal to original histogram
-    values.
-
-    Parameters
-    ----------
-    array : array_like
-        1D-array of integer values.
-    frac : float
-        fraction of the histogram to sample, the cumulative sum of the sampled
-        histogram will be the rounded fraction of the original one
-
-    Returns
-    -------
-    np.ndarray
-        1D-array of same length as `array`, containing the sampled histogram
-        values
-    """
-
-    def get_subhistogram(frac):
-        sampled_pos = rng.choice(
-            positions, size=round(len(positions) * frac), replace=False
-        )
-        histogram = (
-            scipy.sparse.coo_matrix(
-                (
-                    np.ones(len(sampled_pos), dtype=int),
-                    (sampled_pos, np.zeros(len(sampled_pos), dtype=int)),
-                ),
-                shape=(len(array), 1),
-            )
-            .toarray()
-            .ravel()
-        )
-        return histogram
-
-    positions = np.repeat(np.arange(len(array), dtype=int), array)
-    rng = np.random.default_rng()
-    # get_subhistogram complexity is linear in frac, computing complement may save time
-    if frac <= 0.5:
-        return get_subhistogram(frac)
-    else:
-        return array - get_subhistogram(1 - frac)
-
-
-def get_binned_counts(file, binsize):
-    """Extract sum of counts by bin in file on all contigs
-
-    Parameters
-    ----------
-    file: str
-        bigwig file of counts
-    binsize: int
-        length of bins, must be greater than 0
-
-    Returns
-    -------
-    np.ndarray
-        concatenation of binned counts per chromosome
-    """
-    with pyBigWig.open(file) as bw:
-        counts = [
-            bin_values(bw.values(chr_id, 0, -1, numpy=True), binsize, func=np.sum)
-            for chr_id in bw.chroms()
-        ]
-    return np.concatenate(counts)
+    # pval == P(X >= k) == 1-P(X <= k-1)
+    return 1 - scipy.stats.binom.cdf(k_array - 1, n_array, p_binom)
 
 
 def binom_enrichment(
     k_array: np.ndarray,
     n_array: np.ndarray,
-    n_sum: int,
+    p_binom: int,
     use_fdr: bool = False,
     signif_thres: float = 0.05,
 ) -> Tuple[int, int]:
-    p_binom = np.sum(k_array) / n_sum
-    pval = zero_to_epsilon(
-        1 - scipy.stats.binom.cdf(k_array - 1, n_array, p_binom), copy=False
-    )
+    """Determine number of enriched positions and of clusters of such positions.
+
+    Parameters
+    ----------
+    k_array: np.ndarray
+        1D-array of number of successes
+    n_array: np.ndarray
+        1D-array of sample sizes
+    p_binom: float
+        Probabilitity of success
+    use_fdr: bool, optional
+        If True, correct pvalues to control false discovery rate
+        with Benjamini-Hochberg correction
+    signif_thres: int, optional
+        Threshold to consider pvalues as significant
+
+    Returns
+    -------
+    n_signif, int
+        number of enriched positions
+    n_signif_clust, int
+        number ofclusters of enriched positions
+    """
+    pval = binom_pval(k_array, n_array, p_binom)
     # Extract significant bins
     if use_fdr:
         # correct with q-value on non-empty bins
@@ -223,11 +342,41 @@ def downsample_enrichment_analysis(
     ip_file: str,
     ctrl_file: str,
     binsizes: List[int] = [1000],
-    fracs=[1],
-    divs=None,
-    use_fdr=False,
-    signif_thres=0.05,
-):
+    fracs: List[float] = [1],
+    divs: List[float] = None,
+    use_fdr: bool = False,
+    signif_thres: float = 0.05,
+) -> pd.DataFrame:
+    """Compute pvalues of enrichment in IP vs INPUT genome-wide.
+
+    Parameters
+    ----------
+    ip_file, ctrl_file: str
+        Path to the BigWig files of midpoints for IP and INPUT.
+    binsizes: list
+        Binsizes at which to evaluate binomial enrichment
+    fracs: list
+        Fractions of counts to consider for downsampling
+    divs: list
+        Alternative to fracs, to specify by which numbers the counts
+        should be divided for downsampling. Will be converted to fractions.
+    use_fdr: bool, optional
+        If True, correct pvalues to control false discovery rate
+        with Benjamini-Hochberg correction
+    signif_thres: float, optional
+        Threshold to consider pvalues as significant
+
+    Returns
+    -------
+    res: pd.DataFrame
+        Table of results for each binsize and fraction. Columns are:
+        IP: number of IP-enriched bins
+        IP_clust: number of IP-enriched clusters
+        Undetermined: number of undetermined bins
+        Ctrl: number of INPUT-enriched bins
+        Ctrl_clust: number of INPUT-enriched clusters
+        total_cov: total counts in IP and INPUT at this fraction
+    """
     # Convert divs to fracs
     if divs is not None:
         fracs = 1 / np.array(divs)
@@ -256,17 +405,18 @@ def downsample_enrichment_analysis(
             # Compute number of significant bins
             total_subcounts = ip_subcounts + ctrl_subcounts
             total_sum = np.sum(total_subcounts)
+            p_binom = np.sum(ip_subcounts) / total_sum
             n_signif_ip, n_signif_ip_clust = binom_enrichment(
                 ip_subcounts,
                 total_subcounts,
-                total_sum,
+                p_binom,
                 use_fdr=use_fdr,
                 signif_thres=signif_thres,
             )
             n_signif_ctrl, n_signif_ctrl_clust = binom_enrichment(
                 ctrl_subcounts,
                 total_subcounts,
-                total_sum,
+                p_binom,
                 use_fdr=use_fdr,
                 signif_thres=signif_thres,
             )
@@ -282,9 +432,66 @@ def downsample_enrichment_analysis(
     return res
 
 
-def main():
-    pass
+def safe_filename(file: Union[str, Path]) -> Path:
+    """Make sure file can be build without overriding an other.
+
+    If file already exists, returns a new filename with a number in between
+    parenthesis. If the parent of the file doesn't exist, it is created.
+
+    Raises
+    ------
+    FileExistsError
+        If one of the parents of the file to create is an existing file
+    """
+    file = Path(file)
+    # Build parent directories if needed
+    if not file.parent.is_dir():
+        print("Building parent directories")
+        file.parent.mkdir(parents=True)
+    # Change filename if it already exists
+    if file.exists():
+        original_file = file
+        file_dups = 0
+        while file.exists():
+            file_dups += 1
+            file = Path(
+                file.parent, original_file.stem + f"({file_dups})" + file.suffix
+            )
+            # python3.9: file.with_stem(original_file.stem + f'({file_dups})')
+        print(f"{original_file} exists, changing filename to {file}")
+    return file
 
 
 if __name__ == "__main__":
-    main()
+    tmstmp = datetime.datetime.now()
+    # Get arguments
+    args = parsing()
+    # Maybe build output directory
+    output_file = safe_filename(Path(args.output_prefix + ".csv"))
+    log_file = safe_filename(Path(args.output_prefix + "_log.txt"))
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    # Store arguments and other info in log file
+    with open(log_file, "w") as f:
+        json.dump(
+            {
+                **vars(args),
+                **{
+                    "timestamp": str(tmstmp),
+                    "machine": socket.gethostname(),
+                    "output_file": str(output_file),
+                },
+            },
+            f,
+            indent=4,
+        )
+    # Compute and save downsample enrichment tables
+    res = downsample_enrichment_analysis(
+        ip_file=args.ip_file,
+        ctrl_file=args.control_file,
+        binsizes=args.binsizes,
+        fracs=args.fracs,
+        divs=args.divs,
+        use_fdr=args.use_fdr,
+        signif_thres=args.signif_thres,
+    )
+    res.to_csv(output_file)
