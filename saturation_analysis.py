@@ -6,11 +6,13 @@ import socket
 from pathlib import Path
 from typing import List, Tuple, Union
 
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import pyBigWig
 import scipy
 import scipy.stats
+from matplotlib import pyplot as plt
 from statsmodels.stats import multitest
 
 
@@ -392,6 +394,7 @@ def downsample_enrichment_analysis(
             "Ctrl_clust",
             "total_cov",
         ],
+        dtype=float,
     )
     # Start analysis
     for binsize in binsizes:
@@ -405,18 +408,18 @@ def downsample_enrichment_analysis(
             # Compute number of significant bins
             total_subcounts = ip_subcounts + ctrl_subcounts
             total_sum = np.sum(total_subcounts)
-            p_binom = np.sum(ip_subcounts) / total_sum
+            p_ip = np.sum(ip_subcounts) / total_sum
             n_signif_ip, n_signif_ip_clust = binom_enrichment(
                 ip_subcounts,
                 total_subcounts,
-                p_binom,
+                p_ip,
                 use_fdr=use_fdr,
                 signif_thres=signif_thres,
             )
             n_signif_ctrl, n_signif_ctrl_clust = binom_enrichment(
                 ctrl_subcounts,
                 total_subcounts,
-                p_binom,
+                1 - p_ip,
                 use_fdr=use_fdr,
                 signif_thres=signif_thres,
             )
@@ -462,6 +465,67 @@ def safe_filename(file: Union[str, Path]) -> Path:
     return file
 
 
+def make_barplot(df: pd.DataFrame, log_scale: bool = False) -> mpl.figure.Figure:
+    """Make a barplot of percentage of enriched bins for each binsize and fraction.
+
+    Parameters
+    ----------
+    df: pd.DataFrame
+        Result table of the saturation analysis, names must coincide
+    log_scale: bool, optional
+        Whether to set the scale of the x-axis as log.
+
+    Returns
+    -------
+    fig: mpl.figure.Figure
+        Figure with the barplot
+    """
+    df = df.copy()
+    df_sum = df[["IP", "Undetermined", "Ctrl"]].sum(axis=1)
+    df["IP_perc"] = 100 * (df["IP"]) / df_sum
+    df["Ctrl_perc"] = 100 * (df["Ctrl"]) / df_sum
+    df["Undetermined_perc"] = 100 * (df["Undetermined"]) / df_sum
+    binsizes = list(df.index.levels[0])
+    n_axes = len(binsizes)
+    fig, axes = plt.subplots(
+        n_axes, 1, figsize=(10, 2 + 1 * n_axes), facecolor="w", sharey=True, sharex=True
+    )
+    if not isinstance(axes, np.ndarray):
+        axes = np.array([axes])
+    fig.tight_layout()
+    for binsize, ax in zip(binsizes, axes.flatten()):
+        subdf = df.loc[(binsize,), :]
+        if log_scale:
+            div = (subdf["total_cov"] / subdf["total_cov"].diff()).max()
+            width = subdf["total_cov"] / div
+        else:
+            width = subdf["total_cov"].diff().min() - 1
+        bottom = np.zeros(len(subdf))
+        for var, color in zip(
+            ["IP_perc", "Ctrl_perc", "Undetermined_perc"],
+            ["#d62728", "#1f77b4", "silver"],
+        ):
+            ax.bar(
+                subdf["total_cov"],
+                subdf[var],
+                width,
+                bottom=bottom,
+                align="center",
+                label=var[:-5],
+                color=color,
+            )
+            bottom += subdf[var]
+        if log_scale:
+            ax.set_xscale("log")
+        else:
+            ax.set_xlim(left=0)
+        ax.set_title(f"binsize {binsize}")
+    mid_ax = axes[len(axes) // 2]
+    mid_ax.legend()
+    mid_ax.set_ylabel("percentage of bins enriched")
+    return fig
+
+
 if __name__ == "__main__":
     tmstmp = datetime.datetime.now()
     # Get arguments
@@ -469,6 +533,8 @@ if __name__ == "__main__":
     # Maybe build output directory
     output_file = safe_filename(Path(args.output_prefix + ".csv"))
     log_file = safe_filename(Path(args.output_prefix + "_log.txt"))
+    figure_file = safe_filename(Path(args.output_prefix + "_barplot.png"))
+    logfigure_file = safe_filename(Path(args.output_prefix + "_barplot_logscale.png"))
     output_file.parent.mkdir(parents=True, exist_ok=True)
     # Store arguments and other info in log file
     with open(log_file, "w") as f:
@@ -479,19 +545,34 @@ if __name__ == "__main__":
                     "timestamp": str(tmstmp),
                     "machine": socket.gethostname(),
                     "output_file": str(output_file),
+                    "figure_file": str(figure_file),
+                    "logfigure_file": str(logfigure_file),
                 },
             },
             f,
             indent=4,
         )
-    # Compute and save downsample enrichment tables
-    res = downsample_enrichment_analysis(
-        ip_file=args.ip_file,
-        ctrl_file=args.control_file,
-        binsizes=args.binsizes,
-        fracs=args.fracs,
-        divs=args.divs,
-        use_fdr=args.use_fdr,
-        signif_thres=args.signif_thres,
-    )
-    res.to_csv(output_file)
+    try:
+        # Compute and save downsample enrichment tables
+        res = downsample_enrichment_analysis(
+            ip_file=args.ip_file,
+            ctrl_file=args.control_file,
+            binsizes=args.binsizes,
+            fracs=args.fracs,
+            divs=args.divs,
+            use_fdr=args.use_fdr,
+            signif_thres=args.signif_thres,
+        )
+        res.to_csv(output_file)
+        # Plot percentage of bins enriched as barplot, with and without log scale
+        fig = make_barplot(res, log_scale=False)
+        fig.savefig(figure_file, bbox_inches="tight")
+        fig = make_barplot(res, log_scale=True)
+        fig.savefig(logfigure_file, bbox_inches="tight")
+    except:
+        with open(log_file, "a") as f:
+            f.write("\nAborted")
+            f.write(f"\ntime: {datetime.datetime.now() - tmstmp}")
+        raise
+    with open(log_file, "a") as f:
+        f.write(f"\ntime: {datetime.datetime.now() - tmstmp}")
