@@ -227,3 +227,25 @@ data_dir='/home/alex/shared_folder'
 # # save train predictions
 # res_name='distrib_'$model_name'_train_rel'
 # python $scripts_dir/evaluate_model.py -m $writing_dir/$data/Trainedmodels/$model_name/model -d $data_dir/$data/$dataset.npz -out $writing_dir/$data/results/$model_name/$res_name -data 'train' -rel $data_dir/$data/$new_labels.npz
+
+# python $scripts_dir/saturation_analysis.py \
+#     -o /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/saturation_analysis/saturation_IP2_vs_INPUT_variousfracs \
+#     -i /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/HN00205099_RawFASTQ_RPE1_WTH3K9me3_paired_mid_points.bw \
+#     -c /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/D1145C44_trimmed_paired_T2T_mid_points.bw \
+#     -b 10000 -f 0.01 0.05 0.1 0.2 0.5 0.75 1
+
+source activate align
+python $scripts_dir/bamCoverage_custom.py -p 18 \
+    -b /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C41_trimmed_paired_T2T.sorted.bam \
+    -o /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C41_trimmed_paired_T2T_nodup_mid_points.bw \
+    --binSize 1 --MidPoints --ignoreDuplicates
+python $scripts_dir/bamCoverage_custom.py -p 18 \
+    -b /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C42_trimmed_paired_T2T.sorted.bam \
+    -o /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C42_trimmed_paired_T2T_nodup_mid_points.bw \
+    --binSize 1 --MidPoints --ignoreDuplicates
+conda deactivate
+python $scripts_dir/saturation_analysis.py \
+    -o /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/saturation_analysis/saturation_H3K4me3_vs_INPUT_powersof10 \
+    -i /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C41_trimmed_paired_T2T_nodup_mid_points.bw \
+    -c /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C42_trimmed_paired_T2T_nodup_mid_points.bw \
+    -b 100 1000 10000 100000 1000000 -f 0.001 0.01 0.1 1
