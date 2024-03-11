@@ -74,7 +74,7 @@ def parsing():
         "-fdr",
         "--use_fdr",
         action="store_true",
-        help="If True, correct pvalues to control false discovery rate "
+        help="If set, correct pvalues to control false discovery rate "
         "with Benjamini-Hochberg correction",
     )
     parser.add_argument(
@@ -84,7 +84,25 @@ def parsing():
         default=0.05,
         help="Threshold to consider pvalues as significant",
     )
+    parser.add_argument(
+        "-only_ip",
+        "--only_downsample_ip",
+        action="store_true",
+        help="If set, only perform downsampling on ip file",
+    )
+    parser.add_argument(
+        "--plot_on_x",
+        type=str,
+        choices=["Total_cov", "IP_cov", "Ctrl_cov"],
+        help="Value to plot against on x-axis",
+    )
     args = parser.parse_args()
+    # Set default value for plot_on_x
+    if args.plot_on_x is None:
+        if args.only_downsample_ip:
+            args.plot_on_x = "IP_cov"
+        else:
+            args.plot_on_x = "Total_cov"
     return args
 
 
@@ -348,6 +366,7 @@ def downsample_enrichment_analysis(
     divs: List[float] = None,
     use_fdr: bool = False,
     signif_thres: float = 0.05,
+    only_ip: bool = True,
 ) -> pd.DataFrame:
     """Compute pvalues of enrichment in IP vs INPUT genome-wide.
 
@@ -359,7 +378,7 @@ def downsample_enrichment_analysis(
         Binsizes at which to evaluate binomial enrichment
     fracs: list
         Fractions of counts to consider for downsampling
-    divs: list
+    divs: list, optional
         Alternative to fracs, to specify by which numbers the counts
         should be divided for downsampling. Will be converted to fractions.
     use_fdr: bool, optional
@@ -367,17 +386,21 @@ def downsample_enrichment_analysis(
         with Benjamini-Hochberg correction
     signif_thres: float, optional
         Threshold to consider pvalues as significant
+    only_ip: bool, optional
+        If True, only perform downsampling on ip file
 
     Returns
     -------
     res: pd.DataFrame
         Table of results for each binsize and fraction. Columns are:
+        IP_cov: total counts in IP at this fraction
+        Ctrl_cov: total counts in INPUT at this fraction
         IP: number of IP-enriched bins
-        IP_clust: number of IP-enriched clusters
-        Undetermined: number of undetermined bins
         Ctrl: number of INPUT-enriched bins
+        Undetermined: number of undetermined bins
+        IP_clust: number of IP-enriched clusters
         Ctrl_clust: number of INPUT-enriched clusters
-        total_cov: total counts in IP and INPUT at this fraction
+
     """
     # Convert divs to fracs
     if divs is not None:
@@ -387,12 +410,13 @@ def downsample_enrichment_analysis(
     res = pd.DataFrame(
         index=mindex,
         columns=[
+            "IP_cov",
+            "Ctrl_cov",
             "IP",
-            "IP_clust",
-            "Undetermined",
             "Ctrl",
+            "Undetermined",
+            "IP_clust",
             "Ctrl_clust",
-            "total_cov",
         ],
         dtype=float,
     )
@@ -401,14 +425,19 @@ def downsample_enrichment_analysis(
         # Load alignment data
         ip_counts = get_binned_counts(ip_file, binsize)
         ctrl_counts = get_binned_counts(ctrl_file, binsize)
+        if only_ip:
+            ctrl_subcounts = ctrl_counts
+            ctrl_sum = np.sum(ctrl_subcounts)
         for frac in fracs:
             # Randomly sample alignment histogram
             ip_subcounts = integer_histogram_sample(ip_counts, frac)
-            ctrl_subcounts = integer_histogram_sample(ctrl_counts, frac)
+            ip_sum = np.sum(ip_subcounts)
+            if not only_ip:
+                ctrl_subcounts = integer_histogram_sample(ctrl_counts, frac)
+                ctrl_sum = np.sum(ctrl_subcounts)
             # Compute number of significant bins
             total_subcounts = ip_subcounts + ctrl_subcounts
-            total_sum = np.sum(total_subcounts)
-            p_ip = np.sum(ip_subcounts) / total_sum
+            p_ip = np.sum(ip_subcounts) / np.sum(total_subcounts)
             n_signif_ip, n_signif_ip_clust = binom_enrichment(
                 ip_subcounts,
                 total_subcounts,
@@ -425,12 +454,13 @@ def downsample_enrichment_analysis(
             )
             # Save results
             res.loc[binsize, frac] = [
+                ip_sum,
+                ctrl_sum,
                 n_signif_ip,
-                n_signif_ip_clust,
-                len(ip_counts) - n_signif_ip - n_signif_ctrl,
                 n_signif_ctrl,
+                len(ip_counts) - n_signif_ip - n_signif_ctrl,
+                n_signif_ip_clust,
                 n_signif_ctrl_clust,
-                total_sum,
             ]
     return res
 
@@ -465,13 +495,17 @@ def safe_filename(file: Union[str, Path]) -> Path:
     return file
 
 
-def make_barplot(df: pd.DataFrame, log_scale: bool = False) -> mpl.figure.Figure:
+def make_barplot(
+    df: pd.DataFrame, x="Total_cov", log_scale: bool = False
+) -> mpl.figure.Figure:
     """Make a barplot of percentage of enriched bins for each binsize and fraction.
 
     Parameters
     ----------
     df: pd.DataFrame
         Result table of the saturation analysis, names must coincide
+    x: str, optional
+        Column to consider for coverage on x-axis
     log_scale: bool, optional
         Whether to set the scale of the x-axis as log.
 
@@ -481,6 +515,11 @@ def make_barplot(df: pd.DataFrame, log_scale: bool = False) -> mpl.figure.Figure
         Figure with the barplot
     """
     df = df.copy()
+    if x not in df.columns:
+        if x == "Total_cov":
+            df["Total_cov"] = df["IP_cov"] + df["Ctrl_cov"]
+        else:
+            raise ValueError(f"{x} is not a column of the DataFrame")
     df_sum = df[["IP", "Undetermined", "Ctrl"]].sum(axis=1)
     df["IP_perc"] = 100 * (df["IP"]) / df_sum
     df["Ctrl_perc"] = 100 * (df["Ctrl"]) / df_sum
@@ -496,17 +535,17 @@ def make_barplot(df: pd.DataFrame, log_scale: bool = False) -> mpl.figure.Figure
     for binsize, ax in zip(binsizes, axes.flatten()):
         subdf = df.loc[(binsize,), :]
         if log_scale:
-            div = (subdf["total_cov"] / subdf["total_cov"].diff()).max()
-            width = subdf["total_cov"] / div
+            div = (subdf[x] / subdf[x].diff()).max()
+            width = subdf[x] / div
         else:
-            width = subdf["total_cov"].diff().min() - 1
+            width = subdf[x].diff().min() - 1
         bottom = np.zeros(len(subdf))
         for var, color in zip(
             ["IP_perc", "Ctrl_perc", "Undetermined_perc"],
             ["#d62728", "#1f77b4", "silver"],
         ):
             ax.bar(
-                subdf["total_cov"],
+                subdf[x],
                 subdf[var],
                 width,
                 bottom=bottom,
@@ -522,7 +561,7 @@ def make_barplot(df: pd.DataFrame, log_scale: bool = False) -> mpl.figure.Figure
         ax.set_title(f"binsize {binsize}")
     mid_ax = axes[len(axes) // 2]
     mid_ax.legend()
-    mid_ax.set_ylabel("percentage of bins enriched")
+    mid_ax.set_ylabel("% of bins enriched")
     return fig
 
 
@@ -562,12 +601,13 @@ if __name__ == "__main__":
             divs=args.divs,
             use_fdr=args.use_fdr,
             signif_thres=args.signif_thres,
+            only_ip=args.only_downsample_ip,
         )
         res.to_csv(output_file)
         # Plot percentage of bins enriched as barplot, with and without log scale
-        fig = make_barplot(res, log_scale=False)
+        fig = make_barplot(res, x=args.plot_on_x, log_scale=False)
         fig.savefig(figure_file, bbox_inches="tight")
-        fig = make_barplot(res, log_scale=True)
+        fig = make_barplot(res, x=args.plot_on_x, log_scale=True)
         fig.savefig(logfigure_file, bbox_inches="tight")
     except:
         with open(log_file, "a") as f:
