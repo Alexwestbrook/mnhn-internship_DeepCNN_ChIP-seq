@@ -135,27 +135,44 @@ def bin_values(array: np.ndarray, binsize: int, func=np.mean) -> np.ndarray:
     return res
 
 
-def get_binned_counts(file: str, binsize: int) -> np.ndarray:
-    """Extract sum of counts by bin in file on all contigs
+def get_binned_counts(
+    file: str, binsize: int, chroms: Union[int, str, List[str], None] = None
+) -> np.ndarray:
+    """Extract sum of counts by bin in file
 
     Parameters
     ----------
     file: str
-        bigwig file of counts
+        Bigwig file of counts
     binsize: int
-        length of bins, must be greater than 0
+        Length of bins, must be greater than 0
+    chroms: Union[int, str, List[str], None], optional
+        Chromosomes to extract, can be a name or a list of names.
+        If it's a postive integer the first chroms chromosomes are considered.
+        If it's a negative integer the last -chroms chromosomes are discarded.
+        If None (default), all chromosomes are considered
 
     Returns
     -------
     np.ndarray
-        concatenation of binned counts per chromosome
+        Concatenation of binned counts per chromosome
     """
     with pyBigWig.open(file) as bw:
+        if isinstance(chroms, int):
+            chroms = list(bw.chroms().keys())[:chroms]
+        elif isinstance(chroms, str):
+            chroms = [chroms]
+        elif chroms is None:
+            chroms = bw.chroms().keys()
+        if not set(chroms).issubset(bw.chroms()):
+            raise ValueError(
+                f"{list(set(chroms) - set(bw.chroms()))} are not valid chromosome names in {file}"
+            )
         counts = [
             bin_values(
                 bw.values(chr_id, 0, -1, numpy=True).astype(int), binsize, func=np.sum
             )
-            for chr_id in bw.chroms()
+            for chr_id in chroms
         ]
     return np.concatenate(counts)
 
@@ -349,7 +366,7 @@ def binom_enrichment(
         valid_bins = n_array != 0
         signif = np.zeros(len(k_array), dtype=bool)
         signif[valid_bins], *_ = multitest.multipletests(
-            pval[valid_bins], method="fdr_bh"
+            pval[valid_bins], alpha=signif_thres, method="fdr_bh"
         )
     else:
         signif = np.array(pval < signif_thres)
