@@ -148,7 +148,7 @@ def get_binned_counts(
         Length of bins, must be greater than 0
     chroms: Union[int, str, List[str], None], optional
         Chromosomes to extract, can be a name or a list of names.
-        If it's a postive integer the first chroms chromosomes are considered.
+        If it's a positive integer the first chroms chromosomes are considered.
         If it's a negative integer the last -chroms chromosomes are discarded.
         If None (default), all chromosomes are considered
 
