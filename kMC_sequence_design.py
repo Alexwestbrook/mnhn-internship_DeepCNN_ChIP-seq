@@ -1,17 +1,17 @@
-from pathlib import Path
-import time
-import datetime
 import argparse
+import datetime
+import gc
 import json
 import socket
-import gc
+import time
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 import tensorflow as tf
-
+from matplotlib import pyplot as plt
 from Modules import utils
-from Modules.tf_utils import mae_cor, correlate, np_mae_cor
+from Modules.tf_utils import correlate, mae_cor, np_mae_cor
 
 
 def parsing():
@@ -31,140 +31,246 @@ def parsing():
     # Declaration of expexted arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-o", "--output_dir", type=str, required=True,
-        help="output directory")
+        "-o", "--output_dir", type=str, required=True, help="output directory"
+    )
     parser.add_argument(
-        "-m", "--model_file", type=str,
-        default='/home/alex/shared_folder/SCerevisiae/Trainedmodels/'
-                'model_myco_pol_17/model',
-        help="trained model file as hdf5 or in tf2 format")
+        "-m",
+        "--model_file",
+        type=str,
+        default="/home/alex/shared_folder/SCerevisiae/Trainedmodels/"
+        "model_myco_pol_17/model",
+        help="trained model file as hdf5 or in tf2 format",
+    )
     parser.add_argument(
-        "-ord", "--one_hot_order", type=str, default='ACGT',
-        help="order of the one-hot encoding for the model")
+        "-ord",
+        "--one_hot_order",
+        type=str,
+        default="ACGT",
+        help="order of the one-hot encoding for the model",
+    )
     parser.add_argument(
-        "-kfile", "--kmer_file", type=str,
-        default='/home/alex/shared_folder/SCerevisiae/genome/W303/'
-                'W303_3mer_freq.csv',
-        help="file with kmer distribution to use for initializing sequences")
+        "-kfile",
+        "--kmer_file",
+        type=str,
+        default="/home/alex/shared_folder/SCerevisiae/genome/W303/"
+        "W303_3mer_freq.csv",
+        help="file with kmer distribution to use for initializing sequences",
+    )
     parser.add_argument(
-        "-k", type=int, default=3,
+        "-k",
+        type=int,
+        default=3,
         help="value of k for kmer distribution, must be provided to read the "
-             "kmer_file correctly")
+        "kmer_file correctly",
+    )
     parser.add_argument(
-        "-n", "--n_seqs", type=int, default=1,
-        help="number of sequences to generate simultaneously")
+        "-n",
+        "--n_seqs",
+        type=int,
+        default=1,
+        help="number of sequences to generate simultaneously",
+    )
     parser.add_argument(
-        "-l", "--length", type=int, default=2175,
-        help="length of the sequences to generate")
+        "-l",
+        "--length",
+        type=int,
+        default=2175,
+        help="length of the sequences to generate",
+    )
     parser.add_argument(
-        "-start", "--start_seqs", type=str,
+        "-start",
+        "--start_seqs",
+        type=str,
         help="numpy binary file containing starting sequences as indexes with "
-             "shape (n_seqs, length). If set overrides n_seqs and length.")
+        "shape (n_seqs, length). If set overrides n_seqs and length.",
+    )
     parser.add_argument(
-        "--steps", type=int, default=100,
-        help="number of steps to perform")
+        "--steps", type=int, default=100, help="number of steps to perform"
+    )
     parser.add_argument(
-        "-dist", "--distribute", action='store_true',
-        help="indicates to use MirrorStrategy for prediction")
+        "-dist",
+        "--distribute",
+        action="store_true",
+        help="indicates to use MirrorStrategy for prediction",
+    )
     parser.add_argument(
-        "-s", "--stride", type=int, default=1,
-        help="specifies a stride in predictions to go faster")
+        "-s",
+        "--stride",
+        type=int,
+        default=1,
+        help="specifies a stride in predictions to go faster",
+    )
     parser.add_argument(
-        "-mid", "--middle_pred", action='store_true',
-        help="specifies to predict only on middle window")
+        "-mid",
+        "--middle_pred",
+        action="store_true",
+        help="specifies to predict only on middle window",
+    )
     parser.add_argument(
-        "--flanks", type=str,
+        "--flanks",
+        type=str,
         help="file with flanking sequences to use for prediction, can also be "
-             "'random' to get random flanks with specified kmer distribution "
-             "or 'self' to use itself as flank as in tandem repeats")
+        "'random' to get random flanks with specified kmer distribution "
+        "or 'self' to use itself as flank as in tandem repeats",
+    )
     parser.add_argument(
-        "-targ", "--target", type=float, nargs='+', default=[0],
+        "-targ",
+        "--target",
+        type=float,
+        nargs="+",
+        default=[0],
         help="target profile for the designed sequences. If a single value, "
-             "consider a flat target for the entire sequence, otherwise must "
-             "be of same length as the sequences.")
+        "consider a flat target for the entire sequence, otherwise must "
+        "be of same length as the sequences.",
+    )
     parser.add_argument(
-        "-targ_rev", "--target_rev", type=float, nargs='+',
+        "-targ_rev",
+        "--target_rev",
+        type=float,
+        nargs="+",
         help="target profile for the designed sequences on the reverse "
-             "strand, if unspecified, consider the same target for forward "
-             "and reverse. If a single value, consider a flat target for the "
-             "entire sequence, otherwise must be of same length as the "
-             "sequences.")
+        "strand, if unspecified, consider the same target for forward "
+        "and reverse. If a single value, consider a flat target for the "
+        "entire sequence, otherwise must be of same length as the "
+        "sequences.",
+    )
     parser.add_argument(
-        "-amp", "--amplitude", type=float, default=1,
-        help="amplitude for target profile")
+        "-amp",
+        "--amplitude",
+        type=float,
+        default=1,
+        help="amplitude for target profile",
+    )
     parser.add_argument(
-        "-ilen", "--insertlen", type=int,
-        help="length of insert in target")
+        "-ilen", "--insertlen", type=int, help="length of insert in target"
+    )
     parser.add_argument(
-        "-ishape", "--insertshape", type=str, default='linear',
+        "-ishape",
+        "--insertshape",
+        type=str,
+        default="linear",
         help="shape of insert. Must be either 'block', 'deplete', "
-             "'linear', 'sigmoid' or 'gaussian'")
+        "'linear', 'sigmoid' or 'gaussian'",
+    )
     parser.add_argument(
-        "-istart", "--insertstart", type=int,
-        help="Index of the position where the insert should start")
+        "-istart",
+        "--insertstart",
+        type=int,
+        help="Index of the position where the insert should start",
+    )
     parser.add_argument(
-        "-bg", "--background", type=str, nargs=2, default=['low', 'low'],
-        help="background signal to put at the left and right of the insert")
+        "-bg",
+        "--background",
+        type=str,
+        nargs=2,
+        default=["low", "low"],
+        help="background signal to put at the left and right of the insert",
+    )
     parser.add_argument(
-        "-stdf", "--std_factor", type=float, default=1/4,
-        help="standard deviation for gaussian peak as fraction of length")
+        "-stdf",
+        "--std_factor",
+        type=float,
+        default=1 / 4,
+        help="standard deviation for gaussian peak as fraction of length",
+    )
     parser.add_argument(
-        "-sigs", "--sig_spread", type=float, default=6,
-        help="absolute value to compute the sigmoid up to on each side")
+        "-sigs",
+        "--sig_spread",
+        type=float,
+        default=6,
+        help="absolute value to compute the sigmoid up to on each side",
+    )
     parser.add_argument(
-        "-per", "--period", type=int,
-        help="period of the target, makes it multipeak")
+        "-per", "--period", type=int, help="period of the target, makes it multipeak"
+    )
     parser.add_argument(
-        "-plen", "--periodlen", type=int,
-        help="length of periodic peak in target")
+        "-plen", "--periodlen", type=int, help="length of periodic peak in target"
+    )
     parser.add_argument(
-        "-pshape", "--periodshape", type=str, default='gaussian',
+        "-pshape",
+        "--periodshape",
+        type=str,
+        default="gaussian",
         help="shape of periodic peak. Must be either 'block', 'deplete', "
-             "'linear', 'sigmoid' or 'gaussian'")
+        "'linear', 'sigmoid' or 'gaussian'",
+    )
     parser.add_argument(
-        "--target_file", type=str,
+        "--target_file",
+        type=str,
         help="numpy binary file containing the target profile for the "
-             "designed sequences. If set, overrides target, target_rev and "
-             "also length, unless start_seqs is set, in which case it must be "
-             "of same length as start_seqs. Can also be an npz archive with 2 "
-             "different targets for each strand, with keys named 'forward' "
-             "and 'reverse'.")
+        "designed sequences. If set, overrides target, target_rev and "
+        "also length, unless start_seqs is set, in which case it must be "
+        "of same length as start_seqs. Can also be an npz archive with 2 "
+        "different targets for each strand, with keys named 'forward' "
+        "and 'reverse'.",
+    )
     parser.add_argument(
-        "-targ_gc", "--target_gc", type=float, default=0.3834,
-        help="target GC content for the designed sequences")
+        "-targ_gc",
+        "--target_gc",
+        type=float,
+        default=0.3834,
+        help="target GC content for the designed sequences",
+    )
     parser.add_argument(
-        "--loss", type=str, default='rmse',
-        help="loss to use for comparing prediction and target")
+        "--loss",
+        type=str,
+        default="rmse",
+        help="loss to use for comparing prediction and target",
+    )
     parser.add_argument(
-        "-w", "--weights", type=float, nargs=4, default=[1, 1, 1, 1],
-        help="weights for the energy terms in order E_gc, E_for, E_rev, E_mut")
+        "-w",
+        "--weights",
+        type=float,
+        nargs=4,
+        default=[1, 1, 1, 1],
+        help="weights for the energy terms in order E_gc, E_for, E_rev, E_mut",
+    )
     parser.add_argument(
-        "-t", "--temperature", type=float, default=0.1,
-        help="temperature for kMC")
+        "-t", "--temperature", type=float, default=0.1, help="temperature for kMC"
+    )
     parser.add_argument(
-        "--mutfree_pos_file", type=str,
-        help="Numpy binary file with positions where mutations can be "
-             "performed.")
+        "--mutfree_pos_file",
+        type=str,
+        help="Numpy binary file with positions where mutations can be " "performed.",
+    )
     parser.add_argument(
-        "-b", "--batch_size", type=int, default=1024,
-        help="number of mutations to predict on at once")
+        "-b",
+        "--batch_size",
+        type=int,
+        default=1024,
+        help="number of mutations to predict on at once",
+    )
     parser.add_argument(
-        "-c", "--chunk_size", type=int, default=128000,
-        help="number of sequence slides that can fit into memory")
+        "-c",
+        "--chunk_size",
+        type=int,
+        default=128000,
+        help="number of sequence slides that can fit into memory",
+    )
     parser.add_argument(
-        "--seed", type=int, default=-1,
-        help="seed to use for random generations")
+        "--seed", type=int, default=-1, help="seed to use for random generations"
+    )
     parser.add_argument(
-        "-v", "--verbose", action='store_true',
-        help="whether to print information messages")
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="whether to print information messages",
+    )
     args = parser.parse_args()
     # Basic checks
-    assert (len(args.one_hot_order) == 4
-            and set(args.one_hot_order) == set('ACGT'))
-    for item in [args.k, args.n_seqs, args.length,
-                 args.steps, args.stride,
-                 args.batch_size, args.chunk_size,
-                 args.period, args.periodlen, args.insertstart]:
+    assert len(args.one_hot_order) == 4 and set(args.one_hot_order) == set("ACGT")
+    for item in [
+        args.k,
+        args.n_seqs,
+        args.length,
+        args.steps,
+        args.stride,
+        args.batch_size,
+        args.chunk_size,
+        args.period,
+        args.periodlen,
+        args.insertstart,
+    ]:
         assert item is None or item >= 1
     assert args.temperature > 0
     assert args.target_gc < 1 and args.target_gc > 0
@@ -180,17 +286,24 @@ def parsing():
                 args.target = f
                 args.target_rev = f
             else:
-                args.target = f['forward']
-                args.target_rev = f['reverse']
+                args.target = f["forward"]
+                args.target_rev = f["reverse"]
         if args.start_seqs is None:
             args.length = len(args.target)
     elif args.insertlen is not None:
         args.target = make_target(
-            args.length, args.insertlen, args.amplitude,
-            ishape=args.insertshape, insertstart=args.insertstart,
-            background=args.background, period=args.period,
-            pinsertlen=args.periodlen, pshape=args.periodshape,
-            std_factor=args.std_factor, sig_spread=args.sig_spread)
+            args.length,
+            args.insertlen,
+            args.amplitude,
+            ishape=args.insertshape,
+            insertstart=args.insertstart,
+            background=args.background,
+            period=args.period,
+            pinsertlen=args.periodlen,
+            pshape=args.periodshape,
+            std_factor=args.std_factor,
+            sig_spread=args.sig_spread,
+        )
         args.target_rev = args.target
     else:
         # Forward target
@@ -202,12 +315,10 @@ def parsing():
         if args.target_rev is None:
             args.target_rev = args.target
         elif len(args.target_rev) == 1:
-            args.target_rev = np.full(args.length, args.target_rev[0],
-                                      dtype=float)
+            args.target_rev = np.full(args.length, args.target_rev[0], dtype=float)
         else:
             args.target_rev = np.array(args.target_rev, dtype=float)
-    assert (len(args.target) == len(args.target_rev)
-            and len(args.target) == args.length)
+    assert len(args.target) == len(args.target_rev) and len(args.target) == args.length
     return args
 
 
@@ -229,8 +340,9 @@ def GC_energy(seqs, target_gc):
         Array of absolute difference between sequence gc and target gc,
         with same shape as seqs but last dimension removed
     """
-    return np.abs(np.sum((seqs == 1) | (seqs == 2), axis=-1) / seqs.shape[-1]
-                  - target_gc)
+    return np.abs(
+        np.sum((seqs == 1) | (seqs == 2), axis=-1) / seqs.shape[-1] - target_gc
+    )
 
 
 def all_mutations(seqs, seen_bases, mutfree_pos=None):
@@ -267,30 +379,32 @@ def all_mutations(seqs, seen_bases, mutfree_pos=None):
     # Create mutations array
     # Array of increments of 1, 2 or 3 at each position for a single sequence
     single_seq_increments = utils.repeat_along_diag(
-        np.arange(1, 4, dtype=seqs.dtype).reshape(-1, 1),
-        length)  # shape (3*length, length)
+        np.arange(1, 4, dtype=seqs.dtype).reshape(-1, 1), length
+    )  # shape (3*length, length)
     # Add increments to each sequence by broadcasting and take modulo 4
-    mutated = (np.expand_dims(seqs, axis=1)
-               + np.expand_dims(single_seq_increments, axis=0)
-               ) % 4
+    mutated = (
+        np.expand_dims(seqs, axis=1) + np.expand_dims(single_seq_increments, axis=0)
+    ) % 4
     # Associate each mutation with its mutation energy
     # Array of resulting bases for each mutation
-    mut_idx = (np.expand_dims(seqs, axis=-1)
-               + np.arange(1, 4).reshape(1, -1)
-               ) % 4  # shape (n_seqs, length, 3)
+    mut_idx = (
+        np.expand_dims(seqs, axis=-1) + np.arange(1, 4).reshape(1, -1)
+    ) % 4  # shape (n_seqs, length, 3)
     # Select values associated with each base in seen_bases
-    mut_energy = np.take_along_axis(seen_bases, mut_idx, axis=-1
-                                    ).reshape(n_seqs, 3*length)
+    mut_energy = np.take_along_axis(seen_bases, mut_idx, axis=-1).reshape(
+        n_seqs, 3 * length
+    )
     # Keep mutations only at specific positions
     if mutfree_pos is not None:
-        mutfree_pos = np.ravel(mutfree_pos.reshape(-1, 1) * 3
-                               + np.arange(3).reshape(1, -1))
+        mutfree_pos = np.ravel(
+            mutfree_pos.reshape(-1, 1) * 3 + np.arange(3).reshape(1, -1)
+        )
         mutated = mutated[:, mutfree_pos]
         mut_energy = mut_energy[:, mutfree_pos]
     return mutated, mut_energy
 
 
-def np_idx_to_one_hot(idx, order='ACGT', extradims=None):
+def np_idx_to_one_hot(idx, order="ACGT", extradims=None):
     """Convert array of indexes into one-hot in np format.
 
     Parameters
@@ -310,9 +424,9 @@ def np_idx_to_one_hot(idx, order='ACGT', extradims=None):
     ndarray
         Array with same shape as idx, in one-hot format.
     """
-    assert (len(order) == 4 and set(order) == set('ACGT'))
+    assert len(order) == 4 and set(order) == set("ACGT")
     converter = np.zeros((4, 4), dtype=bool)
-    for i, c in enumerate('ACGT'):
+    for i, c in enumerate("ACGT"):
         converter[i, order.find(c)] = 1
     one_hot = converter[idx]
     if extradims is not None:
@@ -320,11 +434,23 @@ def np_idx_to_one_hot(idx, order='ACGT', extradims=None):
     return one_hot
 
 
-def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
-                     middle=False, stride=1, batch_size=1024,
-                     chunk_size=128000, one_hot_converter=np_idx_to_one_hot,
-                     offset=None, seed=None, verbose=False,
-                     return_index=False, flanks=None):
+def get_profile_hint(
+    seqs,
+    model,
+    winsize,
+    head_interval,
+    reverse=False,
+    middle=False,
+    stride=1,
+    batch_size=1024,
+    chunk_size=128000,
+    one_hot_converter=np_idx_to_one_hot,
+    offset=None,
+    seed=None,
+    verbose=False,
+    return_index=False,
+    flanks=None,
+):
     """Predict profile.
 
     Parameters
@@ -393,7 +519,7 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
     else:
         offset %= stride
     if verbose:
-        print(f'Predicting with stride {stride} and offset {offset}')
+        print(f"Predicting with stride {stride} and offset {offset}")
     # pred_start: distance between fisrt prediction and sequence start
     # pred_stop: distance between last prediction and sequence end
     pred_start = 0
@@ -406,18 +532,20 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
     # update distances
     if flanks is not None:
         flank_left, flank_right = flanks
-        flank_left = flank_left[len(flank_left)-pred_start:]
+        flank_left = flank_left[len(flank_left) - pred_start :]
         pred_start -= len(flank_left)
         flank_right = flank_right[:pred_stop]
         pred_stop -= len(flank_right)
-        seqs2D = np.hstack([np.tile(flank_left, (len(seqs2D), 1)),
-                            seqs2D,
-                            np.tile(flank_right, (len(seqs2D), 1))])
+        seqs2D = np.hstack(
+            [
+                np.tile(flank_left, (len(seqs2D), 1)),
+                seqs2D,
+                np.tile(flank_right, (len(seqs2D), 1)),
+            ]
+        )
     # Determine indices of predictions along the sequence axis
     if return_index:
-        indices = np.arange(pred_start + offset,
-                            seqs.shape[-1] - pred_stop,
-                            stride)
+        indices = np.arange(pred_start + offset, seqs.shape[-1] - pred_stop, stride)
         if reverse:
             indices = np.flip(seqs.shape[-1] - indices - 1)
     # Maybe reverse complement the sequences
@@ -445,9 +573,9 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
         (len(seqs2D), winsize),
         stride=(jump_stride, stride),
         sliding_len=head_interval,
-        axis=-1).reshape(-1, winsize)
-    chunks = np.split(windows,
-                      np.arange(chunk_size, len(windows), chunk_size))
+        axis=-1,
+    ).reshape(-1, winsize)
+    chunks = np.split(windows, np.arange(chunk_size, len(windows), chunk_size))
 
     # Deal with the last slide
     # Last position where a window can be taken
@@ -465,32 +593,31 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
             (len(seqs2D), winsize),
             stride=(jump_stride, stride),
             sliding_len=head_interval,
-            axis=-1).reshape(-1, winsize)
+            axis=-1,
+        ).reshape(-1, winsize)
         chunks += np.split(
-            extra_windows,
-            np.arange(chunk_size, len(extra_windows), chunk_size))
+            extra_windows, np.arange(chunk_size, len(extra_windows), chunk_size)
+        )
 
     # Make predictions
     preds = []
     for chunk in chunks:
         # Convert to one-hot and predict
-        pred = model.predict(one_hot_converter(chunk),
-                             batch_size=batch_size).squeeze()
+        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze()
         # Collect garbage to prevent memory leak from model.predict()
         gc.collect()
         preds.append(pred)
     preds = np.concatenate(preds)
     # Maybe extract middle prediction
     if middle:
-        preds = preds[:, n_heads//4:3*n_heads//4]
+        preds = preds[:, n_heads // 4 : 3 * n_heads // 4]
     # Transpose slide_length and n_kept_heads to get proper sequence order
-    preds = np.transpose(preds.reshape(-1, slide_length, n_kept_heads),
-                         [0, 2, 1])
+    preds = np.transpose(preds.reshape(-1, slide_length, n_kept_heads), [0, 2, 1])
     # Seperate last slide prediction to truncate its beginning then put it back
     if last_jump != 0:
-        preds = preds.reshape(-1, len(seqs2D), slide_length*n_kept_heads)
+        preds = preds.reshape(-1, len(seqs2D), slide_length * n_kept_heads)
         first_part = preds[:-1, :, :].reshape(len(seqs2D), -1)
-        last_part = preds[-1, :, -(last_jump // stride):]
+        last_part = preds[-1, :, -(last_jump // stride) :]
         preds = np.concatenate([first_part, last_part], axis=-1)
     # Reshape as original sequence
     preds = preds.reshape(seqs.shape[:-1] + (-1,))
@@ -503,11 +630,23 @@ def get_profile_hint(seqs, model, winsize, head_interval, reverse=False,
         return preds
 
 
-def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
-                      reverse=False, stride=1, batch_size=1024,
-                      chunk_size=128000, one_hot_converter=np_idx_to_one_hot,
-                      offset=None, seed=None, verbose=False,
-                      return_index=False, flanks=None):
+def get_profile_chunk(
+    seqs,
+    model,
+    winsize,
+    head_interval=None,
+    middle=False,
+    reverse=False,
+    stride=1,
+    batch_size=1024,
+    chunk_size=128000,
+    one_hot_converter=np_idx_to_one_hot,
+    offset=None,
+    seed=None,
+    verbose=False,
+    return_index=False,
+    flanks=None,
+):
     """Predict profile.
 
     Parameters
@@ -577,7 +716,7 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
     else:
         offset %= stride
     if verbose:
-        print(f'Predicting with stride {stride} and offset {offset}')
+        print(f"Predicting with stride {stride} and offset {offset}")
     # pred_start: distance between first prediction and sequence start
     # pred_stop: distance between last prediction and sequence end
     if head_interval is not None:
@@ -597,24 +736,26 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
             leftpad, rightpad = pred_stop, pred_start
         else:
             leftpad, rightpad = pred_start, pred_stop
-        if flanks == 'self':
+        if flanks == "self":
             flank_left = np.tile(seqs2D, leftpad // seqs2D.shape[-1] + 1)
-            flank_left = flank_left[:, flank_left.shape[-1]-leftpad:]
+            flank_left = flank_left[:, flank_left.shape[-1] - leftpad :]
             flank_right = np.tile(seqs2D, rightpad // seqs2D.shape[-1] + 1)
             flank_right = flank_right[:, :rightpad]
             seqs2D = np.hstack([flank_left, seqs2D, flank_right])
         else:
             flank_left, flank_right = flanks
-            flank_left = flank_left[len(flank_left)-leftpad:]
+            flank_left = flank_left[len(flank_left) - leftpad :]
             flank_right = flank_right[:rightpad]
-            seqs2D = np.hstack([np.tile(flank_left, (len(seqs2D), 1)),
-                                seqs2D,
-                                np.tile(flank_right, (len(seqs2D), 1))])
+            seqs2D = np.hstack(
+                [
+                    np.tile(flank_left, (len(seqs2D), 1)),
+                    seqs2D,
+                    np.tile(flank_right, (len(seqs2D), 1)),
+                ]
+            )
     # Determine indices of predictions along the sequence axis
     if return_index:
-        indices = np.arange(pred_start + offset,
-                            seqs2D.shape[-1] - pred_stop,
-                            stride)
+        indices = np.arange(pred_start + offset, seqs2D.shape[-1] - pred_stop, stride)
         if reverse:
             indices = np.flip(seqs2D.shape[-1] - indices - 1)
         if flanks is not None:
@@ -645,9 +786,9 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
             (len(seqs2D), winsize),
             stride=(jump_stride, stride),
             sliding_len=head_interval,
-            axis=-1).reshape(-1, winsize)
-        chunks = np.split(windows,
-                          np.arange(chunk_size, len(windows), chunk_size))
+            axis=-1,
+        ).reshape(-1, winsize)
+        chunks = np.split(windows, np.arange(chunk_size, len(windows), chunk_size))
 
         # Deal with the last slide
         # Last position where a window can be taken
@@ -665,23 +806,25 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
                 (len(seqs2D), winsize),
                 stride=(jump_stride, stride),
                 sliding_len=head_interval,
-                axis=-1).reshape(-1, winsize)
+                axis=-1,
+            ).reshape(-1, winsize)
             chunks += np.split(
-                extra_windows,
-                np.arange(chunk_size, len(extra_windows), chunk_size))
+                extra_windows, np.arange(chunk_size, len(extra_windows), chunk_size)
+            )
     else:
-        windows = utils.strided_window_view(
-            seqs2D[:, offset:],
-            (len(seqs2D), winsize),
-            stride=(1, stride)).transpose([0, 2, 1, 3]).reshape(-1, winsize)
-        chunks = np.split(windows,
-                          np.arange(chunk_size, len(windows), chunk_size))
+        windows = (
+            utils.strided_window_view(
+                seqs2D[:, offset:], (len(seqs2D), winsize), stride=(1, stride)
+            )
+            .transpose([0, 2, 1, 3])
+            .reshape(-1, winsize)
+        )
+        chunks = np.split(windows, np.arange(chunk_size, len(windows), chunk_size))
     # Make predictions
     preds = []
     for chunk in chunks:
         # Convert to one-hot and predict
-        pred = model.predict(one_hot_converter(chunk),
-                             batch_size=batch_size).squeeze()
+        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze()
         # Collect garbage to prevent memory leak from model.predict()
         gc.collect()
         preds.append(pred)
@@ -690,16 +833,15 @@ def get_profile_chunk(seqs, model, winsize, head_interval=None, middle=False,
     if head_interval is not None:
         # Maybe extract middle prediction
         if middle:
-            preds = preds[:, n_heads//4:3*n_heads//4]
+            preds = preds[:, n_heads // 4 : 3 * n_heads // 4]
         # Transpose slide_length and n_kept_heads to get proper sequence order
-        preds = np.transpose(preds.reshape(-1, slide_length, n_kept_heads),
-                             [0, 2, 1])
+        preds = np.transpose(preds.reshape(-1, slide_length, n_kept_heads), [0, 2, 1])
         # Seperate last slide prediction to truncate its beginning then put it
         # back
         if last_jump != 0:
-            preds = preds.reshape(-1, len(seqs2D), slide_length*n_kept_heads)
+            preds = preds.reshape(-1, len(seqs2D), slide_length * n_kept_heads)
             first_part = preds[:-1, :, :].reshape(len(seqs2D), -1)
-            last_part = preds[-1, :, -(last_jump // stride):]
+            last_part = preds[-1, :, -(last_jump // stride) :]
             preds = np.concatenate([first_part, last_part], axis=-1)
     # Reshape as original sequence
     preds = preds.reshape(seqs.shape[:-1] + (-1,))
@@ -726,33 +868,41 @@ def rmse(y_true, y_pred):
     ndarray
         Array of same shape as y_true and y_pred but with last axis removed
     """
-    return np.sqrt(np.mean((y_true - y_pred)**2, axis=-1))
+    return np.sqrt(np.mean((y_true - y_pred) ** 2, axis=-1))
 
 
-def make_shape(length, amplitude, shape='linear', background=['low', 'low'],
-               std_factor=1/4, sig_spread=6):
+def make_shape(
+    length,
+    amplitude,
+    shape="linear",
+    background=["low", "low"],
+    std_factor=1 / 4,
+    sig_spread=6,
+):
     base_length = length
     if background[0] == background[1]:
-        length = (length+1) // 2
-    if shape == 'block':
+        length = (length + 1) // 2
+    if shape == "block":
         arr = np.full(length, amplitude)
-    elif shape == 'deplete':
+    elif shape == "deplete":
         arr = np.zeros(length)
-    elif shape == 'linear':
+    elif shape == "linear":
         arr = np.linspace(0, amplitude, length)
-    elif shape == 'gaussian':
+    elif shape == "gaussian":
         if background[0] != background[1]:
-            base_length = length*2 + 1
-        arr = np.exp(-(np.arange(length) - (base_length-1)/2)**2
-                     / (2*(base_length*std_factor)**2))
+            base_length = length * 2 + 1
+        arr = np.exp(
+            -((np.arange(length) - (base_length - 1) / 2) ** 2)
+            / (2 * (base_length * std_factor) ** 2)
+        )
         arr -= np.min(arr)
         arr *= amplitude / np.max(arr)
-    elif shape == 'sigmoid':
+    elif shape == "sigmoid":
         x = np.linspace(-sig_spread, sig_spread, length)
         arr = 1 / (1 + np.exp(-x))
         arr -= np.min(arr)
         arr *= amplitude / np.max(arr)
-    if background[0] == 'high':
+    if background[0] == "high":
         arr = amplitude - arr
     if background[0] == background[1]:
         if base_length % 2 != 0:
@@ -763,9 +913,18 @@ def make_shape(length, amplitude, shape='linear', background=['low', 'low'],
         return arr
 
 
-def make_target(length, insertlen, amplitude, ishape='linear',
-                insertstart=None, period=None, pinsertlen=147,
-                pshape='gaussian', background=['low', 'low'], **kwargs):
+def make_target(
+    length,
+    insertlen,
+    amplitude,
+    ishape="linear",
+    insertstart=None,
+    period=None,
+    pinsertlen=147,
+    pshape="gaussian",
+    background=["low", "low"],
+    **kwargs,
+):
     if insertstart is None:
         insertstart = (length - insertlen + 1) // 2
     rightlen = length - insertlen - insertstart
@@ -774,17 +933,20 @@ def make_target(length, insertlen, amplitude, ishape='linear',
             insertlen = period - pinsertlen
             insertstart = (length - insertlen + 1) // 2
             rightlen = length - insertlen - insertstart
-        insert = make_shape(insertlen, amplitude, shape='deplete')
+        insert = make_shape(insertlen, amplitude, shape="deplete")
         pinsert = make_shape(pinsertlen, amplitude, shape=pshape, **kwargs)
         tile = np.concatenate([pinsert, np.zeros(period - len(pinsert))])
         backgr = np.tile(tile, length // (period) + 1)
-        leftside = backgr[insertstart-1::-1]
+        leftside = backgr[insertstart - 1 :: -1]
         rightside = backgr[:rightlen]
     else:
-        insert = make_shape(insertlen, amplitude, shape=ishape,
-                            background=background, **kwargs)
-        backgr_dict = {'low': lambda x: np.zeros(x),
-                       'high': lambda x: np.full(x, amplitude)}
+        insert = make_shape(
+            insertlen, amplitude, shape=ishape, background=background, **kwargs
+        )
+        backgr_dict = {
+            "low": lambda x: np.zeros(x),
+            "high": lambda x: np.full(x, amplitude),
+        }
         leftside = backgr_dict[background[0]](insertstart)
         rightside = backgr_dict[background[1]](rightlen)
     target = np.concatenate([leftside, insert, rightside])
@@ -824,22 +986,21 @@ def select(energies, weights, cur_energy, temperature, step=None):
     by computing exp(-E_i/T) / sum_i(exp(-E_i/T)) where T is the temperature.
     """
     # Compute energy and probability
-    tot_energy = sum(w*e for w, e in zip(weights, energies))
+    tot_energy = sum(w * e for w, e in zip(weights, energies))
     old_prob = utils.exp_normalize(-tot_energy / temperature)
     prob = utils.exp_normalize((cur_energy.reshape(-1, 1) - tot_energy) / temperature)
     # Maybe save probabilities
     if step is not None:
-        np.save(Path(args.output_dir, "probs", f'old_prob_step{step}.npy'), old_prob)
-        np.save(Path(args.output_dir, "probs", f'prob_step{step}.npy'), prob)
+        np.save(Path(args.output_dir, "probs", f"old_prob_step{step}.npy"), old_prob)
+        np.save(Path(args.output_dir, "probs", f"prob_step{step}.npy"), prob)
     # Select by the position of a random number in the cumulative sum
     cumprob = np.cumsum(prob, axis=-1)
     r = np.random.rand(len(prob), 1)
     sel_idx = np.argmax(r <= cumprob, axis=-1)
     # Associate energy to selected sequences
     sel_energies = np.stack(
-        [en[np.arange(len(en)), sel_idx]
-         for en in [tot_energy] + energies],
-        axis=1)
+        [en[np.arange(len(en)), sel_idx] for en in [tot_energy] + energies], axis=1
+    )
     return sel_idx, sel_energies
 
 
@@ -872,11 +1033,12 @@ def main(args):
         with tf.distribute.MirroredStrategy().scope():
             model = tf.keras.models.load_model(
                 args.model_file,
-                custom_objects={'correlate': correlate, 'mae_cor': mae_cor})
+                custom_objects={"correlate": correlate, "mae_cor": mae_cor},
+            )
     else:
         model = tf.keras.models.load_model(
-            args.model_file,
-            custom_objects={'correlate': correlate, 'mae_cor': mae_cor})
+            args.model_file, custom_objects={"correlate": correlate, "mae_cor": mae_cor}
+        )
     shape_array = np.array(model.input_shape)
     extradims = list(np.where(shape_array == 1)[0])
     squeezed_shape = shape_array[shape_array != 1]
@@ -891,18 +1053,28 @@ def main(args):
         assert head_interval % args.stride == 0
 
     def one_hot_converter(idx):
-        return np_idx_to_one_hot(
-            idx, order=args.one_hot_order, extradims=extradims)
+        return np_idx_to_one_hot(idx, order=args.one_hot_order, extradims=extradims)
 
     def predicter(seqs, reverse=False, offset=None, flanks=None):
         return get_profile_chunk(
-            seqs, model, winsize, head_interval=head_interval,
-            middle=args.middle_pred, reverse=reverse, stride=args.stride,
-            batch_size=args.batch_size, chunk_size=args.chunk_size,
-            one_hot_converter=one_hot_converter, offset=offset,
-            verbose=args.verbose, return_index=True, flanks=flanks)
+            seqs,
+            model,
+            winsize,
+            head_interval=head_interval,
+            middle=args.middle_pred,
+            reverse=reverse,
+            stride=args.stride,
+            batch_size=args.batch_size,
+            chunk_size=args.chunk_size,
+            one_hot_converter=one_hot_converter,
+            offset=offset,
+            verbose=args.verbose,
+            return_index=True,
+            flanks=flanks,
+        )
+
     # Extract flanking sequences
-    if args.flanks in ['random', 'self']:
+    if args.flanks in ["random", "self"]:
         if head_interval is not None:
             pad = head_interval - 1
             # Increase distances in case of middle predictions
@@ -913,12 +1085,12 @@ def main(args):
         flanks = args.flanks
     elif args.flanks is not None:
         with np.load(args.flanks) as f:
-            flank_left = f['left']
-            flank_right = f['right']
+            flank_left = f["left"]
+            flank_right = f["right"]
             assert flank_left.ndim == flank_right.ndim
             if flank_left.ndim == 2:
                 assert len(flank_left) == len(flank_right)
-                flanks = 'choose_idx'
+                flanks = "choose_idx"
             else:
                 assert flank_left.ndim == 1
                 flanks = (flank_left, flank_right)
@@ -930,42 +1102,47 @@ def main(args):
     else:
         mutfree_pos = None
     # Extract kmer distribution
-    freq_kmer = pd.read_csv(args.kmer_file,
-                            index_col=[i for i in range(args.k)])
+    freq_kmer = pd.read_csv(args.kmer_file, index_col=[i for i in range(args.k)])
     # Generate and save start sequences
     if args.seed != -1:
         np.random.seed(args.seed)
     if args.start_seqs:
         seqs = np.load(args.start_seqs)
     else:
-        seqs = utils.random_sequences(args.n_seqs, args.length,
-                                      freq_kmer.iloc[:, 0], out='idx')
+        seqs = utils.random_sequences(
+            args.n_seqs, args.length, freq_kmer.iloc[:, 0], out="idx"
+        )
     np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
     # Compute energy of start sequences
     # Predict on forward and reverse strands
-    if flanks == 'random':
-        randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0],
-                                            out='idx')
+    if flanks == "random":
+        randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
         flanks = (randseqs[0], randseqs[1])
-    elif flanks == 'choose_idx':
+    elif flanks == "choose_idx":
         flank_idx = np.random.randint(0, len(flank_left))
         flanks = (flank_left[flank_idx], flank_right[flank_idx])
         if args.verbose:
             print(f"Using flank_idx {flank_idx}")
     preds, indices = predicter(
-        seqs, offset=np.random.randint(0, args.stride), flanks=flanks)
+        seqs, offset=np.random.randint(0, args.stride), flanks=flanks
+    )
     preds_rev, indices_rev = predicter(
-        seqs, offset=np.random.randint(0, args.stride), flanks=flanks,
-        reverse=True)
+        seqs, offset=np.random.randint(0, args.stride), flanks=flanks, reverse=True
+    )
     # Compute energy
     gc_energy = GC_energy(seqs, args.target_gc)
     for_energy = args.loss(args.target[indices], preds)
     rev_energy = args.loss(args.target_rev[indices_rev], preds_rev)
     energy_list = [gc_energy, for_energy, rev_energy, np.zeros(args.n_seqs)]
-    cur_energy = sum(w*e for w, e in zip(args.weights, energy_list))
-    with open(Path(args.output_dir, 'energy.txt'), 'a') as f:
-        np.savetxt(f, np.stack([cur_energy] + energy_list, axis=1), fmt='%-8e',
-                   delimiter='\t', header='start')
+    cur_energy = sum(w * e for w, e in zip(args.weights, energy_list))
+    with open(Path(args.output_dir, "energy.txt"), "a") as f:
+        np.savetxt(
+            f,
+            np.stack([cur_energy] + energy_list, axis=1),
+            fmt="%-8e",
+            delimiter="\t",
+            header="start",
+        )
     # Initialize array of already seen bases for each position
     seen_bases = np.eye(4, dtype=int)[seqs]
     # Determine figure parameters
@@ -974,65 +1151,75 @@ def main(args):
     for step in range(args.steps):
         if args.verbose:
             print(time.time() - t0)
-            print(f'Step {step}')
+            print(f"Step {step}")
         # Generate all mutations, and associated mutation energy
         seqs, mut_energy = all_mutations(seqs, seen_bases, mutfree_pos)
         # Predict on forward and reverse strands
-        if flanks == 'random':
-            randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0],
-                                              out='idx')
+        if flanks == "random":
+            randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
             flanks = (randseqs[0], randseqs[1])
-        elif flanks == 'choose_idx':
+        elif flanks == "choose_idx":
             flank_idx = np.random.randint(0, len(flank_left))
             flanks = (flank_left[flank_idx], flank_right[flank_idx])
             if args.verbose:
                 print(f"Using flank_idx {flank_idx}")
         preds, indices = predicter(
-            seqs, offset=np.random.randint(0, args.stride), flanks=flanks)
+            seqs, offset=np.random.randint(0, args.stride), flanks=flanks
+        )
         preds_rev, indices_rev = predicter(
-            seqs, offset=np.random.randint(0, args.stride), flanks=flanks,
-            reverse=True)
+            seqs, offset=np.random.randint(0, args.stride), flanks=flanks, reverse=True
+        )
         # Compute energy components
         gc_energy = GC_energy(seqs, args.target_gc)
         for_energy = args.loss(args.target[indices], preds)
         rev_energy = args.loss(args.target_rev[indices_rev], preds_rev)
         energy_list = [gc_energy, for_energy, rev_energy, mut_energy]
         # Choose best mutation by kMC method
-        sel_idx, sel_energies = select(energy_list, args.weights, cur_energy,
-                                       args.temperature, step=step)
+        sel_idx, sel_energies = select(
+            energy_list, args.weights, cur_energy, args.temperature, step=step
+        )
         cur_energy = sel_energies[:, 0]
         # Keep selected sequence and increment seen_bases
         seqs = seqs[np.arange(len(seqs)), sel_idx]
-        seen_bases[np.arange(len(seqs)),
-                   sel_idx // 3,
-                   seqs[np.arange(len(seqs)), sel_idx // 3]] += 1
+        seen_bases[
+            np.arange(len(seqs)), sel_idx // 3, seqs[np.arange(len(seqs)), sel_idx // 3]
+        ] += 1
         # Save sequence, energy and plot profile
-        np.save(Path(args.output_dir, "designed_seqs",
-                     f"mut_seqs_step{step}.npy"),
-                seqs)
-        with open(Path(args.output_dir, 'energy.txt'), 'a') as f:
-            np.savetxt(f, sel_energies, fmt='%-8e',
-                       delimiter='\t', header=f'step{step}')
-        fig, axes = plt.subplots(nrow, ncol, figsize=(2+3*ncol, 1+2*nrow),
-                                 facecolor='w', layout='tight', sharey=True)
+        np.save(
+            Path(args.output_dir, "designed_seqs", f"mut_seqs_step{step}.npy"), seqs
+        )
+        with open(Path(args.output_dir, "energy.txt"), "a") as f:
+            np.savetxt(
+                f, sel_energies, fmt="%-8e", delimiter="\t", header=f"step{step}"
+            )
+        fig, axes = plt.subplots(
+            nrow,
+            ncol,
+            figsize=(2 + 3 * ncol, 1 + 2 * nrow),
+            facecolor="w",
+            layout="tight",
+            sharey=True,
+        )
         if args.n_seqs == 1:
             ax_list = [axes]
         else:
             ax_list = axes.flatten()
-        for ax, pfor, prev in zip(ax_list,
-                                  preds[np.arange(len(seqs)), sel_idx],
-                                  preds_rev[np.arange(len(seqs)), sel_idx]
-                                  ):
-            ax.plot(args.target, color='k', label='target')
+        for ax, pfor, prev in zip(
+            ax_list,
+            preds[np.arange(len(seqs)), sel_idx],
+            preds_rev[np.arange(len(seqs)), sel_idx],
+        ):
+            ax.plot(args.target, color="k", label="target")
             if target_by_strand:
-                ax.plot(-args.target_rev, color='k')
+                ax.plot(-args.target_rev, color="k")
                 prev = -prev
-            ax.plot(indices, pfor, label='forward')
-            ax.plot(indices_rev, prev, label='reverse', alpha=0.8)
+            ax.plot(indices, pfor, label="forward")
+            ax.plot(indices_rev, prev, label="reverse", alpha=0.8)
             ax.legend()
-        fig.savefig(Path(args.output_dir, "pred_figs",
-                         f"mut_preds_step{step}.png"),
-                    bbox_inches='tight')
+        fig.savefig(
+            Path(args.output_dir, "pred_figs", f"mut_preds_step{step}.png"),
+            bbox_inches="tight",
+        )
         plt.close()
     if args.verbose:
         print(time.time() - t0)
@@ -1044,41 +1231,49 @@ if __name__ == "__main__":
     # Get arguments
     args = parsing()
     if args.verbose:
-        print('Initialization')
+        print("Initialization")
     # Build output directory and initialize energy file
     Path(args.output_dir).mkdir(parents=True, exist_ok=False)
-    Path(args.output_dir, 'pred_figs').mkdir()
-    Path(args.output_dir, 'designed_seqs').mkdir()
-    Path(args.output_dir, 'probs').mkdir()
-    with open(Path(args.output_dir, 'energy.txt'), 'w') as f:
-        f.write('# total_energy\t'
-                'gc_energy\t'
-                'for_energy\t'
-                'rev_energy\t'
-                'mut_energy\n')
+    Path(args.output_dir, "pred_figs").mkdir()
+    Path(args.output_dir, "designed_seqs").mkdir()
+    Path(args.output_dir, "probs").mkdir()
+    with open(Path(args.output_dir, "energy.txt"), "w") as f:
+        f.write(
+            "# total_energy\t"
+            "gc_energy\t"
+            "for_energy\t"
+            "rev_energy\t"
+            "mut_energy\n"
+        )
     # Store arguments in config file
-    to_serealize = {k: v for k, v in vars(args).items()
-                    if k not in ['target', 'target_rev', 'weights']}
-    with open(Path(args.output_dir, 'config.txt'), 'w') as f:
+    to_serealize = {
+        k: v
+        for k, v in vars(args).items()
+        if k not in ["target", "target_rev", "weights"]
+    }
+    with open(Path(args.output_dir, "config.txt"), "w") as f:
         json.dump(to_serealize, f, indent=4)
-        f.write('\n')
-        f.write(f'weights: {args.weights}\n')
-        f.write(f'timestamp: {tmstmp}\n')
-        f.write(f'machine: {socket.gethostname()}\n')
+        f.write("\n")
+        f.write(f"weights: {args.weights}\n")
+        f.write(f"timestamp: {tmstmp}\n")
+        f.write(f"machine: {socket.gethostname()}\n")
     # Convert to non json serializable objects
-    losses = {'rmse': rmse, 'mae_cor': np_mae_cor}
+    losses = {"rmse": rmse, "mae_cor": np_mae_cor}
     args.loss = losses[args.loss]
     args.weights = np.array(args.weights, dtype=float)
     # Save target
-    np.savez(Path(args.output_dir, 'target.npz'),
-             forward=args.target, reverse=args.target_rev)
+    np.savez(
+        Path(args.output_dir, "target.npz"),
+        forward=args.target,
+        reverse=args.target_rev,
+    )
     # Start computations, save total time even if there was a failure
     try:
         main(args)
     except KeyboardInterrupt:
-        with open(Path(args.output_dir, 'config.txt'), 'a') as f:
-            f.write('KeyboardInterrupt\n')
-            f.write(f'total time: {time.time() - t0}\n')
+        with open(Path(args.output_dir, "config.txt"), "a") as f:
+            f.write("KeyboardInterrupt\n")
+            f.write(f"total time: {time.time() - t0}\n")
         raise
-    with open(Path(args.output_dir, 'config.txt'), 'a') as f:
-        f.write(f'total time: {time.time() - t0}\n')
+    with open(Path(args.output_dir, "config.txt"), "a") as f:
+        f.write(f"total time: {time.time() - t0}\n")
