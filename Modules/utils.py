@@ -530,6 +530,11 @@ def RCdna(s):
     return "".join(res)
 
 
+def str_to_idx(seqstr, order="ACGT"):
+    bases, index = np.unique(np.array(list(seqstr)), return_inverse=True)
+    return np.array([order.find(b) for b in bases])[index]
+
+
 # Sequence manipulation
 def remove_reads_with_N(
     sequences, tolerance=0, max_size=None, read_length=None, verbose=False
@@ -2407,6 +2412,7 @@ def moving_average(x, n=2, keepsize=False):
 
 
 def moving_sum(x, n=2, axis=None):
+    """onlt works for axis=0"""
     ret = np.cumsum(x, axis)
     ret[n:] = ret[n:] - ret[:-n]
     return ret[n - 1 :]
@@ -3019,14 +3025,14 @@ def one_hot_to_tokens(one_hot):
     return tokens
 
 
-def tokens_to_one_hot(tokens, one_hot_dim):
+def tokens_to_one_hot(tokens, one_hot_dim, dtype=None):
     """
     Converts an L-vector of integers in the range [0, D] to an L x D one-hot
     encoding. The value `D` must be provided as `one_hot_dim`. A token of D
     means the one-hot encoding is all 0s.
     From github.com/kundajelab/deeplift/blob/master/deeplift/dinuc_shuffle.py
     """
-    identity = np.identity(one_hot_dim + 1)[:, :-1]  # Last row is all 0s
+    identity = np.identity(one_hot_dim + 1, dtype=dtype)[:, :-1]  # Last row is all 0s
     return identity[tokens]
 
 
