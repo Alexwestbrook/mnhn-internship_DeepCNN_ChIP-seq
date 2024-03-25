@@ -95,6 +95,21 @@ data_dir='/home/alex/shared_folder'
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test136 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 3 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape gaussian --seed 0
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test137 --start_seqs $data_dir/SCerevisiae/generated/test121/designed_seqs/mut_seqs_step499.npy --steps 3 -t 0.0001 -s 128 -mid -v -ilen 500 -ishape sigmoid -bg low high --seed 0
 
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 4 -v --flanks random
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_selfflanks_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 5 -v --flanks self
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test138 -m $data_dir/JB_seqdes/weight_CNN_RNA_seq_2001_12_8_4_SRR7131299.hdf5 -ord ATGC -n 2 -l 4000 --steps 500 -t 0.0001 -s 100 --seed 6 -v --flanks random
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test139 -m $data_dir/JB_seqdes/weight_CNN_RNA_seq_2001_12_8_4_SRR7131299.hdf5 -ord ATGC -n 2 -l 4000 --steps 500 -t 0.0001 -s 100 --seed 6 -v --flanks random -targ 1 -targ_rev 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test140 -m $data_dir/JB_seqdes/weight_CNN_RNA_seq_2001_12_8_4_SRR7131299.hdf5 -ord ATGC -n 2 -l 4000 --steps 500 -t 0.0001 -s 100 --seed 6 -v --flanks random -targ 0 -targ_rev 1
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test141 -m $data_dir/JB_seqdes/weight_CNN_RNA_seq_2001_12_8_4_SRR7131299.hdf5 -ord ATGC -n 2 -l 4000 --steps 500 -t 0.0001 -s 100 --seed 7 -v --flanks random -targ 5 -targ_rev 0
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test142 -m $data_dir/JB_seqdes/weight_CNN_RNA_seq_2001_12_8_4_SRR7131299.hdf5 -ord ATGC -n 2 -l 4000 --steps 500 -t 0.0001 -s 100 --seed 7 -v --flanks random -targ 0 -targ_rev 5
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 11 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt4_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 12 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int4_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt5_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 13 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int5_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt6_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 14 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int6_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt7_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 15 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int7_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt8_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 16 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int8_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt9_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 17 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int9_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt10_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 18 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int10_1kbflanks_ACGTidx.npz
 
 
 # writing_dir='../'
@@ -228,6 +243,8 @@ data_dir='/home/alex/shared_folder'
 # res_name='distrib_'$model_name'_train_rel'
 # python $scripts_dir/evaluate_model.py -m $writing_dir/$data/Trainedmodels/$model_name/model -d $data_dir/$data/$dataset.npz -out $writing_dir/$data/results/$model_name/$res_name -data 'train' -rel $data_dir/$data/$new_labels.npz
 
+
+
 # python $scripts_dir/saturation_analysis.py \
 #     -o /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/saturation_analysis/saturation_IP2_vs_INPUT_variousfracs \
 #     -i /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/HN00205099_RawFASTQ_RPE1_WTH3K9me3_paired_mid_points.bw \
@@ -249,3 +266,20 @@ data_dir='/home/alex/shared_folder'
 #     -i /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C41_trimmed_paired_T2T_nodup_mid_points.bw \
 #     -c /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C42_trimmed_paired_T2T_nodup_mid_points.bw \
 #     -b 100 1000 10000 100000 1000000 -f 0.001 0.01 0.1 1
+
+# python $scripts_dir/saturation_analysis.py \
+#     -o /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/saturation_analysis/saturation_H3K4me3_vs_INPUT_powersof10_onlyip \
+#     -i /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C41_trimmed_paired_T2T_nodup_mid_points.bw \
+#     -c /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C42_trimmed_paired_T2T_nodup_mid_points.bw \
+#     -b 100 1000 10000 100000 1000000 -f 0.001 0.01 0.1 1 -only_ip
+# python $scripts_dir/saturation_analysis.py \
+#     -o /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/saturation_analysis/saturation_IP2_vs_INPUT_powersof10_onlyip \
+#     -i /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/HN00205099_RawFASTQ_RPE1_WTH3K9me3_paired_mid_points.bw \
+#     -c /home/alex/shared_folder/Judith-H3K9me3/results/alignments/T2T-CHM13v2.0/D1145C44_trimmed_paired_T2T_mid_points.bw \
+#     -b 100 1000 10000 100000 1000000 -f 0.001 0.01 0.1 1 -only_ip
+
+# python $scripts_dir/saturation_analysis.py \
+#     -o /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/saturation_analysis/saturation_H3K4me3_vs_INPUT_powersof10_onlyip_b100 \
+#     -i /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C41_trimmed_paired_T2T_nodup_mid_points.bw \
+#     -c /home/alex/shared_folder/Judith-H3K4me3/results/alignments/T2T-CHM13v2.0/D1145C42_trimmed_paired_T2T_nodup_mid_points.bw \
+#     -b 100 -f 0.001 0.01 0.1 1 -only_ip
