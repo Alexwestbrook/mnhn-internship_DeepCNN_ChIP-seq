@@ -5,7 +5,7 @@ import json
 import socket
 import time
 from pathlib import Path
-from typing import Callable, Iterable, List, Tuple, Union
+from typing import Callable, Iterable, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -311,6 +311,7 @@ def parsing():
         if args.start_seqs is None:
             args.length = len(args.target)
     elif args.insertlen is not None:
+        args.background = tuple(args.background)
         args.target = make_target(
             args.length,
             args.insertlen,
@@ -867,7 +868,8 @@ def get_profile_chunk(
 
 
 def get_profile_mutations(
-    seqs: np.ndarray,
+    seqs_mut: np.ndarray,
+    mutpos: np.ndarray,
     cur_preds: np.ndarray,
     predicter: Callable[
         [np.ndarray, bool, Union[None, int], Union[None, str, Tuple[np.ndarray]]],
@@ -878,7 +880,6 @@ def get_profile_mutations(
     middle: bool = False,
     reverse: bool = False,
     flanks: Union[None, str, Tuple[np.ndarray]] = None,
-    mutfree_pos: Union[None, np.ndarray] = None,
     stride: int = 1,
     offset: Union[None, int] = None,
     return_index: bool = False,
@@ -895,9 +896,12 @@ def get_profile_mutations(
 
     Parameters
     ----------
-    seqs : ndarray
-        Array of indexes into 'ACGT', sequences to predict on are read on the
-        last axis. Must be the output of `all_mutations`.
+    seqs_mut : ndarray, shape (n_seqs, n_mutations, length)
+        Mutated sequences. Array of indexes into 'ACGT', sequences to predict on are read on the
+        last axis. Can be the output of `all_mutations`.
+    mutpos : ndarray, shape (n_seqs, n_mutations)
+        1D-array of positions in length where mutations have been taken.
+        It is a repeated/broadcasted version of mutfree_pos in `all_mutations`.
     cur_preds : ndarray
         Array of current predictions on seqs
     predicter : callable
@@ -918,9 +922,6 @@ def get_profile_mutations(
         Tuple of 2 arrays flank_left and flank_right to be added at the start
         and end respectively of each sequence to get prediction on the entire
         sequence.
-    mutfree_pos : ndarray, optional
-        1D-array of positions in length where mutations can be taken.
-        Must correspond to the one used in `all_mutations`.
     stride : int, optional
         Stride to use for prediction. Using a value other than 1 will result
         in bases being skipped and make prediction faster
@@ -948,42 +949,40 @@ def get_profile_mutations(
     pred_start, pred_stop = get_pred_start_and_stop(winsize, head_interval, middle)
     # Add flanking sequences to make prediction along the entire sequence, and
     # update distances
-    seqs, leftpad, _ = pad_sequences(
-        seqs, pred_start, pred_stop, flanks, reverse=reverse
+    seqs_mut, leftpad, _ = pad_sequences(
+        seqs_mut, pred_start, pred_stop, flanks, reverse=reverse
     )
     # Extract changed windows from mutated sequences (i.e. where the model will see the effect of the mutation)
     changesize = 2 * winsize - 1  # changed window length
     # If sequence too small, revert to full sequence prediction
-    if changesize > seqs.shape[-1]:
-        changesize = seqs.shape[-1]
+    if changesize > seqs_mut.shape[-1]:
+        changesize = seqs_mut.shape[-1]
     # Starting index of each changed window
     start_idx = np.clip(
-        mutfree_pos - winsize + 1 + leftpad,
+        mutpos - winsize + 1 + leftpad,
         0,
-        seqs.shape[-1] - changesize,
-    )
-    start_idx = np.repeat(start_idx, 3)
+        seqs_mut.shape[-1] - changesize,
+    )  # shape (n_seqs, n_mutations)
     # Complete indices of each window
-    window_indices = start_idx.reshape(-1, 1) + np.arange(changesize).reshape(1, -1)
-    seqs = np.take_along_axis(seqs, np.expand_dims(window_indices, axis=0), axis=2)
+    window_indices = np.expand_dims(start_idx, axis=-1) + np.arange(changesize).reshape(
+        1, -1
+    )  # shape (n_seqs, n_mutations, changesize)
+    seqs_mut = np.take_along_axis(
+        seqs_mut, window_indices, axis=2
+    )  # shape (n_seqs, n_mutations, changesize)
 
     # Make predictions on sequences
-    preds, indices = predicter(seqs, reverse=reverse, offset=offset, flanks=None)
+    preds, indices = predicter(seqs_mut, reverse=reverse, offset=offset, flanks=None)
 
     # Adjust indices according to starting index of windows
-    indices = (start_idx - leftpad).reshape(-1, 1) + indices.reshape(1, -1)
+    indices = np.expand_dims(start_idx - leftpad, axis=-1) + indices.reshape(1, -1)
     # Rebuild full predictions by updating current predictions with mutated predictions
-    full_preds = np.repeat(np.expand_dims(cur_preds, axis=1), len(indices), axis=1)
-    modindices = np.repeat(
-        np.expand_dims(indices // stride, axis=0), seqs.shape[0], axis=0
-    )
+    full_preds = np.repeat(np.expand_dims(cur_preds, axis=1), indices.shape[1], axis=1)
+    modindices = indices // stride
     np.put_along_axis(full_preds, modindices, preds, axis=-1)
     if return_index:
         # Rebuild full indices by updating current indices with new ones
-        full_indices = np.repeat(
-            np.expand_dims(cur_indices, axis=0), len(indices), axis=0
-        )
-        modindices = indices // stride
+        full_indices = np.tile(cur_indices, indices.shape[:-1] + (1,))
         np.put_along_axis(full_indices, modindices, indices, axis=-1)
         return preds, indices
     else:
@@ -1013,7 +1012,7 @@ def make_shape(
     length: int,
     amplitude: float,
     shape: str = "linear",
-    background: List[str, str] = ["low", "low"],
+    background: Tuple[str, str] = ("low", "low"),
     std_factor: float = 1 / 4,
     sig_spread: float = 6,
 ) -> np.ndarray:
@@ -1061,7 +1060,7 @@ def make_target(
     period: Union[None, int] = None,
     pinsertlen: int = 147,
     pshape: str = "gaussian",
-    background: List[str, str] = ["low", "low"],
+    background: Tuple[str, str] = ("low", "low"),
     **kwargs,
 ):
     """TODO"""
@@ -1222,10 +1221,17 @@ def main(args):
         )
 
     def change_predicter(
-        seqs, cur_preds, cur_indices, reverse=False, offset=None, flanks=None
+        seqs_mut,
+        mutpos,
+        cur_preds,
+        cur_indices,
+        reverse=False,
+        offset=None,
+        flanks=None,
     ):
         return get_profile_mutations(
-            seqs,
+            seqs_mut,
+            mutpos,
             cur_preds,
             predicter,
             winsize,
@@ -1262,11 +1268,6 @@ def main(args):
                 flanks = (flank_left, flank_right)
     else:
         flanks = None
-    # Extract positions where mutations can be performed
-    if args.mutfree_pos_file is not None:
-        mutfree_pos = np.load(args.mutfree_pos_file)
-    else:
-        mutfree_pos = None
     # Extract kmer distribution
     freq_kmer = pd.read_csv(args.kmer_file, index_col=[i for i in range(args.k)])
     # Generate and save start sequences
@@ -1279,6 +1280,11 @@ def main(args):
             args.n_seqs, args.length, freq_kmer.iloc[:, 0], out="idx"
         )
     np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
+    # Extract positions where mutations can be performed
+    if args.mutfree_pos_file is not None:
+        mutfree_pos = np.load(args.mutfree_pos_file)
+    else:
+        mutfree_pos = np.arange(seqs.shape[-1])
     # Compute energy of start sequences
     # Predict on forward and reverse strands
     if flanks == "random":
@@ -1291,10 +1297,10 @@ def main(args):
             print(f"Using flank_idx {flank_idx}")
     cur_preds, cur_indices = predicter(
         seqs, offset=np.random.randint(0, args.stride), flanks=flanks
-    )
+    )  # shape (n_seqs, pred_len) both
     cur_preds_rev, cur_indices_rev = predicter(
         seqs, offset=np.random.randint(0, args.stride), flanks=flanks, reverse=True
-    )
+    )  # shape (n_seqs, pred_len) both
     # Compute energy
     gc_energy = GC_energy(seqs, args.gc_constrlen, args.target_gc)
     for_energy = args.loss(args.target[cur_indices], cur_preds)
@@ -1338,15 +1344,23 @@ def main(args):
         for mutpos_batch in mutpos_batches:
             # Perform mutations on positions of this batch, and get associated energy (occurences)
             seqs_mut, mut_energy = all_mutations(
-                seqs, mutpos_batch, returns_occs=True, bases_occs=bases_occs
+                seqs, mutpos_batch, return_occs=True, bases_occs=bases_occs
             )  # shape (n_seqs, 3*len(mutpos_batch), length) and (n_seqs, 3*len(mutpos_batch))
+            mutpos_batch_ext = np.tile(
+                np.repeat(mutpos_batch, 3), (len(seqs_mut), 1)
+            )  # shape (n_seqs, 3*len(mutpos_batch))
             # Get gc_energy
             gc_energy = GC_energy(
                 seqs_mut, args.gc_constrlen, target_gc=args.target_gc
             )  # shape (n_seqs, 3*len(mutpos_batch))
             # Predict on forward and compute forward energy
             preds, indices = change_predicter(
-                seqs_mut, cur_preds, cur_indices, offset=offset_for, flanks=flanks
+                seqs_mut,
+                mutpos_batch_ext,
+                cur_preds,
+                cur_indices,
+                offset=offset_for,
+                flanks=flanks,
             )  # shape (n_seqs, 3*len(mutpos_batch), pred_len) both
             for_energy = args.loss(
                 args.target[indices], preds
@@ -1354,6 +1368,7 @@ def main(args):
             # Predict on reverse and compute reverse energy
             preds_rev, indices_rev = change_predicter(
                 seqs_mut,
+                mutpos_batch_ext,
                 cur_preds,
                 cur_indices,
                 offset=offset_rev,
@@ -1373,6 +1388,7 @@ def main(args):
             energy_comp = np.concatenate(
                 energy_comp, axis=1
             )  # shape (n_seqs, 3*mutfree_pos)
+            print(energy_comp.shape)
         # Choose best mutation by kMC method
         sel_idx, sel_energies = select(
             energy_list, args.weights, cur_energy, args.temperature, step=step
@@ -1381,21 +1397,34 @@ def main(args):
         cur_energy = sel_energies[:, 0]  # shape (n_seqs,)
         # Extract mutation position and increment
         sel_mutpos = mutfree_pos[sel_idx // 3]  # shape (n_seqs,)
+        print(sel_mutpos.shape)
         sel_incr = 1 + sel_idx % 3  # shape (n_seqs,)
         # Perform mutation on seqs and increment bases_occs
         seqs[np.arange(len(seqs)), sel_mutpos] = (
             seqs[np.arange(len(seqs)), sel_mutpos] + sel_incr
         ) % 4
+        print(seqs.shape)
         bases_occs[
             np.arange(len(seqs)), sel_mutpos, seqs[np.arange(len(seqs)), sel_mutpos]
         ] += 1
         # Recompute current predictions and indices
         cur_preds, cur_indices = change_predicter(
-            seqs, cur_preds, cur_indices, offset=offset_for, flanks=flanks
-        )
+            np.expand_dims(seqs, axis=1),
+            np.expand_dims(sel_mutpos, axis=1),
+            cur_preds,
+            cur_indices,
+            offset=offset_for,
+            flanks=flanks,
+        )  # shape (n_seqs, 3*n_seqs, pred_len) both
         cur_preds_rev, cur_indices_rev = change_predicter(
-            seqs, cur_preds, cur_indices, offset=offset_rev, flanks=flanks, reverse=True
-        )
+            np.expand_dims(seqs, axis=1),
+            np.expand_dims(sel_mutpos, axis=1),
+            cur_preds,
+            cur_indices,
+            offset=offset_rev,
+            flanks=flanks,
+            reverse=True,
+        )  # shape (n_seqs, 3*n_seqs, pred_len) both
         # Save sequence, energy and plot profile
         np.save(
             Path(args.output_dir, "designed_seqs", f"mut_seqs_step{step}.npy"), seqs
