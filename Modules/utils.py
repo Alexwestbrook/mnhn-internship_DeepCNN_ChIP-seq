@@ -5,7 +5,7 @@ import os
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Dict, Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -1152,11 +1152,46 @@ def GC_content(one_hot_reads: np.ndarray, order: int = "ACGT") -> np.ndarray:
     return gc
 
 
-def sliding_GC(one_hot, n, order="ACGT"):
-    valid_mask = one_hot.sum(axis=1) != 0
-    GC_idx = [order.find("G"), order.find("C")]
-    GC_mask = one_hot[:, GC_idx].sum(axis=1)
-    return moving_sum(GC_mask, n=n) / moving_sum(valid_mask, n=n)
+def sliding_GC(
+    seqs: np.ndarray, n: int, axis: int = -1, order: str = "ACGT", form: str = "token"
+) -> np.ndarray:
+    """Compute sliding GC content on encoded DNA sequences
+
+    Sequences can be either tokenized or one-hot encoded.
+    GC content will be computed by considering only valid tokens or one-hots.
+    Valid tokens are between in the range [0, 4[, and valid one_hots have exactly one value equal to 1. However we check only if they sum to one.
+
+    Parameters
+    ----------
+    seqs: ndarray
+        Input sequences. Sequences are assumed to be read along last axis, otherwise change `axis` parameter.
+    n: int
+        Length of window to compute GC content on, must be greater than 0.
+    axis: int, optional
+        Axis along which to compute GC content. The default (-1) assumes sequences are read along last axis.
+        Currently, form 'one_hot' doesn't support the axis parameter, it assumes one-hot values on last axis, and sequence on second to last axis.
+    order: str, optional
+        Order of encoding, must contain each letter of ACGT exactly once.
+        If `form` is 'token', then value i corresponds to base at index i in order.
+        If `form` is 'one_hot', then vector of zeros with a 1 at position i corresponds to base at index i in order.
+    form: {'token', 'one_hot'}, optional
+        Form of input array. 'token' for indexes of bases and 'one_hot' for one-hot encoded sequences, with an extra dimension.
+
+    Returns
+    -------
+    ndarray
+        Array of sliding GC content, with size along `axis` reduced by `n`-1, and optional one-hot dimension removed.
+    """
+    if form == "token":
+        valid_mask = (seqs >= 0) & (seqs < 4)
+        GC_mask = (seqs == order.find("C")) | (seqs == order.find("G"))
+        return moving_sum(GC_mask, n, axis=axis) / moving_sum(valid_mask, n, axis=axis)
+    elif form == "one_hot":
+        valid_mask = seqs.sum(axis=-1) != 0
+        GC_mask = seqs[:, [order.find("C"), order.find("G")]].sum(axis=-1)
+        return moving_sum(GC_mask, n=n, axis=-1) / moving_sum(valid_mask, n=n, axis=-1)
+    else:
+        raise ValueError(f"form must be 'token' or 'one_hot', not {form}")
 
 
 def classify_1D(features, y, bins):
@@ -2411,11 +2446,67 @@ def moving_average(x, n=2, keepsize=False):
     return ret[n - 1 :] / n
 
 
-def moving_sum(x, n=2, axis=None):
-    """onlt works for axis=0"""
-    ret = np.cumsum(x, axis)
-    ret[n:] = ret[n:] - ret[:-n]
-    return ret[n - 1 :]
+def slicer_on_axis(
+    arr: np.ndarray,
+    slc: Union[slice, Iterable[slice]],
+    axis: Union[None, int, Iterable[int]] = None,
+) -> Tuple[slice]:
+    """Take slices of array along specified axis
+
+    Parameters
+    ----------
+    arr: ndarray
+        Input array
+    slc: slice or iterable of slices
+        Slices of the array to take.
+    axis: None or int or iterable of ints
+        Axis along which to perform slicing. The default (None) is to take slices along first len(slc) dimensions
+
+    Returns
+    -------
+    tuple of slices
+        Full tuple of slices to use to slice array
+    """
+    full_slice = [slice(None)] * arr.ndim
+    if isinstance(slc, slice):
+        if axis is None:
+            axis = 0
+        if isinstance(axis, int):
+            full_slice[axis] = slc
+        else:
+            for ax in axis:
+                full_slice[ax] = slc
+    else:
+        if axis is None:
+            axis = list(range(len(slc)))
+        for s, ax in zip(slc, axis):
+            full_slice[ax] = s
+    return tuple(full_slice)
+
+
+def moving_sum(arr: np.ndarray, n: int, axis: Union[None, int] = None) -> np.ndarray:
+    """Compute moving sum of array
+
+    Parameters
+    ----------
+    arr: ndarray
+        Input array
+    n: int
+        Length of window to compute sum on, must be greater than 0
+    axis: None or int, optional
+        Axis along which the moving sum is computed, the default (None) is to compute the moving sum over the flattened array.
+
+    Returns
+    -------
+    ndarray
+        Array of moving sum, with size along `axis` reduced by `n`-1.
+    """
+    res = np.cumsum(arr, axis=axis)
+    res[slicer_on_axis(res, slice(n, None), axis=axis)] = (
+        res[slicer_on_axis(res, slice(n, None), axis=axis)]
+        - res[slicer_on_axis(res, slice(None, -n), axis=axis)]
+    )
+    return res[slicer_on_axis(res, slice(n - 1, None), axis=axis)]
 
 
 def repeat_along_diag(a, r):
@@ -2821,7 +2912,13 @@ def max_on_index(*args, length=None):
 
 
 # Random sequences generation
-def kmer_counts(one_hots, k, order="ACGT", includeN=True, as_pandas=True):
+def kmer_counts(
+    one_hots: Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
+    k: int,
+    order: str = "ACGT",
+    includeN: bool = True,
+    as_pandas: bool = True,
+) -> Union[np.ndarray, pd.Series]:
     """Compute kmer occurences in one-hot encoded sequence."""
     # Convert input into list-like of one_hot 2D-arrays
     # If 3D-array optionnally use faster implementation
@@ -3405,6 +3502,245 @@ def flatten(container):
 
 
 # Test functions
+def moving_sum_test():
+    np.random.seed(0)
+    tokens = np.array([0, 3, 1, 0, 3, 3, 3, 3, 1, 3])
+    one_hot = tokens_to_one_hot(tokens, 4, dtype=int)
+    refs = [
+        np.array(
+            [
+                [1, 0, 0, 0],
+                [0, 0, 0, 1],
+                [0, 1, 0, 0],
+                [1, 0, 0, 0],
+                [0, 0, 0, 1],
+                [0, 0, 0, 1],
+                [0, 0, 0, 1],
+                [0, 0, 0, 1],
+                [0, 1, 0, 0],
+                [0, 0, 0, 1],
+            ]
+        ),
+        np.array(
+            [
+                [1, 0, 0, 1],
+                [0, 1, 0, 1],
+                [1, 1, 0, 0],
+                [1, 0, 0, 1],
+                [0, 0, 0, 2],
+                [0, 0, 0, 2],
+                [0, 0, 0, 2],
+                [0, 1, 0, 1],
+                [0, 1, 0, 1],
+            ]
+        ),
+        np.array(
+            [
+                [1, 1, 0, 1],
+                [1, 1, 0, 1],
+                [1, 1, 0, 1],
+                [1, 0, 0, 2],
+                [0, 0, 0, 3],
+                [0, 0, 0, 3],
+                [0, 1, 0, 2],
+                [0, 1, 0, 2],
+            ]
+        ),
+        np.array([[2, 2, 0, 6]]),
+        np.empty((0, 4), dtype=int),
+    ]
+    for n, ref in zip([1, 2, 3, 10, 11], refs):
+        assert np.all(moving_sum(one_hot[:, 0], n) == ref[:, 0])  # default on 1D
+        for axis in [None, 0, -1]:
+            assert np.all(
+                moving_sum(one_hot[:, 0], n, axis=axis) == ref[:, 0]
+            )  # all axis values on 1D
+        assert np.all(moving_sum(one_hot, n, axis=0) == ref)  # axis=0 on 2D
+    refs = [
+        np.array(
+            [
+                [1, 0, 0, 0],
+                [0, 0, 0, 1],
+                [0, 1, 0, 0],
+                [1, 0, 0, 0],
+                [0, 0, 0, 1],
+                [0, 0, 0, 1],
+                [0, 0, 0, 1],
+                [0, 0, 0, 1],
+                [0, 1, 0, 0],
+                [0, 0, 0, 1],
+            ]
+        ),
+        np.array(
+            [
+                [1, 0, 0],
+                [0, 0, 1],
+                [1, 1, 0],
+                [1, 0, 0],
+                [0, 0, 1],
+                [0, 0, 1],
+                [0, 0, 1],
+                [0, 0, 1],
+                [1, 1, 0],
+                [0, 0, 1],
+            ]
+        ),
+        np.array(
+            [
+                [1, 0],
+                [0, 1],
+                [1, 1],
+                [1, 0],
+                [0, 1],
+                [0, 1],
+                [0, 1],
+                [0, 1],
+                [1, 1],
+                [0, 1],
+            ]
+        ),
+        np.array([[1], [1], [1], [1], [1], [1], [1], [1], [1], [1]]),
+        np.empty((10, 0), dtype=int),
+    ]
+    for n, ref in zip(range(1, 6), refs):
+        assert np.all(moving_sum(one_hot, n, axis=-1) == ref)  # axis=-1 on 2D
+    refs = [
+        np.array(
+            [
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+                1,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                1,
+                0,
+                0,
+                0,
+                1,
+                0,
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+            ]
+        ),
+        np.array(
+            [
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+                1,
+                0,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                1,
+                0,
+                0,
+                1,
+                1,
+                0,
+                0,
+                1,
+                1,
+                0,
+                0,
+                1,
+                1,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+            ]
+        ),
+        np.array(
+            [
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                1,
+                2,
+                1,
+                1,
+                1,
+                1,
+                1,
+                0,
+                0,
+                0,
+                0,
+                1,
+                1,
+                1,
+                0,
+                1,
+                1,
+                1,
+                0,
+                1,
+                1,
+                1,
+                0,
+                1,
+                1,
+                2,
+                1,
+                1,
+                0,
+                0,
+                0,
+                1,
+            ]
+        ),
+        np.array([10]),
+        np.array([], dtype=int),
+    ]
+    for n, ref in zip([1, 2, 3, 40, 41], refs):
+        assert np.all(moving_sum(one_hot, n) == ref)  # axis=None on 2D
+
+
 def kmer_counts_test(orders=["ACGT", "ATCG"], fasts=[True, False]):
     # All possible bases including N in different quantities
     one_hot1 = np.array(
