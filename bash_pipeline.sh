@@ -111,6 +111,9 @@ data_dir='/home/alex/shared_folder'
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt9_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 17 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int9_1kbflanks_ACGTidx.npz
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt10_v2 -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 18 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int10_1kbflanks_ACGTidx.npz
 
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 -v -ilen 0 -per 167 -plen 147 -pshape gaussian --seed 10
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_gc0.2_2seq_randomflanks -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 -v -ilen 0 -per 167 -plen 147 -pshape gaussian --seed 11 -targ_gc 0.2
+
 
 # writing_dir='../'
 # bbmap_dir='../bbmap'
