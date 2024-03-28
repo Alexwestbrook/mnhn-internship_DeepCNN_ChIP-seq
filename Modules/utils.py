@@ -1185,10 +1185,14 @@ def sliding_GC(
     if form == "token":
         valid_mask = (seqs >= 0) & (seqs < 4)
         GC_mask = (seqs == order.find("C")) | (seqs == order.find("G"))
+        if n > seqs.shape[axis]:
+            n = seqs.shape[axis]
         return moving_sum(GC_mask, n, axis=axis) / moving_sum(valid_mask, n, axis=axis)
     elif form == "one_hot":
         valid_mask = seqs.sum(axis=-1) != 0
         GC_mask = seqs[:, [order.find("C"), order.find("G")]].sum(axis=-1)
+        if n > seqs.shape[-1]:
+            n = seqs.shape[-1]
         return moving_sum(GC_mask, n=n, axis=-1) / moving_sum(valid_mask, n=n, axis=-1)
     else:
         raise ValueError(f"form must be 'token' or 'one_hot', not {form}")
