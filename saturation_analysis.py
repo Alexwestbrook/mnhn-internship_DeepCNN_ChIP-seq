@@ -52,7 +52,7 @@ def parsing():
         type=int,
         nargs="+",
         default=[1000],
-        help="binsizes at which to evaluate binomial enrichment",
+        help="binsizes at which to evaluate binomial enrichment (default: %(default)s)",
     )
     parser.add_argument(
         "-f",
@@ -60,7 +60,7 @@ def parsing():
         type=float,
         nargs="+",
         default=[1],
-        help="Fractions of counts to consider for downsampling",
+        help="Fractions of counts to consider for downsampling (default: %(default)s)",
     )
     parser.add_argument(
         "-d",
@@ -68,33 +68,33 @@ def parsing():
         type=float,
         nargs="+",
         help="Alternative to fracs, to specify by which numbers the counts "
-        "should be divided for downsampling. Will be converted to fractions.",
+        "should be divided for downsampling. Will be converted to fractions. (default: %(default)s)",
     )
     parser.add_argument(
         "-fdr",
         "--use_fdr",
         action="store_true",
         help="If set, correct pvalues to control false discovery rate "
-        "with Benjamini-Hochberg correction",
+        "with Benjamini-Hochberg correction (default: %(default)s)",
     )
     parser.add_argument(
         "-thres",
         "--signif_thres",
         type=float,
         default=0.05,
-        help="Threshold to consider pvalues as significant",
+        help="Threshold to consider pvalues as significant (default: %(default)s)",
     )
     parser.add_argument(
         "-only_ip",
         "--only_downsample_ip",
         action="store_true",
-        help="If set, only perform downsampling on ip file",
+        help="If set, only perform downsampling on ip file (default: %(default)s)",
     )
     parser.add_argument(
         "--plot_on_x",
         type=str,
         choices=["Total_cov", "IP_cov", "Ctrl_cov"],
-        help="Value to plot against on x-axis",
+        help="Value to plot against on x-axis (default: %(default)s)",
     )
     args = parser.parse_args()
     # Set default value for plot_on_x
