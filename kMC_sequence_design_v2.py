@@ -3,7 +3,6 @@ import datetime
 import gc
 import json
 import socket
-import time
 from pathlib import Path
 from typing import Callable, Iterable, Tuple, Union
 
@@ -42,14 +41,14 @@ def parsing():
         type=str,
         default="/home/alex/shared_folder/SCerevisiae/Trainedmodels/"
         "model_myco_pol_17/model",
-        help="trained model file as hdf5 or in tf2 format",
+        help="trained model file as hdf5 or in tf2 format (default: %(default)s)",
     )
     parser.add_argument(
         "-ord",
         "--one_hot_order",
         type=str,
         default="ACGT",
-        help="order of the one-hot encoding for the model",
+        help="order of the one-hot encoding for the model (default: %(default)s)",
     )
     parser.add_argument(
         "-kfile",
@@ -57,64 +56,74 @@ def parsing():
         type=str,
         default="/home/alex/shared_folder/SCerevisiae/genome/W303/"
         "W303_3mer_freq.csv",
-        help="file with kmer distribution to use for initializing sequences",
+        help="file with kmer distribution to use for initializing sequences (default: %(default)s)",
     )
     parser.add_argument(
         "-k",
         type=int,
         default=3,
         help="value of k for kmer distribution, must be provided to read the "
-        "kmer_file correctly",
+        "kmer_file correctly (default: %(default)s)",
     )
     parser.add_argument(
         "-n",
         "--n_seqs",
         type=int,
         default=1,
-        help="number of sequences to generate simultaneously",
+        help="number of sequences to generate simultaneously (default: %(default)s)",
     )
     parser.add_argument(
         "-l",
         "--length",
         type=int,
         default=2175,
-        help="length of the sequences to generate",
+        help="length of the sequences to generate (default: %(default)s)",
     )
     parser.add_argument(
         "-start",
         "--start_seqs",
         type=str,
         help="numpy binary file containing starting sequences as indexes with "
-        "shape (n_seqs, length). If set overrides n_seqs and length.",
+        "shape (n_seqs, length). If set overrides n_seqs and length. (default: %(default)s)",
     )
     parser.add_argument(
-        "--steps", type=int, default=100, help="number of steps to perform"
+        "--steps",
+        type=int,
+        default=100,
+        help="number of steps to perform (default: %(default)s)",
+    )
+    parser.add_argument(
+        "-p",
+        "--patience",
+        type=int,
+        default=10,
+        help="number of steps without improvement before stopping iteration (default: %(default)s)",
     )
     parser.add_argument(
         "-dist",
         "--distribute",
         action="store_true",
-        help="indicates to use MirrorStrategy for prediction",
+        help="indicates to use MirrorStrategy for prediction (default: %(default)s)",
     )
     parser.add_argument(
         "-s",
         "--stride",
         type=int,
         default=1,
-        help="specifies a stride in predictions to go faster",
+        help="specifies a stride in predictions to go faster (default: %(default)s)",
     )
     parser.add_argument(
         "-mid",
         "--middle_pred",
         action="store_true",
-        help="specifies to predict only on middle window",
+        help="specifies to predict only on middle window (default: %(default)s)",
     )
     parser.add_argument(
         "--flanks",
         type=str,
         help="file with flanking sequences to use for prediction, can also be "
         "'random' to get random flanks with specified kmer distribution "
-        "or 'self' to use itself as flank as in tandem repeats",
+        "or 'self' to use itself as flank as in tandem repeats (default: %(default)s)",
     )
     parser.add_argument(
         "-targ",
@@ -124,7 +133,7 @@ def parsing():
         default=[0],
         help="target profile for the designed sequences. If a single value, "
         "consider a flat target for the entire sequence, otherwise must "
-        "be of same length as the sequences.",
+        "be of same length as the sequences. (default: %(default)s)",
     )
     parser.add_argument(
         "-targ_rev",
@@ -135,17 +144,20 @@ def parsing():
         "strand, if unspecified, consider the same target for forward "
         "and reverse. If a single value, consider a flat target for the "
         "entire sequence, otherwise must be of same length as the "
-        "sequences.",
+        "sequences. (default: %(default)s)",
     )
     parser.add_argument(
         "-amp",
         "--amplitude",
         type=float,
         default=1,
-        help="amplitude for target profile",
+        help="amplitude for target profile (default: %(default)s)",
     )
     parser.add_argument(
-        "-ilen", "--insertlen", type=int, help="length of insert in target"
+        "-ilen",
+        "--insertlen",
+        type=int,
+        help="length of insert in target (default: %(default)s)",
     )
     parser.add_argument(
         "-ishape",
@@ -153,13 +165,13 @@ def parsing():
         type=str,
         default="linear",
         help="shape of insert. Must be either 'block', 'deplete', "
-        "'linear', 'sigmoid' or 'gaussian'",
+        "'linear', 'sigmoid' or 'gaussian' (default: %(default)s)",
     )
     parser.add_argument(
         "-istart",
         "--insertstart",
         type=int,
-        help="Index of the position where the insert should start",
+        help="Index of the position where the insert should start (default: %(default)s)",
     )
     parser.add_argument(
         "-bg",
@@ -167,27 +179,33 @@ def parsing():
         type=str,
         nargs=2,
         default=["low", "low"],
-        help="background signal to put at the left and right of the insert",
+        help="background signal to put at the left and right of the insert (default: %(default)s)",
     )
     parser.add_argument(
         "-stdf",
         "--std_factor",
         type=float,
         default=1 / 4,
-        help="standard deviation for gaussian peak as fraction of length",
+        help="standard deviation for gaussian peak as fraction of length (default: %(default)s)",
     )
     parser.add_argument(
         "-sigs",
         "--sig_spread",
         type=float,
         default=6,
-        help="absolute value to compute the sigmoid up to on each side",
+        help="absolute value to compute the sigmoid up to on each side (default: %(default)s)",
     )
     parser.add_argument(
-        "-per", "--period", type=int, help="period of the target, makes it multipeak"
+        "-per",
+        "--period",
+        type=int,
+        help="period of the target, makes it multipeak (default: %(default)s)",
     )
     parser.add_argument(
-        "-plen", "--periodlen", type=int, help="length of periodic peak in target"
+        "-plen",
+        "--periodlen",
+        type=int,
+        help="length of periodic peak in target (default: %(default)s)",
     )
     parser.add_argument(
         "-pshape",
@@ -195,7 +213,7 @@ def parsing():
         type=str,
         default="gaussian",
         help="shape of periodic peak. Must be either 'block', 'deplete', "
-        "'linear', 'sigmoid' or 'gaussian'",
+        "'linear', 'sigmoid' or 'gaussian' (default: %(default)s)",
     )
     parser.add_argument(
         "--target_file",
@@ -205,27 +223,27 @@ def parsing():
         "also length, unless start_seqs is set, in which case it must be "
         "of same length as start_seqs. Can also be an npz archive with 2 "
         "different targets for each strand, with keys named 'forward' "
-        "and 'reverse'.",
+        "and 'reverse'. (default: %(default)s)",
     )
     parser.add_argument(
         "-targ_gc",
         "--target_gc",
         type=float,
         default=0.3834,
-        help="target GC content for the designed sequences",
+        help="target GC content for the designed sequences (default: %(default)s)",
     )
     parser.add_argument(
         "-gclen",
         "--gc_constrlen",
         type=int,
         default=1000,
-        help="length over which to apply the GC constraint to",
+        help="length over which to apply the GC constraint to (default: %(default)s)",
     )
     parser.add_argument(
         "--loss",
         type=str,
         default="rmse",
-        help="loss to use for comparing prediction and target",
+        help="loss to use for comparing prediction and target (default: %(default)s)",
     )
     parser.add_argument(
         "-w",
@@ -233,46 +251,61 @@ def parsing():
         type=float,
         nargs=4,
         default=[1, 1, 1, 1],
-        help="weights for the energy terms in order E_gc, E_for, E_rev, E_mut",
+        help="weights for the energy terms in order E_gc, E_for, E_rev, E_mut (default: %(default)s)",
     )
     parser.add_argument(
-        "-t", "--temperature", type=float, default=0.1, help="temperature for kMC"
+        "-t",
+        "--temperature",
+        type=float,
+        default=0.1,
+        help="temperature for kMC (default: %(default)s)",
     )
     parser.add_argument(
         "--mutfree_pos_file",
         type=str,
-        help="Numpy binary file with positions where mutations can be " "performed.",
+        help="Numpy binary file with positions where mutations can be "
+        "performed. (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--nmut_step",
+        type=int,
+        default=4000,
+        help="Number of mutation positions to scan per step. Set to 0 to scan all mutations at each step (default: %(default)s)",
     )
     parser.add_argument(
         "-b",
         "--batch_size",
         type=int,
         default=1024,
-        help="number of windows to predict on at once",
+        help="number of windows to predict on at once (default: %(default)s)",
     )
     parser.add_argument(
-        "-pbs",
-        "--pos_batch_size",
+        "-mbs",
+        "--mut_batch_size",
         type=int,
-        default=1024,
-        help="number of mutated positions per sequence to fit into memory. "
-        "The actual number of mutated sequences is 3*n_seqs*pos_batch_size",
+        default=48000,
+        help="number of mutated sequences to fit into memory. It is scaled down by `length`/1000, "
+        "so to keep the same value for different lengths of sequences."
+        "48k takes around 6G of RAM (default: %(default)s)",
     )
     parser.add_argument(
         "-c",
         "--chunk_size",
         type=int,
         default=128000,
-        help="number of sequence slides that to fit into memory",
+        help="number of sequence slides that to fit into memory (default: %(default)s)",
     )
     parser.add_argument(
-        "--seed", type=int, default=-1, help="seed to use for random generations"
+        "--seed",
+        type=int,
+        default=-1,
+        help="seed to use for random generations (default: %(default)s)",
     )
     parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="whether to print information messages",
+        help="whether to print information messages (default: %(default)s)",
     )
     args = parser.parse_args()
     # Basic checks
@@ -285,7 +318,7 @@ def parsing():
         args.stride,
         args.gc_constrlen,
         args.batch_size,
-        args.pos_batch_size,
+        args.mut_batch_size,
         args.chunk_size,
         args.period,
         args.periodlen,
@@ -293,6 +326,7 @@ def parsing():
     ]:
         assert item is None or item >= 1
     assert args.temperature > 0
+    assert args.nmut_step >= 0
     assert args.target_gc < 1 and args.target_gc > 0
     # Check starting sequences
     if args.start_seqs is not None:
@@ -439,10 +473,14 @@ def sliding_GC(
     if form == "token":
         valid_mask = (seqs >= 0) & (seqs < 4)
         GC_mask = (seqs == order.find("C")) | (seqs == order.find("G"))
+        if n > seqs.shape[axis]:
+            n = seqs.shape[axis]
         return moving_sum(GC_mask, n, axis=axis) / moving_sum(valid_mask, n, axis=axis)
     elif form == "one_hot":
         valid_mask = seqs.sum(axis=-1) != 0
         GC_mask = seqs[:, [order.find("C"), order.find("G")]].sum(axis=-1)
+        if n > seqs.shape[-1]:
+            n = seqs.shape[-1]
         return moving_sum(GC_mask, n=n, axis=-1) / moving_sum(valid_mask, n=n, axis=-1)
     else:
         raise ValueError(f"form must be 'token' or 'one_hot', not {form}")
@@ -758,7 +796,9 @@ def get_profile_chunk(
     else:
         offset %= stride
     if verbose:
-        print(f"Predicting with stride {stride} and offset {offset}")
+        print(
+            f"Predicting {'reverse' if reverse else 'forward'} with stride {stride} and offset {offset}"
+        )
     # pred_start: distance between first prediction and sequence start
     # pred_stop: distance between last prediction and sequence end
     pred_start, pred_stop = get_pred_start_and_stop(winsize, head_interval, middle)
@@ -837,7 +877,9 @@ def get_profile_chunk(
     preds = []
     for chunk in chunks:
         # Convert to one-hot and predict
-        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze()
+        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze(
+            axis=-1
+        )
         # Collect garbage to prevent memory leak from model.predict()
         gc.collect()
         preds.append(pred)
@@ -902,7 +944,7 @@ def get_profile_mutations(
     mutpos : ndarray, shape (n_seqs, n_mutations)
         1D-array of positions in length where mutations have been taken.
         It is a repeated/broadcasted version of mutfree_pos in `all_mutations`.
-    cur_preds : ndarray
+    cur_preds : ndarray, shape (n_seqs, pred_len)
         Array of current predictions on seqs
     predicter : callable
         Function used to predict profile of each sequence. Must admit seqs, reverse, offset and flanks arguments.
@@ -932,7 +974,7 @@ def get_profile_mutations(
         format.
     return_index : bool, optional
         If True, return indices corresponding to the predictions, requires cur_indices to be set.
-    cur_indices : ndarray, optional
+    cur_indices : ndarray, shape (pred_len,) or (n_seqs, pred_len), optional
         Array of indices for current predictions. Required if return_index is set to True.
 
     Returns
@@ -981,12 +1023,18 @@ def get_profile_mutations(
     modindices = indices // stride
     np.put_along_axis(full_preds, modindices, preds, axis=-1)
     if return_index:
+        if cur_indices.ndim == 1:
+            # Expand dimensions to match that of cur_preds
+            cur_indices = np.tile(cur_indices, (len(cur_preds), 1))
+            assert cur_indices.shape == cur_preds.shape
         # Rebuild full indices by updating current indices with new ones
-        full_indices = np.tile(cur_indices, indices.shape[:-1] + (1,))
+        full_indices = np.repeat(
+            np.expand_dims(cur_indices, axis=1), indices.shape[1], axis=1
+        )
         np.put_along_axis(full_indices, modindices, indices, axis=-1)
-        return preds, indices
+        return full_preds, full_indices
     else:
-        return preds
+        return full_preds
 
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> Union[int, np.ndarray]:
@@ -1216,7 +1264,7 @@ def main(args):
             batch_size=args.batch_size,
             chunk_size=args.chunk_size,
             one_hot_converter=one_hot_converter,
-            verbose=args.verbose,
+            verbose=False,
             return_index=True,
         )
 
@@ -1285,6 +1333,10 @@ def main(args):
         mutfree_pos = np.load(args.mutfree_pos_file)
     else:
         mutfree_pos = np.arange(seqs.shape[-1])
+    # Maximum number of positions per sequence to mutate per mutation batch
+    pos_batch_size = args.mut_batch_size // (3 * args.n_seqs * (args.length // 1000))
+    if args.verbose:
+        print(pos_batch_size)
     # Compute energy of start sequences
     # Predict on forward and reverse strands
     if flanks == "random":
@@ -1296,10 +1348,10 @@ def main(args):
         if args.verbose:
             print(f"Using flank_idx {flank_idx}")
     cur_preds, cur_indices = predicter(
-        seqs, offset=np.random.randint(0, args.stride), flanks=flanks
+        seqs, offset=0, flanks=flanks
     )  # shape (n_seqs, pred_len) both
     cur_preds_rev, cur_indices_rev = predicter(
-        seqs, offset=np.random.randint(0, args.stride), flanks=flanks, reverse=True
+        seqs, offset=0, flanks=flanks, reverse=True
     )  # shape (n_seqs, pred_len) both
     # Compute energy
     gc_energy = GC_energy(seqs, args.gc_constrlen, args.target_gc)
@@ -1307,6 +1359,9 @@ def main(args):
     rev_energy = args.loss(args.target_rev[cur_indices_rev], cur_preds_rev)
     energy_list = [gc_energy, for_energy, rev_energy, np.zeros(args.n_seqs)]
     cur_energy = sum(w * e for w, e in zip(args.weights, energy_list))
+    # Initialise best energy and lag
+    best_energy = cur_energy
+    best_lag = np.zeros(args.n_seqs, dtype=int)
     with open(Path(args.output_dir, "energy.txt"), "a") as f:
         np.savetxt(
             f,
@@ -1322,7 +1377,7 @@ def main(args):
     target_by_strand = not np.all(args.target == args.target_rev)
     for step in range(args.steps):
         if args.verbose:
-            print(time.time() - t0)
+            print(datetime.datetime.now() - tmstmp)
             print(f"Step {step}")
         # Get flanks and offset
         if flanks == "random":
@@ -1335,19 +1390,34 @@ def main(args):
                 print(f"Using flank_idx {flank_idx}")
         offset_for = np.random.randint(0, args.stride)
         offset_rev = np.random.randint(0, args.stride)
+        if args.verbose:
+            print(
+                f"Predicting with stride {args.stride} and offset {offset_for} "
+                f"on forward and {offset_rev} on reverse"
+            )
+        # Subsample mutation positions
+        if args.nmut_step != 0 and args.nmut_step < len(mutfree_pos):
+            start_mut = np.random.randint(len(mutfree_pos) - args.nmut_step)
+            mutfree_pos_step = mutfree_pos[start_mut : start_mut + args.nmut_step]
+        else:
+            mutfree_pos_step = mutfree_pos
         # Generate all mutations, and associated mutation energy
         mutpos_batches = np.split(
-            mutfree_pos,
-            np.arange(args.pos_batch_size, len(mutfree_pos), args.pos_batch_size),
+            mutfree_pos_step,
+            np.arange(pos_batch_size, len(mutfree_pos_step), pos_batch_size),
         )
-        energy_list = [[] * 4]
+        if args.verbose:
+            print(
+                f"Scanning mutations on {len(mutfree_pos_step)} positions in {len(mutpos_batches)} batches"
+            )
+        energy_list = [[] for i in range(4)]
         for mutpos_batch in mutpos_batches:
             # Perform mutations on positions of this batch, and get associated energy (occurences)
             seqs_mut, mut_energy = all_mutations(
                 seqs, mutpos_batch, return_occs=True, bases_occs=bases_occs
             )  # shape (n_seqs, 3*len(mutpos_batch), length) and (n_seqs, 3*len(mutpos_batch))
             mutpos_batch_ext = np.tile(
-                np.repeat(mutpos_batch, 3), (len(seqs_mut), 1)
+                np.repeat(mutpos_batch, 3), (args.n_seqs, 1)
             )  # shape (n_seqs, 3*len(mutpos_batch))
             # Get gc_energy
             gc_energy = GC_energy(
@@ -1369,8 +1439,8 @@ def main(args):
             preds_rev, indices_rev = change_predicter(
                 seqs_mut,
                 mutpos_batch_ext,
-                cur_preds,
-                cur_indices,
+                cur_preds_rev,
+                cur_indices_rev,
                 offset=offset_rev,
                 flanks=flanks,
                 reverse=True,
@@ -1384,11 +1454,10 @@ def main(args):
             ):
                 energy_comp.append(batch_energy_comp)
         # Concatenate batches of energy
-        for energy_comp in energy_list:
-            energy_comp = np.concatenate(
+        for i, energy_comp in enumerate(energy_list):
+            energy_list[i] = np.concatenate(
                 energy_comp, axis=1
-            )  # shape (n_seqs, 3*mutfree_pos)
-            print(energy_comp.shape)
+            )  # shape (n_seqs, 3*mutfree_pos_step)
         # Choose best mutation by kMC method
         sel_idx, sel_energies = select(
             energy_list, args.weights, cur_energy, args.temperature, step=step
@@ -1396,16 +1465,14 @@ def main(args):
         # Extract current energy
         cur_energy = sel_energies[:, 0]  # shape (n_seqs,)
         # Extract mutation position and increment
-        sel_mutpos = mutfree_pos[sel_idx // 3]  # shape (n_seqs,)
-        print(sel_mutpos.shape)
+        sel_mutpos = mutfree_pos_step[sel_idx // 3]  # shape (n_seqs,)
         sel_incr = 1 + sel_idx % 3  # shape (n_seqs,)
         # Perform mutation on seqs and increment bases_occs
-        seqs[np.arange(len(seqs)), sel_mutpos] = (
-            seqs[np.arange(len(seqs)), sel_mutpos] + sel_incr
+        seqs[np.arange(args.n_seqs), sel_mutpos] = (
+            seqs[np.arange(args.n_seqs), sel_mutpos] + sel_incr
         ) % 4
-        print(seqs.shape)
         bases_occs[
-            np.arange(len(seqs)), sel_mutpos, seqs[np.arange(len(seqs)), sel_mutpos]
+            np.arange(args.n_seqs), sel_mutpos, seqs[np.arange(args.n_seqs), sel_mutpos]
         ] += 1
         # Recompute current predictions and indices
         cur_preds, cur_indices = change_predicter(
@@ -1415,16 +1482,20 @@ def main(args):
             cur_indices,
             offset=offset_for,
             flanks=flanks,
-        )  # shape (n_seqs, 3*n_seqs, pred_len) both
+        )  # shape (n_seqs, 1, pred_len) both
+        cur_preds = cur_preds.reshape(args.n_seqs, -1)
+        cur_indices = cur_indices.reshape(args.n_seqs, -1)
         cur_preds_rev, cur_indices_rev = change_predicter(
             np.expand_dims(seqs, axis=1),
             np.expand_dims(sel_mutpos, axis=1),
-            cur_preds,
-            cur_indices,
+            cur_preds_rev,
+            cur_indices_rev,
             offset=offset_rev,
             flanks=flanks,
             reverse=True,
-        )  # shape (n_seqs, 3*n_seqs, pred_len) both
+        )  # shape (n_seqs, 1, pred_len) both
+        cur_preds_rev = cur_preds_rev.reshape(args.n_seqs, -1)
+        cur_indices_rev = cur_indices_rev.reshape(args.n_seqs, -1)
         # Save sequence, energy and plot profile
         np.save(
             Path(args.output_dir, "designed_seqs", f"mut_seqs_step{step}.npy"), seqs
@@ -1445,30 +1516,38 @@ def main(args):
             ax_list = [axes]
         else:
             ax_list = axes.flatten()
-        for ax, pfor, prev in zip(
+        for ax, predfor, indfor, predrev, indrev in zip(
             ax_list,
-            preds[np.arange(len(seqs)), sel_idx],
-            preds_rev[np.arange(len(seqs)), sel_idx],
+            cur_preds,
+            cur_indices,
+            cur_preds_rev,
+            cur_indices_rev,
         ):
             ax.plot(args.target, color="k", label="target")
             if target_by_strand:
                 ax.plot(-args.target_rev, color="k")
-                prev = -prev
-            ax.plot(indices, pfor, label="forward")
-            ax.plot(indices_rev, prev, label="reverse", alpha=0.8)
+                predrev = -predrev
+            ax.plot(indfor, predfor, label="forward")
+            ax.plot(indrev, predrev, label="reverse", alpha=0.8)
             ax.legend()
         fig.savefig(
             Path(args.output_dir, "pred_figs", f"mut_preds_step{step}.png"),
             bbox_inches="tight",
         )
         plt.close()
+        # Compute best energy and perform earlystopping
+        best_cur_mask = cur_energy < best_energy
+        best_lag += 1
+        best_lag[best_cur_mask] = 0
+        best_energy[best_cur_mask] = cur_energy[best_cur_mask]
+        if args.patience > 0 and np.all(best_lag > args.patience):
+            break
     if args.verbose:
-        print(time.time() - t0)
+        print(datetime.datetime.now() - tmstmp)
 
 
 if __name__ == "__main__":
     tmstmp = datetime.datetime.now()
-    t0 = time.time()
     # Get arguments
     args = parsing()
     if args.verbose:
@@ -1511,10 +1590,10 @@ if __name__ == "__main__":
     # Start computations, save total time even if there was a failure
     try:
         main(args)
-    except KeyboardInterrupt:
+    except:
         with open(Path(args.output_dir, "config.txt"), "a") as f:
-            f.write("KeyboardInterrupt\n")
-            f.write(f"total time: {time.time() - t0}\n")
+            f.write("Aborted\n")
+            f.write(f"total time: {datetime.datetime.now() - tmstmp}\n")
         raise
     with open(Path(args.output_dir, "config.txt"), "a") as f:
-        f.write(f"total time: {time.time() - t0}\n")
+        f.write(f"total time: {datetime.datetime.now() - tmstmp}\n")
