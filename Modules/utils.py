@@ -5,7 +5,7 @@ import os
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Tuple, Union
+from typing import Callable, Dict, Generator, Iterable, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -34,21 +34,22 @@ def data_generation(IDs, reads, labels, class_weights):
 
 
 def data_generator(
-    dataset_dir,
-    batch_size,
-    class_weights={0: 1, 1: 1},
-    shuffle=True,
-    split="train",
-    relabeled=False,
-    cache=True,
-):
+    dataset_dir: str,
+    batch_size: int,
+    class_weights: Dict[int, int] = {0: 1, 1: 1},
+    shuffle: bool = True,
+    split: str = "train",
+    relabeled: bool = False,
+    rng: np.random.Generator = np.random.default_rng(),
+    cache: bool = True,
+) -> Generator[Tuple[np.ndarray, np.ndarray, np.ndarray], None, None]:
     files = list(Path(dataset_dir).glob(split + "_*"))
 
     first_loop = True
     new_files = []
     while True:
         if shuffle:
-            np.random.shuffle(files)
+            rng.shuffle(files)
         for file in files:
             if first_loop:
                 with np.load(file) as f:
@@ -68,7 +69,7 @@ def data_generator(
 
             n_batch = int(np.ceil(len(list_IDs) / batch_size))
             if shuffle:
-                np.random.shuffle(indexes)
+                rng.shuffle(indexes)
 
             for index in range(n_batch):
                 start_batch = index * batch_size
@@ -961,7 +962,9 @@ def parse_bam(
     return chr_coord
 
 
-def split_bam(bam_file, n_splits):
+def split_bam(
+    bam_file: str, n_splits: int, rng: np.random.Generator = np.random.default_rng()
+) -> None:
     """Split a bam file into multiple equally covered bam files
 
     Parameters
@@ -970,6 +973,8 @@ def split_bam(bam_file, n_splits):
         Pathname of the bam file to split
     n_splits: int
         Number of files to split the bam into.
+    rng: np.random.Generator, optional
+        Random number generator.
     """
     # Build split filenames from the input filename
     bam_file_path = Path(bam_file)
@@ -997,7 +1002,7 @@ def split_bam(bam_file, n_splits):
                     next_file_idx = next(iter_file_idx)
                 except StopIteration:
                     # If Iterator is exhausted, select random file without worrying about balancing
-                    next_file_idx = np.random.randint(10)
+                    next_file_idx = rng.integers(10)
                 fw = split_files[next_file_idx]
                 fw.write(seen[read.query_name])
                 fw.write(read)
@@ -1022,7 +1027,12 @@ def split_bam(bam_file, n_splits):
             fw.close()
 
 
-def sample_bam(bam_file, frac, out_file):
+def sample_bam(
+    bam_file: str,
+    frac: float,
+    out_file: str,
+    rng: np.random.Generator = np.random.default_rng(),
+) -> None:
     """Randomly sample a fraction of reads in a bam file.
 
     For frac=0.5, it takes 2s per 1M reads
@@ -1035,6 +1045,8 @@ def sample_bam(bam_file, frac, out_file):
         Fraction of the bam to sample.
     out_file: str
         Pathname of the output file
+    rng: np.random.Generator, optional
+        Random number generator.
     """
     with pysam.AlignmentFile(bam_file, "rb") as f:
         # Build output file
@@ -1044,7 +1056,7 @@ def sample_bam(bam_file, frac, out_file):
             for read in f.fetch():
                 if read.query_name in seen:
                     # choose whether to write the pair or not
-                    if np.random.rand() < frac:
+                    if rng.random() < frac:
                         fw.write(seen[read.query_name])
                         fw.write(read)
                     # Remove from the dictionary to save space
@@ -1055,7 +1067,7 @@ def sample_bam(bam_file, frac, out_file):
             # Write reads for which mates couldn't be found
             print(f"{len(seen)} reads have no mate")
             for read in seen.values():
-                if np.random.rand() < frac:
+                if rng.random() < frac:
                     fw.write(seen[read.query_name])
                     fw.write(read)
 
@@ -2624,15 +2636,20 @@ def nb_boolean_true_clusters(array: np.ndarray) -> int:
     return res
 
 
-def random_rounding(array: np.ndarray) -> np.ndarray:
+def random_rounding(
+    array: np.ndarray, rng: np.random.Generator = np.random.default_rng()
+) -> np.ndarray:
     rounded = np.floor(array)
     decimal = array - rounded
-    rounded += np.random.rand(len(decimal)) <= decimal
+    rounded += rng.random(len(decimal)) <= decimal
     return rounded
 
 
 def integer_histogram_sample(
-    array: np.ndarray, frac: float, return_complement: bool = False
+    array: np.ndarray,
+    frac: float,
+    return_complement: bool = False,
+    rng: np.random.Generator = np.random.default_rng(),
 ) -> np.ndarray:
     """Randomly sample a fraction of a histogram with integer-only values.
 
@@ -2649,6 +2666,8 @@ def integer_histogram_sample(
         histogram will be the rounded fraction of the original one
     return_complement: bool
         If True, return the complement sample as well
+    rng: np.random.Generator, optional
+        Random number generator.
 
     Returns
     -------
@@ -2676,7 +2695,6 @@ def integer_histogram_sample(
         return histogram
 
     positions = np.repeat(np.arange(len(array), dtype=int), array)
-    rng = np.random.default_rng()
     # get_subhistogram complexity is linear in frac, computing complement may save time
     if frac <= 0.5:
         res = get_subhistogram(frac)
@@ -2697,6 +2715,7 @@ def integer_histogram_serie_sample(
     frac: float = 0.5,
     return_complement: bool = False,
     dtype=np.int32,
+    rng: np.random.Generator = np.random.default_rng(),
 ) -> pd.Series:
     """Randomly sample a fraction of a histogram with integer-only values.
 
@@ -2713,8 +2732,10 @@ def integer_histogram_serie_sample(
     frac : float
         fraction of the histogram to sample, the cumulative sum of the sampled
         histogram will be the rounded fraction of the original one
-    return_complement: bool
+    return_complement : bool
         If True, return the complement sample as well
+    rng : np.random.Generator, optional
+        Random number generator
 
     Returns
     -------
@@ -2728,7 +2749,7 @@ def integer_histogram_serie_sample(
     gb = counts[counts > 0].groupby(counts)
     for value, g in gb:
         # indices = g.index
-        s1[g.index] = np.random.binomial(value, frac, size=len(g))
+        s1[g.index] = rng.binomial(value, frac, size=len(g))
 
     if return_complement:
         s2 = counts - s1
@@ -2737,7 +2758,11 @@ def integer_histogram_serie_sample(
         return s1.astype(dtype)
 
 
-def integer_histogram_sample_vect(array: np.ndarray, frac: np.ndarray) -> np.ndarray:
+def integer_histogram_sample_vect(
+    array: np.ndarray,
+    frac: np.ndarray,
+    rng: np.random.Generator = np.random.default_rng(),
+) -> np.ndarray:
     """Sample random fractions of a histogram with integer-only values.
 
     The sampled histogram is a an array of integers of same shape as the
@@ -2754,6 +2779,8 @@ def integer_histogram_sample_vect(array: np.ndarray, frac: np.ndarray) -> np.nda
         1D-array of fractions of the histogram to sample, the cumulative sum
         of the sampled histograms will be the rounded fractions of the
         original one
+    rng: np.random.Generator, optional
+        Random number generator.
 
     Returns
     -------
@@ -2762,7 +2789,6 @@ def integer_histogram_sample_vect(array: np.ndarray, frac: np.ndarray) -> np.nda
         and columns represent bins
     """
     positions = np.repeat(np.arange(array.size, dtype=int), array)
-    rng = np.random.default_rng()
     sizes = np.array(np.round(len(positions) * frac), dtype=int)
     cumsizes = np.insert(np.cumsum(sizes), 0, 0)
     sampled_pos = np.zeros(cumsizes[-1], dtype=int)
@@ -3071,11 +3097,15 @@ def ref_kmer_frequencies(freq_nucs, k=2):
     return ser
 
 
-def random_shuffles(array, n):
-    return array[np.random.rand(n, len(array)).argsort(axis=1)]
+def random_shuffles(
+    array: np.ndarray, n: int, rng: np.random.Generator = np.random.default_rng()
+) -> np.ndarray:
+    return array[rng.random((n, len(array))).argsort(axis=1)]
 
 
-def shuffle_along_axis(arr, axis=0):
+def shuffle_along_axis(
+    arr: np.ndarray, axis: int = 0, rng: np.random.Generator = np.random.default_rng()
+) -> np.ndarray:
     """Shuffles a multi-dimensional array along specified axis"""
     assert isinstance(axis, int) and axis >= -1
     if axis == -1:
@@ -3089,7 +3119,7 @@ def shuffle_along_axis(arr, axis=0):
             )
             for dim in range(axis)
         )
-        + (np.random.rand(*arr.shape[: axis + 1]).argsort(axis=axis),)
+        + (rng.random(arr.shape[: axis + 1]).argsort(axis=axis),)
     ]
 
 
@@ -3137,7 +3167,11 @@ def tokens_to_one_hot(tokens, one_hot_dim, dtype=None):
     return identity[tokens]
 
 
-def dinuc_shuffle(seq, num_shufs=None, rng=None):
+def dinuc_shuffle(
+    seq: Union[str, np.ndarray],
+    num_shufs: int = None,
+    rng: np.random.Generator = np.random.default_rng(),
+) -> Union[str, List[str], np.ndarray]:
     """
     Creates shuffles of the given sequence, in which dinucleotide frequencies
     are preserved.
@@ -3162,9 +3196,6 @@ def dinuc_shuffle(seq, num_shufs=None, rng=None):
         arr = one_hot_to_tokens(seq)
     else:
         raise ValueError("Expected string or one-hot encoded array")
-
-    if not rng:
-        rng = np.random.default_rng()
 
     # Get the set of all characters, and a mapping of which positions have
     # which characters; use `tokens`, which are integer representations of the
@@ -3224,7 +3255,13 @@ def random_seq_strict_GC(n_seqs, seq_length, gc):
     return random_shuffles(ref_seq, n_seqs)
 
 
-def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out="seq"):
+def random_sequences(
+    n_seqs: int,
+    seq_length: int,
+    freq_kmers: pd.Series,
+    out: str = "seq",
+    rng: np.random.Generator = np.random.default_rng(),
+) -> np.ndarray:
     """Generate random DNA sequences with custom kmer distribution.
 
     Tested for k=2 or 3.
@@ -3238,11 +3275,11 @@ def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out="seq"):
     freq_kmers : Series
         Series indexed by a k-level MultiIndex with the bases 'ACGT' on each
         level, contains frequencies or occurences of each k-mer
-    seed : int, default=None
-        Seed to use for random number generation
     out : {'seq', 'idx', 'one_hot'}
         Output format, 'seq' for nucleotide characters, 'idx' for indices into
         'ACGTN' or 'one_hot' for one-hot encoded bases
+    rng: np.random.Generator, optional
+        Random number generator.
 
     Returns
     -------
@@ -3267,17 +3304,14 @@ def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out="seq"):
     arr_kmers = np.zeros(tuple([4] * k))
     for tup in it.product(range(4), repeat=k):
         arr_kmers[tup] = np.asarray(p_cum_kmers.loc[tuple(letters[i] for i in tup)])
-    # Set seed
-    if seed is not None:
-        np.random.seed(seed)
     # Empty sequences
     seqs = np.array([5] * seq_length * n_seqs).reshape(n_seqs, seq_length)
     # Get first k-mer given k-mer distribution
-    r_start = np.random.choice(len(freq_kmers), n_seqs, p=freq_kmers / freq_kmers.sum())
+    r_start = rng.choice(len(freq_kmers), n_seqs, p=freq_kmers / freq_kmers.sum())
     seqs[:, :k] = np.array(list(it.product(range(4), repeat=k)))[r_start, :seq_length]
     # Generate random numbers for all iterations
     if seq_length > k:
-        r = np.random.random((n_seqs, seq_length - k))
+        r = rng.random((n_seqs, seq_length - k))
     # Get other bases given k-mer distribution, previous (k-1)-mer and random
     # numbers
     for i in range(k, seq_length):
@@ -3300,30 +3334,36 @@ def random_sequences(n_seqs, seq_length, freq_kmers, seed=None, out="seq"):
 
 
 def random_sequences_as(
-    one_hots, n_seqs, seq_length, k, order="ACGT", seed=None, out="one_hot"
-):
+    one_hots: Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
+    n_seqs: int,
+    seq_length: int,
+    k: int,
+    order: str = "ACGT",
+    out: str = "one_hot",
+    rng: np.random.Generator = np.random.default_rng(),
+) -> np.ndarray:
     """Generate random DNA sequences with kmer distribution similar to input.
 
     Tested for k=2 or 3.
 
     Parameters
     ----------
+    one_hots : list-like
+        Must be a list, dictionnary or array of one-hot encoded sequences.
     n_seqs : int
         Number of sequences to generate
     seq_length : int
         Length of the sequences to generate, must be greater than k
     k : int
         Length of k-mers to consider
-    one_hots : list-like
-        Must be a list, dictionnary or array of one-hot encoded sequences.
     order : str, default='ACGT'
         Order of bases for one-hot encoding
-    seed : int, default=None
-        Seed to use for random number generation
     out : {'one_hot', 'seq', 'idx'}
         Output format, 'seq' for nucleotide characters, 'idx' for indices into
         'ACGTN' or 'one_hot' for one-hot encoded bases. Default "one_hot"
         makes order parameter irrelevant.
+    rng: np.random.Generator, optional
+        Random number generator.
 
     Returns
     -------
@@ -3332,10 +3372,16 @@ def random_sequences_as(
         'ACGTN' or 3D-array of one-hot encoded bases
     """
     freq_kmers = kmer_counts(one_hots, k, order, includeN=False)
-    return random_sequences(n_seqs, seq_length, freq_kmers, seed, out)
+    return random_sequences(n_seqs, seq_length, freq_kmers, out, rng)
 
 
-def balanced_randint(low, high=None, size=1, dtype=int):
+def balanced_randint(
+    low: int,
+    high: Union[int, None] = None,
+    size: int = 1,
+    dtype: type = int,
+    rng: np.random.Generator = np.random.default_rng(),
+) -> np.ndarray:
     """Return random integers from low to high in a balanced manner.
 
     The resulting array is balanced in the sense that each integer will appear the same
@@ -3354,6 +3400,8 @@ def balanced_randint(low, high=None, size=1, dtype=int):
         Output length. Default is 1.
     dtype: type, optional
         Desired dtype of the result. Byteorder must be native. The default value is int.
+    rng: np.random.Generator, optional
+        Random number generator.
 
     Returns
     -------
@@ -3366,9 +3414,9 @@ def balanced_randint(low, high=None, size=1, dtype=int):
         high = low
         low = 0
     q, r = divmod(size, (high - low))
-    extras = np.random.choice(np.arange(low, high, dtype=dtype), size=r, replace=False)
+    extras = rng.choice(np.arange(low, high, dtype=dtype), size=r, replace=False)
     res = np.concatenate((np.repeat(np.arange(high - low, dtype=dtype), q), extras))
-    np.random.shuffle(res)
+    rng.shuffle(res)
     return res
 
 
@@ -3507,7 +3555,6 @@ def flatten(container):
 
 # Test functions
 def moving_sum_test():
-    np.random.seed(0)
     tokens = np.array([0, 3, 1, 0, 3, 3, 3, 3, 1, 3])
     one_hot = tokens_to_one_hot(tokens, 4, dtype=int)
     refs = [
