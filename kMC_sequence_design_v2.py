@@ -2,6 +2,7 @@ import argparse
 import datetime
 import gc
 import json
+import math
 import socket
 from pathlib import Path
 from typing import Callable, Iterable, Tuple, Union
@@ -229,8 +230,14 @@ def parsing():
         "-targ_gc",
         "--target_gc",
         type=float,
-        default=0.3834,
+        default=YEAST_GC,
         help="target GC content for the designed sequences (default: %(default)s)",
+    )
+    parser.add_argument(
+        "-gctol",
+        type=float,
+        default=0.0001,
+        help="precision of GC_content (default: %(default)s)",
     )
     parser.add_argument(
         "-gclen",
@@ -298,7 +305,6 @@ def parsing():
     parser.add_argument(
         "--seed",
         type=int,
-        default=-1,
         help="seed to use for random generations (default: %(default)s)",
     )
     parser.add_argument(
@@ -375,6 +381,30 @@ def parsing():
             args.target_rev = np.array(args.target_rev, dtype=float)
     assert len(args.target) == len(args.target_rev) and len(args.target) == args.length
     return args
+
+
+def maxstep_linspace(start: int, stop: int, max_step: int) -> np.ndarray:
+    """Return pseudo-evenly spaced integers over a specified interval.
+
+    Start and stop are included. Spacings can differ by at most 1 and are smaller than max_step.
+    Spacings are the largest possible value satisfying these conditions.
+
+    Parameters
+    ----------
+    start, stop: int
+        Start and stop values of the interval, both included
+    max_step: int
+        Maximum spacing between two consecutive integers
+
+    Returns
+    -------
+    ndarray
+        Array of pseudo-evenly spaced integers
+    """
+    if stop == start:
+        return np.array([start])
+    n_steps = math.ceil(abs(stop - start) / max_step)
+    return np.linspace(start, stop, n_steps + 1).round(0).astype(int)
 
 
 def slicer_on_axis(
@@ -490,6 +520,7 @@ def GC_energy(
     seqs: np.ndarray,
     n: int,
     target_gc: float,
+    tol: float = 0,
     order: str = "ACGT",
     form: str = "token",
 ) -> Union[int, np.ndarray]:
@@ -506,6 +537,8 @@ def GC_energy(
         Length of window to compute GC content on, must be greater than 0.
     target_gc: float
         Target gc content.
+    tol: float, optional
+        Tolerance for target_gc precision, any value closer than tol to the target_gc will be considered equal.
     order: str, optional
         Order of encoding, must contain each letter of ACGT exactly once.
         If `form` is 'token', then value i corresponds to base at index i in order.
@@ -518,7 +551,10 @@ def GC_energy(
     int or ndarray
         Array of energies for each sequence. If a single sequence is given without a number of sequences dimension, a scalar is returned.
     """
-    return rmse(sliding_GC(seqs, n, axis=-1, order=order, form=form), target_gc)
+    sliding_gc = sliding_GC(seqs, n, axis=-1, order=order, form=form)
+    if tol != 0:
+        sliding_gc[np.abs(sliding_gc - target_gc) < tol] = target_gc
+    return rmse(sliding_gc, target_gc)
 
 
 def get_pred_start_and_stop(
@@ -724,7 +760,7 @@ def get_profile_chunk(
     chunk_size: int = 128000,
     one_hot_converter: Callable[[np.ndarray], np.ndarray] = np_idx_to_one_hot,
     return_index: bool = False,
-    seed: Union[None, int] = None,
+    rng: np.random.Generator = np.random.default_rng(),
     verbose: bool = False,
 ) -> Union[np.ndarray, Tuple[np.ndarray]]:
     """Predict profile.
@@ -771,8 +807,8 @@ def get_profile_chunk(
         format.
     return_index : bool, optional
         If True, return indices corresponding to the predictions.
-    seed : int, optional
-        Value of seed to use for choosing random offset.
+    rng : np.random.Generator, optional
+        Random number generator.
     verbose : bool, optional
         If True, print information messages.
 
@@ -790,9 +826,7 @@ def get_profile_chunk(
     # Determine offset for prediction
     if offset is None:
         # Randomize offset
-        if seed is not None:
-            np.random.seed(seed)
-        offset = np.random.randint(0, stride)
+        offset = rng.integers(0, stride)
     else:
         offset %= stride
     if verbose:
@@ -994,6 +1028,7 @@ def get_profile_mutations(
     seqs_mut, leftpad, _ = pad_sequences(
         seqs_mut, pred_start, pred_stop, flanks, reverse=reverse
     )
+    left_missing = leftpad - (pred_stop if reverse else pred_start)
     # Extract changed windows from mutated sequences (i.e. where the model will see the effect of the mutation)
     changesize = 2 * winsize - 1  # changed window length
     # If sequence too small, revert to full sequence prediction
@@ -1002,8 +1037,8 @@ def get_profile_mutations(
     # Starting index of each changed window
     start_idx = np.clip(
         mutpos - winsize + 1 + leftpad,
-        0,
-        seqs_mut.shape[-1] - changesize,
+        left_missing,
+        seqs_mut.shape[-1] - changesize + left_missing,
     )  # shape (n_seqs, n_mutations)
     # Complete indices of each window
     window_indices = np.expand_dims(start_idx, axis=-1) + np.arange(changesize).reshape(
@@ -1146,6 +1181,7 @@ def select(
     cur_energy: np.ndarray,
     temperature: float,
     step: Union[None, int] = None,
+    rng: np.random.Generator = np.random.default_rng(),
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Choose a mutation with low energy based on kMC method.
 
@@ -1163,6 +1199,8 @@ def select(
     step : int, optional
         Step index in the optimisation process. If set, the computed
         probabilities will be saved to a file.
+    rng : np.random.Generator, optional
+        Random number generator.
 
     Returns
     -------
@@ -1190,7 +1228,7 @@ def select(
         np.save(Path(args.output_dir, "probs", f"prob_step{step}.npy"), prob)
     # Select by the position of a random number in the cumulative sum
     cumprob = np.cumsum(prob, axis=-1)  # shape (n_seqs, n_mutations)
-    r = np.random.rand(len(prob), 1)  # shape (n_seqs,)
+    r = rng.random((len(prob), 1))  # shape (n_seqs,)
     sel_idx = np.argmax(r <= cumprob, axis=-1)  # shape (n_seqs,)
     # Associate energy to selected sequences
     sel_energies = np.stack(
@@ -1319,8 +1357,7 @@ def main(args):
     # Extract kmer distribution
     freq_kmer = pd.read_csv(args.kmer_file, index_col=[i for i in range(args.k)])
     # Generate and save start sequences
-    if args.seed != -1:
-        np.random.seed(args.seed)
+    rng = np.random.default_rng(args.seed)
     if args.start_seqs:
         seqs = np.load(args.start_seqs)
     else:
@@ -1343,7 +1380,7 @@ def main(args):
         randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
         flanks = (randseqs[0], randseqs[1])
     elif flanks == "choose_idx":
-        flank_idx = np.random.randint(0, len(flank_left))
+        flank_idx = rng.integers(0, len(flank_left))
         flanks = (flank_left[flank_idx], flank_right[flank_idx])
         if args.verbose:
             print(f"Using flank_idx {flank_idx}")
@@ -1354,7 +1391,7 @@ def main(args):
         seqs, offset=0, flanks=flanks, reverse=True
     )  # shape (n_seqs, pred_len) both
     # Compute energy
-    gc_energy = GC_energy(seqs, args.gc_constrlen, args.target_gc)
+    gc_energy = GC_energy(seqs, args.gc_constrlen, args.target_gc, args.gctol)
     for_energy = args.loss(args.target[cur_indices], cur_preds)
     rev_energy = args.loss(args.target_rev[cur_indices_rev], cur_preds_rev)
     energy_list = [gc_energy, for_energy, rev_energy, np.zeros(args.n_seqs)]
@@ -1384,12 +1421,12 @@ def main(args):
             randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
             flanks = (randseqs[0], randseqs[1])
         elif flanks == "choose_idx":
-            flank_idx = np.random.randint(0, len(flank_left))
+            flank_idx = rng.integers(0, len(flank_left))
             flanks = (flank_left[flank_idx], flank_right[flank_idx])
             if args.verbose:
                 print(f"Using flank_idx {flank_idx}")
-        offset_for = np.random.randint(0, args.stride)
-        offset_rev = np.random.randint(0, args.stride)
+        offset_for = rng.integers(0, args.stride)
+        offset_rev = rng.integers(0, args.stride)
         if args.verbose:
             print(
                 f"Predicting with stride {args.stride} and offset {offset_for} "
@@ -1397,8 +1434,16 @@ def main(args):
             )
         # Subsample mutation positions
         if args.nmut_step != 0 and args.nmut_step < len(mutfree_pos):
-            start_mut = np.random.randint(len(mutfree_pos) - args.nmut_step)
+            # Choose a position to start scanning from, with discretized possibility using a step
+            max_start_mut = len(mutfree_pos) - args.nmut_step
+            step_start_mut = args.nmut_step // 4  # step of discretization
+            start_mut = rng.choice(maxstep_linspace(0, max_start_mut, step_start_mut))
             mutfree_pos_step = mutfree_pos[start_mut : start_mut + args.nmut_step]
+            if args.verbose:
+                print(
+                    f"Testing mutations between positions "
+                    f"{mutfree_pos_step[0]} and {mutfree_pos_step[-1]}"
+                )
         else:
             mutfree_pos_step = mutfree_pos
         # Generate all mutations, and associated mutation energy
@@ -1408,7 +1453,8 @@ def main(args):
         )
         if args.verbose:
             print(
-                f"Scanning mutations on {len(mutfree_pos_step)} positions in {len(mutpos_batches)} batches"
+                f"Scanning mutations on {len(mutfree_pos_step)} positions "
+                f"in {len(mutpos_batches)} batches"
             )
         energy_list = [[] for i in range(4)]
         for mutpos_batch in mutpos_batches:
@@ -1460,7 +1506,7 @@ def main(args):
             )  # shape (n_seqs, 3*mutfree_pos_step)
         # Choose best mutation by kMC method
         sel_idx, sel_energies = select(
-            energy_list, args.weights, cur_energy, args.temperature, step=step
+            energy_list, args.weights, cur_energy, args.temperature, step=step, rng=rng
         )  # shape (n_seqs,) and (n_seqs, n_energies+1)
         # Extract current energy
         cur_energy = sel_energies[:, 0]  # shape (n_seqs,)
@@ -1567,16 +1613,21 @@ if __name__ == "__main__":
         )
     # Store arguments in config file
     to_serealize = {
-        k: v
-        for k, v in vars(args).items()
-        if k not in ["target", "target_rev", "weights"]
+        k: v for k, v in vars(args).items() if k not in ["target", "target_rev"]
     }
     with open(Path(args.output_dir, "config.txt"), "w") as f:
-        json.dump(to_serealize, f, indent=4)
+        json.dump(
+            {
+                **to_serealize,
+                **{
+                    "timestamp": str(tmstmp),
+                    "machine": socket.gethostname(),
+                },
+            },
+            f,
+            indent=4,
+        )
         f.write("\n")
-        f.write(f"weights: {args.weights}\n")
-        f.write(f"timestamp: {tmstmp}\n")
-        f.write(f"machine: {socket.gethostname()}\n")
     # Convert to non json serializable objects
     losses = {"rmse": rmse, "mae_cor": np_mae_cor}
     args.loss = losses[args.loss]
