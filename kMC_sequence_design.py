@@ -824,7 +824,7 @@ def get_profile_chunk(
     preds = []
     for chunk in chunks:
         # Convert to one-hot and predict
-        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze()
+        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze(axis=-1)
         # Collect garbage to prevent memory leak from model.predict()
         gc.collect()
         preds.append(pred)
