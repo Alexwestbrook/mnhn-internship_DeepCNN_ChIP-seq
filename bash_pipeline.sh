@@ -138,45 +138,77 @@ data_dir='/home/alex/shared_folder'
 #     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
 #     -n 2 -l 6000 --steps 100 -t 0.0001 -s 128 -mid --seed 0 -v -p 10 -gclen 4000
 
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt2 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 0 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt4 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int4_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 1 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt5 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int5_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 2 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt6 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int6_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 3 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt7 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int7_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 4 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt8 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int8_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 5 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt9 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int9_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 6 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt10 \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int10_1kbflanks_ACGTidx.npz \
-    -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 7 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_1seq_flanksInt2 \
-    -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
-    -ilen 0 -per 167 -plen 147 -pshape gaussian \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
-    -n 1 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 0 -v -p 10 -gclen 4000
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_gc0.2_1seq_flanksInt2 \
-    -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
-    -ilen 0 -per 167 -plen 147 -pshape gaussian \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
-    -n 1 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 1 -v -p 10 -gclen 4000 -targ_gc 0.2
-python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_gc0.6_1seq_flanksInt2 \
-    -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
-    -ilen 0 -per 167 -plen 147 -pshape gaussian \
-    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
-    -n 1 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 1 -v -p 10 -gclen 4000 -targ_gc 0.6
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt2 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 0 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt4 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int4_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 1 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt5 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int5_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 2 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt6 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int6_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 3 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt7 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int7_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 4 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt8 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int8_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 5 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt9 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int9_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 6 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt10 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int10_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 7 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_1seq_flanksInt2 \
+#     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+#     -ilen 0 -per 167 -plen 147 -pshape gaussian \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 0 -v -p 10 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_gc0.2_1seq_flanksInt2 \
+#     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+#     -ilen 0 -per 167 -plen 147 -pshape gaussian \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 1 -v -p 10 -gclen 4000 -targ_gc 0.2
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_gc0.6_1seq_flanksInt2 \
+#     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+#     -ilen 0 -per 167 -plen 147 -pshape gaussian \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 2 -v -p 10 -gclen 4000 -targ_gc 0.6
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_gc0.8_1seq_flanksInt2 \
+#     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+#     -ilen 0 -per 167 -plen 147 -pshape gaussian \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 4000 --steps 500 -t 0.0001 -s 20 --seed 3 -v -p 10 -gclen 4000 -targ_gc 0.8
+
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt2_p50 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 8 -v -p 50 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_2seq_flanksInt2_p50 \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 2 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 9 -v -p 50 -gclen 4000
+# python $scripts_dir/kMC_sequence_design_v2.py -o $data_dir/SCerevisiae/generated/50kb_lowpol_1seq_flanksInt2_p50_nmutstep50k \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -n 1 -l 50000 --steps 500 -t 0.0001 -s 128 -mid --seed 10 -v -p 50 -gclen 4000 --nmut_step 50000
+
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 --flanks random -ilen 0 -per 167 -plen 147 -pshape gaussian --seed 10 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_gc0.2_2seq_randomflanks -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 2 -l 4000 --steps 500 -t 0.0001 -s 20 --flanks random -ilen 0 -per 167 -plen 147 -pshape gaussian --seed 11 -v -targ_gc 0.2
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_nrl163 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 163 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_nrl165 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 165 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_nrl169 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 169 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_nrl171 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 171 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_nrl173 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 173 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_nrl175 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 175 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_nrl177 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 177 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_amp0.8 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 167 -plen 147 -amp 0.8 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/4kb_regnuc_2seq_randomflanks_amp0.6 -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 167 -plen 147 -amp 0.6 -pshape gaussian --seed 12 -v
+
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2 -n 1 -l 20000 --steps 100 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2/designed_seqs/start_seqs.npy --steps 600 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer/designed_seqs/mut_seqs_step599.npy --steps 600 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued2 --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued/designed_seqs/mut_seqs_step599.npy --steps 200 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
 
 
 # writing_dir='../'
