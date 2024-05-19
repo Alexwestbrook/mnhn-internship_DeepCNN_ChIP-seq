@@ -26,25 +26,26 @@ def parsing():
     parser.add_argument(
         "-m", "--trained_model",
         help="trained model file, or model weights file.",
-        type=str,
+        type=Path,
         required=True)
     parser.add_argument(
         "-g", "--genome",
         help="one-hot encoded genome file in npz format with an array per "
              "chromosome.",
-        type=str,
-        required=True)
-    parser.add_argument(
-        "-c", "--chromosomes",
-        help="chromosomes to predict on.",
-        nargs="+",
-        type=str,
+        type=Path,
         required=True)
     parser.add_argument(
         "-o", "--output",
         help="output directory to write predictions in.",
-        type=str,
+        type=Path,
         required=True)
+    parser.add_argument(
+        "-c", "--chromosomes",
+        help="chromosomes to predict on. Specify 'all' if you wish to predict "
+             "on all chromosomes",
+        nargs="+",
+        default=["all"],
+        type=str)
     parser.add_argument(
         "-tm", "--train_method",
         help="method used during training, 0 for base and 1 for reweighting, "
@@ -53,8 +54,8 @@ def parsing():
         type=int)
     parser.add_argument(
         "-rl", "--read_length",
-        help="Number of base pairs in reads used for training, default to 101",
-        default=101,
+        help="Number of base pairs in reads used for training, used only if "
+             "read_length can't be inferred from the model",
         type=int)
     parser.add_argument(
         "-b", "--batch_size",
@@ -65,7 +66,7 @@ def parsing():
     parser.add_argument(
         "-l", "--labels",
         help="labels to use for evaluating with npz format.",
-        type=str)
+        type=Path)
     parser.add_argument(
         "-arch", "--architecture",
         help='name of the model architecture in "models.py", required to load '
@@ -78,12 +79,12 @@ def parsing():
     )
     args = parser.parse_args()
     # Check if the input data is valid
-    if not Path(args.genome).is_file():
+    if not args.genome.is_file():
         sys.exit(f"{args.genome} does not exist.\n"
                  "Please enter valid genome file path.")
     # If the data was relabeled, check the new label file
     if args.labels:
-        if not Path(args.labels).is_file():
+        if not args.labels.is_file():
             sys.exit(f"{args.labels} does not exist.\n"
                      "Please enter a valid labels file path.")
     return args
@@ -93,7 +94,7 @@ if __name__ == "__main__":
     # Get arguments
     args = parsing()
     # Maybe create output directory
-    Path(args.output).mkdir(parents=True, exist_ok=True)
+    args.output.mkdir(parents=True, exist_ok=True)
     # Limit gpu memory usage
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
@@ -105,17 +106,27 @@ if __name__ == "__main__":
     # Load trained model
     if args.train_method == 0:
         model = tf.keras.models.load_model(args.trained_model)
+        try:
+            read_length = model.layers[0].input_shape[0][1]
+        except (AttributeError, IndexError):
+            print("Couldn't infer read_length from model")
+            read_length = args.read_length
     else:
+        read_length = args.read_length
         model = models.build_model(args.architecture,
-                                   read_length=args.read_length,
+                                   read_length=read_length,
                                    method=args.train_method)
         model.load_weights(args.trained_model)
     # Initialize predictions
     if not args.multi_file:
         all_preds = {}
     # Load genome
-    with np.load(Path(args.genome)) as genome:
-        for chr_id in args.chromosomes:
+    with np.load(args.genome) as genome:
+        if args.chromosomes == ["all"]:
+            chromosomes = genome.keys()
+        else:
+            chromosomes = args.chromosomes
+        for chr_id in chromosomes:
             # Load genomic data and maybe labels (labels aren't currently used)
             try:
                 one_hot_chr = genome[chr_id]
@@ -124,9 +135,7 @@ if __name__ == "__main__":
                     f"{chr_id} is not a valid chromosome ID in {args.genome}, "
                     "skipping..."))
                 continue
-            indexes, data = utils.chunk_chr(
-                one_hot_chr,
-                args.read_length)
+            indexes, data = utils.chunk_chr(one_hot_chr, read_length)
             if args.labels:
                 with np.load(args.labels) as f:
                     labels = f['labels']
@@ -142,13 +151,15 @@ if __name__ == "__main__":
                 args.batch_size,
                 shuffle=False)
             # predict on data and save predictions
-            preds = model.predict(generator_chr).ravel()
+            preds = np.zeros(len(one_hot_chr))
+            preds[read_length//2:-(read_length//2)] = model.predict(
+                generator_chr).ravel()
             if args.multi_file:
-                np.savez_compressed(Path(args.output, f"preds_on_chr{chr_id}"),
+                np.savez_compressed(Path(args.output, f"preds_on_{chr_id}"),
                                     preds=preds)
             else:
-                all_preds[f"chr{chr_id}"] = preds
+                all_preds[chr_id] = preds
         if not args.multi_file:
             np.savez_compressed(Path(args.output,
-                                     f"preds_on_{Path(args.genome).name}"),
+                                     f"preds_on_{args.genome.name}"),
                                 **all_preds)

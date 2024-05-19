@@ -2,3 +2,4 @@
 *.o
 *.pyc
 *.class
+nohup.out

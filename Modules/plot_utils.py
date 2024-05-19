@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 import seaborn as sns
+import pickle
 
 from scipy.cluster.hierarchy import linkage
 import Modules.utils as utils
@@ -22,7 +23,8 @@ def metaplot_over_indices(values,
                           data='unknown_data',
                           chr='unknown_chr',
                           vmin=None,
-                          vmax=None):
+                          vmax=None,
+                          robust=False):
     if anchor == 'center':
         window = np.arange(-window_half_size, window_half_size + 1)
     elif anchor == 'start':
@@ -62,7 +64,7 @@ def metaplot_over_indices(values,
         # Average plot
         ax00 = axs[0, 0]
         ax00.plot(mean_values, label=label, color=colors[1])
-        ax00.axvline(x=window_half_size+1, color='black', linestyle='--',
+        ax00.axvline(x=window_half_size, color='black', linestyle='--',
                      label='peak center')
         handles, labels = ax00.get_legend_handles_labels()
         if compare:
@@ -79,7 +81,7 @@ def metaplot_over_indices(values,
         df = pd.DataFrame(values[new_indices], columns=window)
         sns.heatmap(df, center=0, ax=axs[1, 0], cbar_ax=axs[1, 1],
                     xticklabels=window_half_size, yticklabels=1000,
-                    robust=False, vmin=vmin, vmax=vmax)
+                    robust=robust, vmin=vmin, vmax=vmax)
         return_values = (corrs,)
     elif plot == 'clustermap':
         corr_matrix = np.corrcoef(values[indices])
@@ -88,7 +90,7 @@ def metaplot_over_indices(values,
         clust = sns.clustermap(values[indices], center=0,
                                row_linkage=link_matrix, col_cluster=False,
                                xticklabels=window_half_size,
-                               yticklabels=1000, robust=False)
+                               yticklabels=1000, robust=robust)
         return_values = (clust,)
     if res_dir:
         plt.savefig(Path(res_dir, f'metaplot_{data}_{plot}_{chr}_peaks.png'),
@@ -132,3 +134,45 @@ def compare_binned_plots(values_list, label_list, start, end, bins, **kwargs):
     for line in leg.get_lines():
         line.set_linewidth(2)
     return axes
+
+
+def order_2mer_df(df):
+    df = df.sort_index().copy()
+    kmer_order = [
+        ('A', 'C'), ('G', 'T'), ('C', 'A'), ('T', 'G'),
+        ('A', 'G'), ('C', 'T'), ('G', 'A'), ('T', 'C'),
+        ('A', 'A'), ('T', 'T'), ('A', 'T'), ('T', 'A'),
+        ('C', 'C'), ('G', 'G'), ('C', 'G'), ('G', 'C')]
+    return df.loc[kmer_order]
+
+
+def plot_2mer_df(df, columns=None, group=None):
+    df = order_2mer_df(df)
+    df['SW'] = ['alt']*8 + ['same']*8
+    if group is None:
+        fig, axes = plt.subplots(1, 1, figsize=(20, 5), facecolor='w')
+        df.plot(kind='bar', y=columns, ax=axes)
+    elif group == 'SW':
+        fig, axes = plt.subplots(1, 2,
+                                 sharey='row',
+                                 figsize=(20, 5),
+                                 facecolor='w')
+        for (key, grp), ax in zip(df.groupby('SW'), axes.flatten()):
+            grp.plot(kind='bar',
+                     y=columns,
+                     ax=ax,
+                     title=key)
+    return fig, axes
+
+
+def save_fig_and_values(fig, filename, format='png'):
+    if isinstance(format, str):
+        imgfile = utils.safe_filename(str(filename) + f'.{format}')
+        fig.savefig(imgfile, bbox_inches='tight')
+    else:
+        for form in format:
+            imgfile = utils.safe_filename(str(filename) + f'.{form}')
+            fig.savefig(imgfile, bbox_inches='tight')
+    picklefile = utils.safe_filename(str(filename) + '.pickle')
+    with open(picklefile, 'wb') as f:
+        pickle.dump(fig, f)

@@ -81,7 +81,8 @@ def parsing():
         "-split", "--split_sizes",
         help="numbers of reads to put in the test and valid sets, "
              "must be of length 2, set to 0 to ignore a split, default to "
-             "2**22 each.",
+             "2**23 each. All other samples are put in train split. You can "
+             "add a third value to limit train size",
         default=[2**23, 2**23],
         type=int,
         nargs='+')
@@ -92,7 +93,8 @@ def parsing():
         type=int)
     parser.add_argument(
         "-kN", "--keepNs",
-        help="indicates to only use fully sized reads",
+        help="indicates to keep reads with N values or truncated, default "
+             "behavior is to discard them",
         action="store_true")
     parser.add_argument(
         "-alt", "--alternate",
@@ -131,19 +133,21 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
         indicates to process files entirely before moving to the next.
     split_sizes : tuple[int], default=[2**23, 2**23]
         Number of test and valid samples in this order, remaining samples are
-        train samples. Set value to 0 to ignore a split.
+        train samples. Set value to 0 to ignore a split. You can add a third
+        value to limit train size.
     read_length : int, default=None
         Number of bases in reads, if None, the read length is inferred from
         the maximum length in the first 100 sequences from each file. All
         reads will be truncated or extended with N values to fit this length.
-    discardNs : bool, default=False
-        if True, reads with N values are discarded, as well as reads shorter
-        than `read_length`.
+    keepNs : bool, default=False
+        if False, reads with N values are discarded, as well as reads shorter
+        than `read_length`. If True, all reads are kept.
     """
     # helper functions
     def save_shard():
         """One-hot encode a shard and save to npz archive"""
-        print(f'saving shard {cur_split}_{cur_shard}...')
+        print(f'saving shard {cur_split}_{cur_shard} with {len(shard)} '
+              'reads...')
         one_hots = utils.one_hot_encoding(shard, read_length=read_length)
         np.savez_compressed(Path(out_dir, f'{cur_split}_{cur_shard}'),
                             ids=ids,
@@ -165,6 +169,8 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
         yield repeat(shard_size)
 
     def build_file_iterator(files):
+        """Construct an iterator over fastq files
+        """
         file_iterator = []
         for file in files:
             # Iterate files by entries of 4 lines (fastq format)
@@ -176,6 +182,19 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
             # Process files one by one
             file_iterator = chain(*file_iterator)
         return file_iterator
+
+    def get_next_valid_read(iter):
+        """Iterate over `iter` until a valid read is found.
+
+        This will change `iter` inplace
+        """
+        while True:
+            read_id, seq, *_ = next(iter)
+            read_id, seq = read_id.rstrip(), seq.rstrip()
+            if keepNs or (len(seq) == read_length
+                          and 'N' not in seq):
+                break
+        return read_id, seq
 
     # Build output directory if needed
     Path(out_dir).mkdir(parents=True, exist_ok=True)
@@ -190,7 +209,7 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
 
     # Handle file iteration
     ip_iter = build_file_iterator(ip_files)
-    control_iter = build_file_iterator(control_files)
+    ctrl_iter = build_file_iterator(control_files)
 
     # Handle train-valid-test splits
     splits = zip(['test', 'valid', 'train'], get_split_iterators())
@@ -200,34 +219,41 @@ def process_fastq_and_save(ip_files, control_files, out_dir, shard_size=2**24,
     cur_shard = 0
     ids, shard = [], []
     # Read files
-    # chain(*zip(ip_iter, control_iter))
-    for reads in zip(ip_iter, control_iter):
-        for read in reads:
-            # Get id and sequence
-            id, seq, *_ = read
-            if not keepNs and (len(seq.rstrip()) < read_length
-                               or 'N' in seq):
-                continue
-            ids.append(id.rstrip())
-            shard.append(seq.rstrip())
+    done = False
+    while not done:
+        # Get next ip and control reads, if either ran out, stop
+        try:
+            ip_id, ip_seq = get_next_valid_read(ip_iter)
+            ctrl_id, ctrl_seq = get_next_valid_read(ctrl_iter)
+        except StopIteration:
+            # No more reads
+            break
+        ids += [ip_id, ctrl_id]
+        shard += [ip_seq, ctrl_seq]
         # When shard is full, save it
         if len(shard) == cur_shard_size:
             save_shard()
             # Reinitialize
             ids, shard = [], []
             cur_shard += 1
-            while True:
+            while not done:
                 try:
                     # Update next shard size
                     cur_shard_size = next(cur_split_shards)
                 except StopIteration:
                     # Split is done, get to next split,
-                    # loop again in case split is empty
-                    cur_split, cur_split_shards = next(splits)
+                    try:
+                        cur_split, cur_split_shards = next(splits)
+                    except StopIteration:
+                        # train split has reached max, exit all
+                        done = True
                     cur_shard = 0
+                    # loop again in case split is empty
                 else:
                     # cur_shard_size was set successfully
                     break
+        elif len(shard) > cur_shard_size:
+            raise ValueError("Shard size increased past expected size")
 
     # Save last incomplete shard
     if len(shard) != 0:

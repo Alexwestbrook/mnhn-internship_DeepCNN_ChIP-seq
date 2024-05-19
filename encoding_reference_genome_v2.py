@@ -72,6 +72,11 @@ def parsing():
         default=1,
         type=int)
     parser.add_argument(
+        "-ord", "--order",
+        help="order of bases for one-hot encoding",
+        default='ACGT',
+        type=str)
+    parser.add_argument(
         "-time", "--timing",
         action="store_true",
         help="indicates to time operations")
@@ -86,6 +91,8 @@ def parsing():
                  "Please enter a valid genome file path.")
     if args.method not in {1, 2}:
         sys.exit(f"{args.method} is not a valid method.")
+    if len(args.order) != 4 or set(args.order) != set('ACGT'):
+        sys.exit(f"order must contain each base ACGT once and only once.")
     return args
 
 
@@ -93,7 +100,7 @@ def parsing():
 args = parsing()
 batch_size = args.batch_size
 
-print(f"Writing {args.genome_file} to {args.output}.npz")
+print(f"Writing {args.genome_file} to {args.output}")
 if args.timing:
     times = {}
     t0 = time.time()
@@ -165,7 +172,8 @@ if args.method == 0:
         one_hot_batches = utils.one_hot_encoding(
             batches,
             read_length=batch_size,
-            one_hot_type=args.one_hot_type)
+            one_hot_type=args.one_hot_type,
+            order=args.order)
         # reshape into a single genome
         one_hot_genome[id] = one_hot_batches.reshape(
             (len(batches)*batch_size, 4))
@@ -179,13 +187,15 @@ elif args.method == 1:
             one_hot_batch = utils.one_hot_encoding(
                 [batch],
                 read_length=batch_size,
-                one_hot_type=args.one_hot_type)[0]
+                one_hot_type=args.one_hot_type,
+                order=args.order)[0]
             one_hot_batches[i*batch_size:(i+1)*batch_size] = one_hot_batch
         # process last batch seperately as it can have different length
         one_hot_batch = utils.one_hot_encoding(
             [batches[-1]],
             read_length=len(batches[-1]),
-            one_hot_type=args.one_hot_type)[0]
+            one_hot_type=args.one_hot_type,
+            order=args.order)[0]
         one_hot_batches[(len(batches)-1)*batch_size:] = one_hot_batch
         one_hot_genome[id] = one_hot_batches
 else:

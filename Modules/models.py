@@ -1,29 +1,38 @@
 #!/usr/bin/env python
 
 import tensorflow as tf
+import keras.backend as K
 from tensorflow.keras import Sequential
+from tensorflow.keras.losses import binary_crossentropy
+import tensorflow.keras.layers as kl
 from tensorflow.keras.layers import Conv1D, MaxPool1D, concatenate, Dropout, \
-    Dense, Input, Flatten
+    Dense, Input, Flatten, BatchNormalization, Concatenate, add
 from tensorflow.keras.initializers import VarianceScaling
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import Model
 from Modules import tf_utils
+from Modules.tf_utils import mae_cor, correlate
 
 
 def build_model(model_name,
                 read_length=101,
                 learn_rate=0.001,
                 loss='binary_crossentropy',
+                metrics=['accuracy'],
                 method=0,
                 T=1,
-                start_reweighting=2000):
+                start_reweighting=2000,
+                confidence=False):
     model_dict = {
         'inception_dna_v1': inception_dna_v1,
+        'inception_dna_v1_confidence': inception_dna_v1_confidence,
         'inception_dna_v2': inception_dna_v2,
         'inception_dna_paired_v1': inception_dna_paired_v1,
+        'mnase_model': mnase_model,
         'Yann_original': Yann_original,
         'Yann_with_init': Yann_with_init,
-        'Yann_with_init_and_padding': Yann_with_init_and_padding
+        'Yann_with_init_and_padding': Yann_with_init_and_padding,
+        'BPNet': BPNet
     }
     model = model_dict[model_name](
         read_length=read_length,
@@ -31,9 +40,14 @@ def build_model(model_name,
         T=T,
         start_reweighting=start_reweighting
     )
-    model.compile(optimizer=Adam(learning_rate=learn_rate),
-                  loss=loss,
-                  metrics=['accuracy'])
+    if confidence:
+        model.compile(optimizer=Adam(learning_rate=learn_rate),
+                      loss=tf_utils.ConfidenceLoss(),
+                      metrics=metrics)
+    else:
+        model.compile(optimizer=Adam(learning_rate=learn_rate),
+                      loss=loss,
+                      metrics=metrics)
     return model
 
 
@@ -185,6 +199,65 @@ def inception_dna_v1(read_length=101,
                                           T=T,
                                           start_reweighting=start_reweighting,
                                           name='inception_dna_v1')
+    return model
+
+
+def inception_dna_v1_confidence(read_length=101,
+                                method=0,
+                                T=1,
+                                start_reweighting=2000):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) read_length: the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(read_length, 4))
+
+    x = simple_inception_module(input_layer,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_1')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_1')(x)
+    x = Dropout(0.2)(x)
+    x = simple_inception_module(x,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_2')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_2')(x)
+    x = Dropout(0.2)(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
+              activation='relu',
+              name='dense_1')(x)
+    out = Dense(units=1,
+                activation='sigmoid',
+                name='out')(x)
+    conf = Dense(units=1,
+                 activation='sigmoid',
+                 name='conf')(x)
+    model = tf.keras.Model(input_layer,
+                           [out, conf],
+                           name='inception_dna_v1_confidence')
     return model
 
 
@@ -347,6 +420,348 @@ def inception_dna_paired_v1(read_length=101,
                                           T=T,
                                           start_reweighting=start_reweighting,
                                           name='inception_dna_paired_v1')
+    return model
+
+
+def mnase_model(winsize=2001, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(winsize, 4))
+
+    x = simple_inception_module(input_layer,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_1')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_1')(x)
+    x = Dropout(0.2)(x)
+    x = simple_inception_module(x,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_2')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_2')(x)
+    x = Dropout(0.2)(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
+              activation='relu',
+              name='dense_1')(x)
+    x = Dense(units=1,
+              activation='sigmoid',
+              name='dense_out')(x)
+    model = tf.keras.Model(input_layer,
+                           x,
+                           name='mnase_model')
+    return model
+
+
+def mnase_model_batchnorm(winsize=2001, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The compiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(winsize, 4))
+
+    x = simple_inception_module(input_layer,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_1')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_1')(x)
+    x = BatchNormalization()(x)
+    x = simple_inception_module(x,
+                                filters_3=32,
+                                filters_6=64,
+                                filters_9=16,
+                                kernel_init=kernel_init,
+                                name='inception_2')
+    x = MaxPool1D(pool_size=2,
+                  padding='same',
+                  strides=2,
+                  name='max_pool_2')(x)
+    x = BatchNormalization()(x)
+    x = Flatten()(x)
+    x = Dense(units=128,
+              activation='relu',
+              name='dense_1')(x)
+    x = BatchNormalization()(x)
+    x = Dense(units=1,
+              activation='sigmoid',
+              name='dense_out')(x)
+    model = tf.keras.Model(input_layer,
+                           x,
+                           name='mnase_model')
+    return model
+
+
+def mnase_Maxime(winsize=2001, **kwargs):
+    model = Sequential([
+        Conv1D(32, kernel_size=3, activation='relu', input_shape=(winsize, 4)),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=10, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=20, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Flatten(),
+        Dense(8, activation='relu'),
+        BatchNormalization(),
+        Dense(1, activation='sigmoid')
+    ])
+    return model
+
+
+def mnase_Maxime_decreasing(winsize=2001, **kwargs):
+    model = Sequential([
+        Conv1D(64, kernel_size=3, activation='relu', input_shape=(winsize, 4)),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=10, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(16, kernel_size=20, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Flatten(),
+        Dense(8, activation='relu'),
+        BatchNormalization(),
+        Dense(1, activation='sigmoid')
+    ])
+    return model
+
+
+def mnase_Maxime_increasing(winsize=2001, **kwargs):
+    model = Sequential([
+        Conv1D(16, kernel_size=3, activation='relu', input_shape=(winsize, 4)),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(32, kernel_size=10, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Conv1D(64, kernel_size=20, activation='relu'),
+        MaxPool1D(2),
+        BatchNormalization(),
+        Flatten(),
+        Dense(8, activation='relu'),
+        BatchNormalization(),
+        Dense(1, activation='sigmoid')
+    ])
+    return model
+
+
+def mnase_Etienne(winsize=2001, **kwargs):
+    kernel_init = VarianceScaling()
+    model = Sequential([
+        Conv1D(64, kernel_size=3, padding="same", activation='relu',
+               kernel_initializer=kernel_init, input_shape=(winsize, 4)),
+        MaxPool1D(2, padding='same'),
+        BatchNormalization(),
+        Dropout(0.2),
+        Conv1D(16, kernel_size=8, padding="same", activation='relu',
+               kernel_initializer=kernel_init),
+        MaxPool1D(2, padding='same'),
+        BatchNormalization(),
+        Dropout(0.2),
+        Conv1D(8, kernel_size=80, padding="same", activation='relu',
+               kernel_initializer=kernel_init),
+        MaxPool1D(2, padding='same'),
+        BatchNormalization(),
+        Flatten(),
+        Dense(1, activation='relu')
+    ])
+    return model
+
+
+def bassenji_Etienne(winsize=32768, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The uncompiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(winsize, 4))
+
+    x = Conv1D(32, kernel_size=12, padding="same", activation='relu',
+               kernel_initializer=kernel_init)(input_layer)
+    x = MaxPool1D(pool_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+
+    x = Conv1D(32, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init)(x)
+    x = MaxPool1D(pool_size=4, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+
+    x = Conv1D(32, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init)(x)
+    x = MaxPool1D(pool_size=4, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=2)(x)
+    x = BatchNormalization()(x)
+    x1 = Dropout(0.2)(x)
+
+    x = x1
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=4)(x)
+    x = BatchNormalization()(x)
+    x2 = Dropout(0.2)(x)
+
+    x = concatenate([x1, x2], axis=2)
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=8)(x)
+    x = BatchNormalization()(x)
+    x3 = Dropout(0.2)(x)
+
+    x = concatenate([x1, x2, x3], axis=2)
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=16)(x)
+    x = BatchNormalization()(x)
+    x4 = Dropout(0.2)(x)
+
+    x = concatenate([x1, x2, x3, x4], axis=2)
+    x = Conv1D(1, kernel_size=1, padding="same", activation='relu',
+               kernel_initializer=kernel_init)(x)
+    model = tf.keras.Model(input_layer, x)
+    return model
+
+
+def mnase_Etienne_sigmoid(winsize=2001, **kwargs):
+    kernel_init = VarianceScaling()
+    model = Sequential([
+        Conv1D(64, kernel_size=3, padding="same", activation='relu',
+               kernel_initializer=kernel_init, input_shape=(winsize, 4)),
+        MaxPool1D(2, padding='same'),
+        BatchNormalization(),
+        Dropout(0.2),
+        Conv1D(16, kernel_size=8, padding="same", activation='relu',
+               kernel_initializer=kernel_init),
+        MaxPool1D(2, padding='same'),
+        BatchNormalization(),
+        Dropout(0.2),
+        Conv1D(8, kernel_size=80, padding="same", activation='relu',
+               kernel_initializer=kernel_init),
+        MaxPool1D(2, padding='same'),
+        BatchNormalization(),
+        Flatten(),
+        Dense(1, activation='sigmoid')
+    ])
+    return model
+
+
+def bassenji_sigmoid(winsize=32768, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The uncompiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = Input(shape=(winsize, 4))
+
+    x = Conv1D(32, kernel_size=12, padding="same", activation='relu',
+               kernel_initializer=kernel_init)(input_layer)
+    x = MaxPool1D(pool_size=8, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+
+    x = Conv1D(32, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init)(x)
+    x = MaxPool1D(pool_size=4, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+
+    x = Conv1D(32, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init)(x)
+    x = MaxPool1D(pool_size=4, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Dropout(0.2)(x)
+
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=2)(x)
+    x = BatchNormalization()(x)
+    x1 = Dropout(0.2)(x)
+
+    x = x1
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=4)(x)
+    x = BatchNormalization()(x)
+    x2 = Dropout(0.2)(x)
+
+    x = concatenate([x1, x2], axis=2)
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=8)(x)
+    x = BatchNormalization()(x)
+    x3 = Dropout(0.2)(x)
+
+    x = concatenate([x1, x2, x3], axis=2)
+    x = Conv1D(16, kernel_size=5, padding="same", activation='relu',
+               kernel_initializer=kernel_init, dilation_rate=16)(x)
+    x = BatchNormalization()(x)
+    x4 = Dropout(0.2)(x)
+
+    x = concatenate([x1, x2, x3, x4], axis=2)
+    x = Conv1D(1, kernel_size=1, padding="same", activation='sigmoid',
+               kernel_initializer=kernel_init)(x)
+    model = tf.keras.Model(input_layer, x)
     return model
 
 
@@ -516,6 +931,40 @@ def Yann_with_init_and_padding(read_length=101,
     return model
 
 
+def BPNet(winsize=32768, **kwargs):
+    """
+    Builds a Deep neural network model
+
+    Arguments
+    ---------
+    (optional) winsize: the sequence length of reads given as input
+
+    Returns
+    -------
+    The uncompiled model
+
+    """
+    kernel_init = VarianceScaling()
+
+    # build the CNN model
+    input_layer = kl.Input(shape=(winsize, 4))
+
+    x1 = kl.Conv1D(64, kernel_size=25, padding="same", activation='relu',
+                   kernel_initializer=kernel_init)(input_layer)
+
+    for dil in range(8):
+        x2 = kl.Conv1D(64, kernel_size=3, dilation_rate=2**dil, padding="same",
+                       activation='relu', kernel_initializer=kernel_init)(x1)
+        x2, x1 = kl.add([x1, x2]), x2
+
+    x = kl.Reshape((-1, 1, 64))(x)
+    x = kl.Conv2DTranspose(1, kernel_size=25, padding='same',
+                           kernel_initializer=kernel_init)(x)
+    x = kl.Reshape((-1, 1))
+    model = tf.keras.Model(input_layer, x)
+    return model
+
+
 if __name__ == "__main__":
-    model = build_model('inception_dna_v1')
+    model = mnase_model(2001)
     print(model.summary())
