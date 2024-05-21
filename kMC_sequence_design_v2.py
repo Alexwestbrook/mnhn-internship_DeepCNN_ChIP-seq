@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
+
 from Modules import utils
 from Modules.tf_utils import correlate, mae_cor, np_mae_cor
 
@@ -388,6 +389,8 @@ def maxstep_linspace(start: int, stop: int, max_step: int) -> np.ndarray:
 
     Start and stop are included. Spacings can differ by at most 1 and are smaller than max_step.
     Spacings are the largest possible value satisfying these conditions.
+    This is similar to np.linspace only on integers, and by specifying the maximum step size
+    instead of the number of values.
 
     Parameters
     ----------
@@ -400,6 +403,17 @@ def maxstep_linspace(start: int, stop: int, max_step: int) -> np.ndarray:
     -------
     ndarray
         Array of pseudo-evenly spaced integers
+    
+    Examples
+    --------
+    >>> maxstep_linspace(0, 8, 2)  # all spacings equal
+    array([0, 2, 4, 6, 8])
+    >>> maxstep_linspace(0, 8, 3)  # uneven adjusted spacings
+    array([0, 3, 5, 8])
+    >>> maxstep_linspace(0, 8, 7)  # spacings much smaller than max_step
+    array([0, 4, 8])
+    >>> maxstep_linspace(0, 0, 2)  # start same as stop
+    array([0])
     """
     if stop == start:
         return np.array([start])
@@ -412,7 +426,9 @@ def slicer_on_axis(
     slc: Union[slice, Iterable[slice]],
     axis: Union[None, int, Iterable[int]] = None,
 ) -> Tuple[slice]:
-    """Take slices of array along specified axis
+    """Build slice of array along specified axis.
+
+    This function can be used to build slices for arrays with many or unknown number of dimensions.
 
     Parameters
     ----------
@@ -421,12 +437,47 @@ def slicer_on_axis(
     slc: slice or iterable of slices
         Slices of the array to take.
     axis: None or int or iterable of ints
-        Axis along which to perform slicing. The default (None) is to take slices along first len(slc) dimensions
+        Axis along which to perform slicing. The default (None) is to take slices along first len(`slc`) dimensions.
 
     Returns
     -------
     tuple of slices
         Full tuple of slices to use to slice array
+
+    Examples
+    --------
+    >>> arr = np.arange(24).reshape(2, 3, 4)
+    >>> arr
+    array([[[ 0,  1,  2,  3],
+            [ 4,  5,  6,  7],
+            [ 8,  9, 10, 11]],
+
+           [[12, 13, 14, 15],
+            [16, 17, 18, 19],
+            [20, 21, 22, 23]]])
+    >>> arr[slicer_on_axis(arr, slice(1, 3), axis=2)]
+    array([[[ 1,  2],
+            [ 5,  6],
+            [ 9, 10]],
+
+           [[13, 14],
+            [17, 18],
+            [21, 22]]])
+    >>> arr[slicer_on_axis(arr, slice(2, None), axis=1)]
+    array([[[ 8,  9, 10, 11]],
+
+           [[20, 21, 22, 23]]])
+    >>> arr[slicer_on_axis(arr, slice(None, -1))]
+    array([[[ 0,  1,  2,  3],
+            [ 4,  5,  6,  7],
+            [ 8,  9, 10, 11]]])
+    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)], axis=[0, 2])]
+    array([[[ 1,  2],
+            [ 5,  6],
+            [ 9, 10]]])
+    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)])]
+    array([[[ 4,  5,  6,  7],
+            [ 8,  9, 10, 11]]])
     """
     full_slice = [slice(None)] * arr.ndim
     if isinstance(slc, slice):
@@ -440,7 +491,13 @@ def slicer_on_axis(
     else:
         if axis is None:
             axis = list(range(len(slc)))
+        elif not isinstance(axis, Iterable):
+            raise ValueError('if slc is an iterable, axis must be an iterable too')
+        elif len(axis) != len(slc):
+            raise ValueError('axis and slc must have same length')
         for s, ax in zip(slc, axis):
+            if full_slice[ax] != slice(None):
+                raise ValueError("Can't set slice on same axis twice")
             full_slice[ax] = s
     return tuple(full_slice)
 
@@ -461,7 +518,25 @@ def moving_sum(arr: np.ndarray, n: int, axis: Union[None, int] = None) -> np.nda
     -------
     ndarray
         Array of moving sum, with size along `axis` reduced by `n`-1.
+    
+    Examples
+    --------
+    >>> moving_sum(np.arange(10), n=2)
+    array([ 1,  3,  5,  7,  9, 11, 13, 15, 17])
+    >>> arr = np.arange(24).reshape(2, 3, 4)
+    >>> moving_sum(arr, n=2, axis=-1) 
+    array([[[ 1,  3,  5],
+            [ 9, 11, 13],
+            [17, 19, 21]],
+
+           [[25, 27, 29],
+            [33, 35, 37],
+            [41, 43, 45]]])
     """
+    if n <= 0:
+        raise ValueError(f"n must be greater than 0, but is equal to {n}")
+    elif n > arr.shape[axis]:
+        raise ValueError(f"Can't compute moving_sum of {n} vallues on axis {axis} with length {arr.shape[axis]}")
     res = np.cumsum(arr, axis=axis)
     res[slicer_on_axis(res, slice(n, None), axis=axis)] = (
         res[slicer_on_axis(res, slice(n, None), axis=axis)]
