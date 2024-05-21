@@ -52,16 +52,7 @@ def parsing():
         "-kfile",
         "--kmer_file",
         type=str,
-        default="/home/alex/shared_folder/SCerevisiae/genome/W303/"
-        "W303_3mer_freq.csv",
         help="file with kmer distribution to use for initializing sequences",
-    )
-    parser.add_argument(
-        "-k",
-        type=int,
-        default=3,
-        help="value of k for kmer distribution, must be provided to read the "
-        "kmer_file correctly",
     )
     parser.add_argument(
         "-n",
@@ -260,7 +251,6 @@ def parsing():
     # Basic checks
     assert len(args.one_hot_order) == 4 and set(args.one_hot_order) == set("ACGT")
     for item in [
-        args.k,
         args.n_seqs,
         args.length,
         args.steps,
@@ -824,7 +814,9 @@ def get_profile_chunk(
     preds = []
     for chunk in chunks:
         # Convert to one-hot and predict
-        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze(axis=-1)
+        pred = model.predict(one_hot_converter(chunk), batch_size=batch_size).squeeze(
+            axis=-1
+        )
         # Collect garbage to prevent memory leak from model.predict()
         gc.collect()
         preds.append(pred)
@@ -1102,7 +1094,23 @@ def main(args):
     else:
         mutfree_pos = None
     # Extract kmer distribution
-    freq_kmer = pd.read_csv(args.kmer_file, index_col=[i for i in range(args.k)])
+    if args.kmer_file is None:
+        # Use target gc
+        freq_kmer = pd.Series(
+            [
+                (1 - args.target_gc) / 2,
+                args.target_gc / 2,
+                args.target_gc / 2,
+                (1 - args.target_gc) / 2,
+            ],
+            index=list("ACGT"),
+        )
+    else:
+        with open(args.kmer_file) as f:
+            for k, c in enumerate(f.readline()):
+                if c != ",":
+                    break
+        freq_kmer = pd.read_csv(args.kmer_file, index_col=np.arange(k))
     # Generate and save start sequences
     if args.seed != -1:
         np.random.seed(args.seed)
