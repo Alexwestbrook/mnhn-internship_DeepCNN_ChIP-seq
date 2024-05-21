@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
-
 from Modules import utils
 from Modules.tf_utils import correlate, mae_cor, np_mae_cor
 
@@ -403,7 +402,7 @@ def maxstep_linspace(start: int, stop: int, max_step: int) -> np.ndarray:
     -------
     ndarray
         Array of pseudo-evenly spaced integers
-    
+
     Examples
     --------
     >>> maxstep_linspace(0, 8, 2)  # all spacings equal
@@ -492,9 +491,9 @@ def slicer_on_axis(
         if axis is None:
             axis = list(range(len(slc)))
         elif not isinstance(axis, Iterable):
-            raise ValueError('if slc is an iterable, axis must be an iterable too')
+            raise ValueError("if slc is an iterable, axis must be an iterable too")
         elif len(axis) != len(slc):
-            raise ValueError('axis and slc must have same length')
+            raise ValueError("axis and slc must have same length")
         for s, ax in zip(slc, axis):
             if full_slice[ax] != slice(None):
                 raise ValueError("Can't set slice on same axis twice")
@@ -518,13 +517,13 @@ def moving_sum(arr: np.ndarray, n: int, axis: Union[None, int] = None) -> np.nda
     -------
     ndarray
         Array of moving sum, with size along `axis` reduced by `n`-1.
-    
+
     Examples
     --------
     >>> moving_sum(np.arange(10), n=2)
     array([ 1,  3,  5,  7,  9, 11, 13, 15, 17])
     >>> arr = np.arange(24).reshape(2, 3, 4)
-    >>> moving_sum(arr, n=2, axis=-1) 
+    >>> moving_sum(arr, n=2, axis=-1)
     array([[[ 1,  3,  5],
             [ 9, 11, 13],
             [17, 19, 21]],
@@ -535,8 +534,14 @@ def moving_sum(arr: np.ndarray, n: int, axis: Union[None, int] = None) -> np.nda
     """
     if n <= 0:
         raise ValueError(f"n must be greater than 0, but is equal to {n}")
-    elif n > arr.shape[axis]:
-        raise ValueError(f"Can't compute moving_sum of {n} vallues on axis {axis} with length {arr.shape[axis]}")
+    elif axis is None and n > arr.size:
+        raise ValueError(
+            f"Can't compute moving_sum of {n} values on flattened array with length {arr.size}"
+        )
+    elif axis is not None and n > arr.shape[axis]:
+        raise ValueError(
+            f"Can't compute moving_sum of {n} values on axis {axis} with length {arr.shape[axis]}"
+        )
     res = np.cumsum(arr, axis=axis)
     res[slicer_on_axis(res, slice(n, None), axis=axis)] = (
         res[slicer_on_axis(res, slice(n, None), axis=axis)]
