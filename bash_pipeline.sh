@@ -208,8 +208,8 @@ data_dir='/home/alex/shared_folder'
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2 -n 1 -l 20000 --steps 100 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2/designed_seqs/start_seqs.npy --steps 600 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer/designed_seqs/mut_seqs_step599.npy --steps 600 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
-python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued2 --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued/designed_seqs/mut_seqs_step599.npy --steps 200 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
-
+# python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued2 --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued/designed_seqs/mut_seqs_step599.npy --steps 200 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
+python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued3 --start_seqs $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_flanksInt2_longer_continued2/designed_seqs/mut_seqs_step199.npy --steps 700 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
 
 # writing_dir='../'
 # bbmap_dir='../bbmap'
