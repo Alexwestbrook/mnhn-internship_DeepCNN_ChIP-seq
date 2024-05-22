@@ -215,7 +215,12 @@ data_dir='/home/alex/shared_folder'
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test153 --steps 5 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test154 -targ_gc 0.2 --steps 5 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test155 -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv --steps 5 -t 0.0001 -s 128 -mid --seed 20 -v --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
-# 
+python $scripts_dir/kMC_sequence_design.py \
+    -o $data_dir/SCerevisiae/generated/20kb_lowpol_1seq_from_concat4kb_first5_flanksInt2 \
+    --start_seqs $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2/designed_seqs/concat_first5.npy \
+    -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+    --steps 500 -t 0.0001 -s 128 -mid --seed 20 -v \
+    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz
 
 # writing_dir='../'
 # bbmap_dir='../bbmap'
