@@ -52,7 +52,9 @@ def parsing():
         "-kfile",
         "--kmer_file",
         type=str,
-        help="file with kmer distribution to use for initializing sequences",
+        help="file with kmer distribution to use for initializing sequences. "
+        "The first named column is considered for the frequency values. "
+        "There should be k columns before that, forming the kmers as a multi-index",
     )
     parser.add_argument(
         "-n",
