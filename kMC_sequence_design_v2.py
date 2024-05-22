@@ -407,13 +407,20 @@ def maxstep_linspace(start: int, stop: int, max_step: int) -> np.ndarray:
     --------
     >>> maxstep_linspace(0, 8, 2)  # all spacings equal
     array([0, 2, 4, 6, 8])
-    >>> maxstep_linspace(0, 8, 3)  # uneven adjusted spacings
-    array([0, 3, 5, 8])
-    >>> maxstep_linspace(0, 8, 7)  # spacings much smaller than max_step
-    array([0, 4, 8])
+    >>> maxstep_linspace(0, -8, 3)  # uneven adjusted spacings
+    array([0, -3, -5, -8])
+    >>> maxstep_linspace(-4.0, 4.0, 7.0)  # spacings much smaller than max_step
+    array([-4, 0, 4])
     >>> maxstep_linspace(0, 0, 2)  # start same as stop
     array([0])
     """
+    for arg in [start, stop, max_step]:
+        if not isinstance(arg, (int, float)):
+            raise ValueError(f"Arguments must be integers, not {type(arg).__name__}")
+        elif not int(arg) == arg:  # accept float typed integers
+            raise ValueError(f"Float arguments must be integer valued, not {arg}")
+    if max_step <= 0:
+        raise ValueError(f"max_step must be positive but has value {max_step}")
     if stop == start:
         return np.array([start])
     n_steps = math.ceil(abs(stop - start) / max_step)
@@ -427,7 +434,7 @@ def slicer_on_axis(
 ) -> Tuple[slice]:
     """Build slice of array along specified axis.
 
-    This function can be used to build slices for arrays with many or unknown number of dimensions.
+    This function can be used to build slices from unknown axis parameter.
 
     Parameters
     ----------
@@ -454,7 +461,7 @@ def slicer_on_axis(
            [[12, 13, 14, 15],
             [16, 17, 18, 19],
             [20, 21, 22, 23]]])
-    >>> arr[slicer_on_axis(arr, slice(1, 3), axis=2)]
+    >>> arr[slicer_on_axis(arr, slice(1, 3), axis=-1)]  # simple slice on last axis
     array([[[ 1,  2],
             [ 5,  6],
             [ 9, 10]],
@@ -462,21 +469,28 @@ def slicer_on_axis(
            [[13, 14],
             [17, 18],
             [21, 22]]])
-    >>> arr[slicer_on_axis(arr, slice(2, None), axis=1)]
-    array([[[ 8,  9, 10, 11]],
-
-           [[20, 21, 22, 23]]])
-    >>> arr[slicer_on_axis(arr, slice(None, -1))]
+    >>> for axis, res in enumerate([arr[1:], arr[:, 1:], arr[:, :, 1:]]):  # unknown axis parameter
+    >>>     print(np.all(arr[slicer_on_axis(arr, slice(1, None), axis=axis)] == res))
+    True
+    True
+    True
+    >>> arr[slicer_on_axis(arr, slice(None, -1))]  # no axis parameter
     array([[[ 0,  1,  2,  3],
             [ 4,  5,  6,  7],
             [ 8,  9, 10, 11]]])
-    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)], axis=[0, 2])]
+    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)], axis=[0, 2])]  # multiple slices and axis
     array([[[ 1,  2],
             [ 5,  6],
             [ 9, 10]]])
-    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)])]
+    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)])]  # multiple slices without axis parameter
     array([[[ 4,  5,  6,  7],
             [ 8,  9, 10, 11]]])
+    >>> arr[slicer_on_axis(arr, slice(1, None), axis=[1, 2])]  # single slice on multiple axis
+    array([[[ 5,  6,  7],
+            [ 9, 10, 11]],
+
+           [[17, 18, 19],
+            [21, 22, 23]]])
     """
     full_slice = [slice(None)] * arr.ndim
     if isinstance(slc, slice):
@@ -491,7 +505,7 @@ def slicer_on_axis(
         if axis is None:
             axis = list(range(len(slc)))
         elif not isinstance(axis, Iterable):
-            raise ValueError("if slc is an iterable, axis must be an iterable too")
+            raise ValueError("if slc is an iterable, axis must be an iterable or None")
         elif len(axis) != len(slc):
             raise ValueError("axis and slc must have same length")
         for s, ax in zip(slc, axis):
@@ -588,7 +602,7 @@ def sliding_GC(
         return moving_sum(GC_mask, n, axis=axis) / moving_sum(valid_mask, n, axis=axis)
     elif form == "one_hot":
         valid_mask = seqs.sum(axis=-1) != 0
-        GC_mask = seqs[:, [order.find("C"), order.find("G")]].sum(axis=-1)
+        GC_mask = seqs[..., [order.find("C"), order.find("G")]].sum(axis=-1)
         if n > seqs.shape[-1]:
             n = seqs.shape[-1]
         return moving_sum(GC_mask, n=n, axis=-1) / moving_sum(valid_mask, n=n, axis=-1)
@@ -795,7 +809,10 @@ def all_mutations(seqs, positions, return_occs=False, bases_occs=None):
 
 
 def np_idx_to_one_hot(
-    idx: np.ndarray, order: str = "ACGT", extradims: Union[None, int] = None
+    idx: np.ndarray,
+    order: str = "ACGT",
+    extradims: Union[None, int] = None,
+    dtype: type = bool,
 ) -> np.ndarray:
     """Convert array of indexes into one-hot in np format.
 
@@ -810,14 +827,17 @@ def np_idx_to_one_hot(
     extradims : int or list of int, optional
         Extra dimensions to give to the one_hot, which by default is of shape
         idx.shape + (4,). If extradims is an array there will be an error.
+    dtype : bool, optional
+        Type to use for one-hot encoding
 
     Returns
     -------
     ndarray
         Array with same shape as idx, in one-hot format.
     """
-    assert len(order) == 4 and set(order) == set("ACGT")
-    converter = np.zeros((4, 4), dtype=bool)
+    if not (len(order) == 4 and set(order) == set("ACGT")):
+        raise ValueError("order must be a permutation of ACGT, not {order}")
+    converter = np.zeros((4, 4), dtype=dtype)
     for i, c in enumerate("ACGT"):
         converter[i, order.find(c)] = 1
     one_hot = converter[idx]

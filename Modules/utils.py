@@ -2469,7 +2469,7 @@ def slicer_on_axis(
 ) -> Tuple[slice]:
     """Build slice of array along specified axis.
 
-    This function can be used to build slices for arrays with many or unknown number of dimensions.
+    This function can be used to build slices from unknown axis parameter.
 
     Parameters
     ----------
@@ -2496,7 +2496,7 @@ def slicer_on_axis(
            [[12, 13, 14, 15],
             [16, 17, 18, 19],
             [20, 21, 22, 23]]])
-    >>> arr[slicer_on_axis(arr, slice(1, 3), axis=2)]
+    >>> arr[slicer_on_axis(arr, slice(1, 3), axis=-1)]  # simple slice on last axis
     array([[[ 1,  2],
             [ 5,  6],
             [ 9, 10]],
@@ -2504,21 +2504,28 @@ def slicer_on_axis(
            [[13, 14],
             [17, 18],
             [21, 22]]])
-    >>> arr[slicer_on_axis(arr, slice(2, None), axis=1)]
-    array([[[ 8,  9, 10, 11]],
-
-           [[20, 21, 22, 23]]])
-    >>> arr[slicer_on_axis(arr, slice(None, -1))]
+    >>> for axis, res in enumerate([arr[1:], arr[:, 1:], arr[:, :, 1:]]):  # unknown axis parameter
+    >>>     print(np.all(arr[slicer_on_axis(arr, slice(1, None), axis=axis)] == res))
+    True
+    True
+    True
+    >>> arr[slicer_on_axis(arr, slice(None, -1))]  # no axis parameter
     array([[[ 0,  1,  2,  3],
             [ 4,  5,  6,  7],
             [ 8,  9, 10, 11]]])
-    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)], axis=[0, 2])]
+    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)], axis=[0, 2])]  # multiple slices and axis
     array([[[ 1,  2],
             [ 5,  6],
             [ 9, 10]]])
-    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)])]
+    >>> arr[slicer_on_axis(arr, [slice(None, -1), slice(1, 3)])]  # multiple slices without axis parameter
     array([[[ 4,  5,  6,  7],
             [ 8,  9, 10, 11]]])
+    >>> arr[slicer_on_axis(arr, slice(1, None), axis=[1, 2])]  # single slice on multiple axis
+    array([[[ 5,  6,  7],
+            [ 9, 10, 11]],
+
+           [[17, 18, 19],
+            [21, 22, 23]]])
     """
     full_slice = [slice(None)] * arr.ndim
     if isinstance(slc, slice):
@@ -2533,7 +2540,7 @@ def slicer_on_axis(
         if axis is None:
             axis = list(range(len(slc)))
         elif not isinstance(axis, Iterable):
-            raise ValueError("if slc is an iterable, axis must be an iterable too")
+            raise ValueError("if slc is an iterable, axis must be an iterable or None")
         elif len(axis) != len(slc):
             raise ValueError("axis and slc must have same length")
         for s, ax in zip(slc, axis):

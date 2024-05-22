@@ -10,26 +10,52 @@ from scipy.stats import pearsonr
 class TestSlicerOnAxis:
     def test_examples(self):
         arr = np.arange(24).reshape(2, 3, 4)
+        # simple slicer
         assert np.all(
-            arr[utils.slicer_on_axis(arr, slice(1, 3), axis=2)]
+            arr[utils.slicer_on_axis(arr, slice(1, 3), axis=-1)]
             == np.array([[[1, 2], [5, 6], [9, 10]], [[13, 14], [17, 18], [21, 22]]])
         )
-        assert np.all(
-            arr[utils.slicer_on_axis(arr, slice(2, None), axis=1)]
-            == np.array([[[8, 9, 10, 11]], [[20, 21, 22, 23]]])
-        )
+        # unknown axis parameter
+        for axis, res in enumerate([arr[1:], arr[:, 1:], arr[:, :, 1:]]):
+            assert np.all(
+                arr[utils.slicer_on_axis(arr, slice(1, None), axis=axis)] == res
+            )
+        # no axis parameter
         assert np.all(
             arr[utils.slicer_on_axis(arr, slice(None, -1))]
             == np.array([[[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]])
         )
+        # multiple slices and axis
         assert np.all(
             arr[utils.slicer_on_axis(arr, [slice(None, -1), slice(1, 3)], axis=[0, 2])]
             == np.array([[[1, 2], [5, 6], [9, 10]]])
         )
+        # multiple slices without axis parameter
         assert np.all(
             arr[utils.slicer_on_axis(arr, [slice(None, -1), slice(1, 3)])]
             == np.array([[[4, 5, 6, 7], [8, 9, 10, 11]]])
         )
+        # single slice on multiple axis
+        assert np.all(
+            arr[utils.slicer_on_axis(arr, slice(1, None), axis=[1, 2])]
+            == np.array([[[5, 6, 7], [9, 10, 11]], [[17, 18, 19], [21, 22, 23]]])
+        )
+
+    def test_exceptions(self):
+        arr = np.arange(24).reshape(2, 3, 4)
+        with pytest.raises(IndexError):
+            # axis out of bounds
+            utils.slicer_on_axis(arr, slice(1, -1), axis=4)
+            utils.slicer_on_axis(arr, slice(1, -1), axis=-4)
+        with pytest.raises(ValueError):
+            # iterable slice, integer axis
+            utils.slicer_on_axis(arr, [slice(1, -1)], axis=1)
+            # different number of slices and axis
+            utils.slicer_on_axis(arr, [slice(1, -1), slice(2, 3)], axis=[1, 0, 2])
+            utils.slicer_on_axis(arr, [slice(1, -1), slice(2, 3)], axis=[1])
+            # multiple references to same axis
+            utils.slicer_on_axis(arr, [slice(1, -1), slice(2, 3)], axis=[1, 1])
+            utils.slicer_on_axis(arr, [slice(1, -1), slice(2, 3)], axis=[1, -2])
 
 
 class TestMovingSum:
