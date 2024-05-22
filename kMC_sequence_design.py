@@ -1110,21 +1110,19 @@ def main(args):
             for k, c in enumerate(f.readline()):
                 if c != ",":
                     break
-        freq_kmer = pd.read_csv(args.kmer_file, index_col=np.arange(k))
+        freq_kmer = pd.read_csv(args.kmer_file, index_col=np.arange(k)).iloc[:, 0]
     # Generate and save start sequences
     if args.seed != -1:
         np.random.seed(args.seed)
     if args.start_seqs:
         seqs = np.load(args.start_seqs)
     else:
-        seqs = utils.random_sequences(
-            args.n_seqs, args.length, freq_kmer.iloc[:, 0], out="idx"
-        )
+        seqs = utils.random_sequences(args.n_seqs, args.length, freq_kmer, out="idx")
     np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
     # Compute energy of start sequences
     # Predict on forward and reverse strands
     if flanks == "random":
-        randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
+        randseqs = utils.random_sequences(2, pad, freq_kmer, out="idx")
         flanks = (randseqs[0], randseqs[1])
     elif flanks == "choose_idx":
         flank_idx = np.random.randint(0, len(flank_left))
@@ -1164,7 +1162,7 @@ def main(args):
         seqs, mut_energy = all_mutations(seqs, seen_bases, mutfree_pos)
         # Predict on forward and reverse strands
         if flanks == "random":
-            randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
+            randseqs = utils.random_sequences(2, pad, freq_kmer, out="idx")
             flanks = (randseqs[0], randseqs[1])
         elif flanks == "choose_idx":
             flank_idx = np.random.randint(0, len(flank_left))
