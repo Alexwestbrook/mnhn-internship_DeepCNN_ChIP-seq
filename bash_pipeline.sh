@@ -2,7 +2,7 @@
 
 scripts_dir='/home/alex/mnhn-internship_DeepCNN_ChIP-seq'
 data_dir='/home/alex/shared_folder'
-wrtiting_dir=$data_dir
+writing_dir=$data_dir
 
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test49 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.01
 # python $scripts_dir/kMC_sequence_design.py -o $data_dir/SCerevisiae/generated/test50 --start_seqs $data_dir/SCerevisiae/generated/test9/start_seqs_first10.npy --steps 500 -temp 0.0005 --stride 128 --seed 0 -w 1 1 1 0.005
