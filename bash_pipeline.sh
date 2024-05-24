@@ -228,11 +228,16 @@ writing_dir=$data_dir
 #     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
 #     --loss mae_cor \
 #     -n 2 -l 4000 --steps 100 -t 0.0001 -s 20 --flanks random -ilen 0 -per 167 -plen 147 -pshape gaussian --seed 12 -v
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $data_dir/SCerevisiae/generated/19kb_lowpol_1seq_from_concat4kb_first5_withoutfirstkb_flanksforInt2 \
+#     --start_seqs $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2/designed_seqs/concat_first5_withoutfirstkb.npy \
+#     --flanks $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2/designed_seqs/lowpolforInt2_1kbflanks_ACGTidx.npz \
+#     --steps 100 -t 0.0001 -s 128 -mid --seed 20 -v \
 python $scripts_dir/kMC_sequence_design.py \
-    -o $data_dir/SCerevisiae/generated/19kb_lowpol_1seq_from_concat4kb_first5_withoutfirstkb_flanksforInt2 \
-    --start_seqs $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2/designed_seqs/concat_first5_withoutfirstkb.npy \
-    --flanks $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2/designed_seqs/lowpolforInt2_1kbflanks_ACGTidx.npz \
-    --steps 100 -t 0.0001 -s 128 -mid --seed 20 -v \
+    -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v3 \
+    -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+    -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 100 -v \
+    --flanks random
     
 
 # writing_dir='../'
