@@ -233,11 +233,31 @@ writing_dir=$data_dir
 #     --start_seqs $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2/designed_seqs/concat_first5_withoutfirstkb.npy \
 #     --flanks $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_flanksInt2_v2/designed_seqs/lowpolforInt2_1kbflanks_ACGTidx.npz \
 #     --steps 100 -t 0.0001 -s 128 -mid --seed 20 -v \
-python $scripts_dir/kMC_sequence_design.py \
-    -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v3 \
-    -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
-    -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 100 -v \
-    --flanks random
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v4 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 101 -v \
+#     --flanks random
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v5 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 102 -v \
+#     --flanks random
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v6 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 103 -v \
+#     --flanks random
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v7 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 104 -v \
+#     --flanks random
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $data_dir/SCerevisiae/generated/4kb_lowpol_10seq_randomflanks_v8 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 105 -v \
+#     --flanks random
     
 
 # writing_dir='../'

@@ -55,16 +55,9 @@ def parsing():
         "-kfile",
         "--kmer_file",
         type=str,
-        default="/home/alex/shared_folder/SCerevisiae/genome/W303/"
-        "W303_3mer_freq.csv",
-        help="file with kmer distribution to use for initializing sequences (default: %(default)s)",
-    )
-    parser.add_argument(
-        "-k",
-        type=int,
-        default=3,
-        help="value of k for kmer distribution, must be provided to read the "
-        "kmer_file correctly (default: %(default)s)",
+        help="file with kmer distribution to use for initializing sequences. "
+        "The first named column is considered for the frequency values. "
+        "There should be k columns before that, forming the kmers as a multi-index",
     )
     parser.add_argument(
         "-n",
@@ -317,7 +310,6 @@ def parsing():
     # Basic checks
     assert len(args.one_hot_order) == 4 and set(args.one_hot_order) == set("ACGT")
     for item in [
-        args.k,
         args.n_seqs,
         args.length,
         args.steps,
@@ -1455,15 +1447,30 @@ def main(args):
     else:
         flanks = None
     # Extract kmer distribution
-    freq_kmer = pd.read_csv(args.kmer_file, index_col=[i for i in range(args.k)])
+    if args.kmer_file is None:
+        # Use target gc
+        freq_kmer = pd.Series(
+            [
+                (1 - args.target_gc) / 2,
+                args.target_gc / 2,
+                args.target_gc / 2,
+                (1 - args.target_gc) / 2,
+            ],
+            index=list("ACGT"),
+        )
+    else:
+        # Infer value of k
+        with open(args.kmer_file) as f:
+            for k, c in enumerate(f.readline()):
+                if c != ",":
+                    break
+        freq_kmer = pd.read_csv(args.kmer_file, index_col=np.arange(k)).iloc[:, 0]
     # Generate and save start sequences
     rng = np.random.default_rng(args.seed)
     if args.start_seqs:
         seqs = np.load(args.start_seqs)
     else:
-        seqs = utils.random_sequences(
-            args.n_seqs, args.length, freq_kmer.iloc[:, 0], out="idx"
-        )
+        seqs = utils.random_sequences(args.n_seqs, args.length, freq_kmer, out="idx")
     np.save(Path(args.output_dir, "designed_seqs", "start_seqs.npy"), seqs)
     # Extract positions where mutations can be performed
     if args.mutfree_pos_file is not None:
@@ -1477,7 +1484,7 @@ def main(args):
     # Compute energy of start sequences
     # Predict on forward and reverse strands
     if flanks == "random":
-        randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
+        randseqs = utils.random_sequences(2, pad, freq_kmer, out="idx")
         flanks = (randseqs[0], randseqs[1])
     elif flanks == "choose_idx":
         flank_idx = rng.integers(0, len(flank_left))
@@ -1518,7 +1525,7 @@ def main(args):
             print(f"Step {step}")
         # Get flanks and offset
         if flanks == "random":
-            randseqs = utils.random_sequences(2, pad, freq_kmer.iloc[:, 0], out="idx")
+            randseqs = utils.random_sequences(2, pad, freq_kmer, out="idx")
             flanks = (randseqs[0], randseqs[1])
         elif flanks == "choose_idx":
             flank_idx = rng.integers(0, len(flank_left))
