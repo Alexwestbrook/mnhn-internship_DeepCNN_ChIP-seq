@@ -43,3 +43,13 @@ disown -p $pid # perd l'ownership du process
 # Ctrl + Z stops current terminal process (pause) then type
 bg %1 # bg is enough, 1 is the job number
 # to resume as background process
+
+# Bowtie multihit aligment for primers
+bowtie2 -x shared_folder/Human/genome/T2T-CHM13v2.0/T2T-CHM13v2.0_index -p $threads -af -X 250 --score-min C,-1 --mp 1,1 --np 10 -1 primers_Judith1.fasta -2 primers_Judith2.fasta -S primers_Judith_1mm.sam
+samtools view -@ $threads -bS $out_prefix.sam | samtools sort -@ $threads -o $out_prefix.sorted.bam
+rm $out_prefix.sam
+samtools index -@ $threads $out_prefix.sorted.bam
+# Count hits by readname in bam
+samtools view -cN <(printf "%s\n$readname") $bam_file
+# Counts hits by chromosome
+samtools view -N <(printf "%s\n$readname") $bam_file | awk '{print $3}' | uniq -c

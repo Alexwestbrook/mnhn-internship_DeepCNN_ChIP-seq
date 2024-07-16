@@ -258,6 +258,44 @@ writing_dir=$data_dir
 #     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
 #     -n 10 -l 4000 --steps 500 -t 0.0001 -s 128 -mid --seed 105 -v \
 #     --flanks random
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $writing_dir/SCerevisiae/generated/4kb_regnuc_1seq_flanksInt2_nrl169 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+#     -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 -ilen 0 -per 169 -plen 147 -pshape gaussian -v
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $writing_dir/SCerevisiae/generated/4kb_regnuc_1seq_flanksInt2_nrl171 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+#     -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 -ilen 0 -per 171 -plen 147 -pshape gaussian -v
+# python $scripts_dir/kMC_sequence_design.py \
+#     -o $writing_dir/SCerevisiae/generated/4kb_regnuc_1seq_flanksInt2_nrl173 \
+#     -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+#     --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+#     -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+#     -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 -ilen 0 -per 173 -plen 147 -pshape gaussian -v
+python $scripts_dir/kMC_sequence_design.py \
+    -o $writing_dir/SCerevisiae/generated/4kb_regnuc_1seq_flanksInt2_nrl168 \
+    -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+    -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+    -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 -ilen 0 -per 168 -plen 147 -pshape gaussian -v
+python $scripts_dir/kMC_sequence_design.py \
+    -o $writing_dir/SCerevisiae/generated/4kb_regnuc_1seq_flanksInt2_nrl170 \
+    -kfile $data_dir/SCerevisiae/genome/W303/W303_3mer_freq.csv \
+    --flanks $data_dir/SCerevisiae/data/S288c_siteManon_Int2_1kbflanks_ACGTidx.npz \
+    -m $data_dir/SCerevisiae/Trainedmodels/model_myco_nuc_2/model \
+    -n 1 -l 4000 --steps 100 -t 0.0001 -s 20 -ilen 0 -per 170 -plen 147 -pshape gaussian -v
+
+
+
+
+
+
+
+
     
 
 # writing_dir='../'
