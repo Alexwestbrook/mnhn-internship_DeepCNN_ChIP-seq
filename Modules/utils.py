@@ -785,6 +785,13 @@ def remove_windows_with_N_v3(one_hot_seq, window_size):
     return np.array(valid_window_idx, dtype=int)
 
 
+def find_subseq(subseq, seq):
+    subseq_rev = RCdna(subseq)
+    pattern = f"(?P<fwd>{subseq[0]}(?={subseq[1:]}))|(?P<rev>{subseq_rev[0]}(?={subseq_rev[1:]}))"
+    sites = [(m.start(), "fwd" if m.groups()[0] is not None else "rev") for m in re.finditer(pattern, seq)]
+    return sites
+
+
 # Standard file format functions
 def write_fasta(seqs: dict, fasta_file: str, wrap: int = None) -> None:
     """Write sequences to a fasta file.
@@ -1265,6 +1272,103 @@ def smooth(values, window_size, mode="linear", sigma=1, padding="same"):
     else:
         raise NameError("Invalid mode")
     return convolve(values, box, mode=padding)
+
+
+def masked_convolve(
+    in1, in2, correct_missing=True, norm=True, valid_ratio=1.0 / 3.0, *args, **kwargs
+):
+    """A workaround for np.ma.MaskedArray in scipy.signal.convolve.
+    It converts the masked values to complex values=1j. The complex space allows to set a limit
+    for the imaginary convolution. The function use a ratio `valid_ratio` of np.sum(in2) to
+    set a lower limit on the imaginary part to mask the values.
+    I.e. in1=[[1.,1.,--,--]] in2=[[1.,1.]] -> imaginary_part/sum(in2): [[1., 1., .5, 0.]]
+    -> valid_ratio=.5 -> out:[[1., 1., .5, --]].
+
+    Parameters
+    ---------
+    in1 : array_like
+        First input.
+    in2 : array_like
+        Second input. Should have the same number of dimensions as `in1`.
+    correct_missing : bool, optional
+        correct the value of the convolution as a sum over valid data only,
+        as masked values account 0 in the real space of the convolution.
+    norm : bool, optional
+        if the output should be normalized to np.sum(in2).
+    valid_ratio: float, optional
+        the upper limit of the imaginary convolution to mask values. Defined by the ratio of np.sum(in2).
+    *args, **kwargs: optional
+        passed to scipy.signal.convolve(..., *args, **kwargs)
+
+    Reference:
+    https://stackoverflow.com/a/72855832
+    """
+    if not isinstance(in1, np.ma.MaskedArray):
+        in1 = np.ma.array(in1)
+
+    # np.complex128 -> stores real as np.float64
+    con = scipy.signal.convolve(
+        in1.astype(np.complex128).filled(fill_value=1j),
+        in2.astype(np.complex128),
+        *args,
+        **kwargs,
+    )
+
+    # split complex128 to two float64s
+    con_imag = con.imag
+    con = con.real
+    mask = np.abs(con_imag / np.sum(in2)) > valid_ratio
+
+    # con_east.real / (1. - con_east.imag): correction, to get the mean over all valid values
+    # con_east.imag > percent: how many percent of the single convolution value have to be from valid values
+    if correct_missing:
+        correction = np.sum(in2) - con_imag
+        con[correction != 0] *= np.sum(in2) / correction[correction != 0]
+
+    if norm:
+        con /= np.sum(in2)
+
+    return np.ma.array(con, mask=mask)
+
+
+def nan_smooth(
+    values, window_size, mode="linear", sigma=1, padding="same", pad_masked=False
+):
+    if mode == "linear":
+        box = np.ones(window_size) / window_size
+    elif mode == "gaussian":
+        box = gaussian(window_size, sigma)
+        box /= np.sum(box)
+    elif mode == "triangle":
+        box = np.concatenate(
+            (
+                np.arange((window_size + 1) // 2),
+                np.arange(window_size // 2 - 1, -1, -1),
+            ),
+            dtype=float,
+        )
+        box /= np.sum(box)
+    else:
+        raise NameError("Invalid mode")
+    values = np.ma.array(values, mask=~np.isfinite(values))
+    if pad_masked:
+        if padding == "same":
+            left_size = window_size // 2
+            right_size = (window_size - 1) // 2
+        elif padding == "full":
+            left_size = window_size - 1
+            right_size = window_size - 1
+        values = np.ma.concatenate(
+            [
+                np.ma.masked_all(left_size, dtype=values.dtype),
+                values,
+                np.ma.masked_all(right_size, dtype=values.dtype),
+            ]
+        )
+        padding = "valid"
+    return masked_convolve(
+        values, box, valid_ratio=(window_size - 1) / window_size, mode=padding
+    ).filled(fill_value=np.nan)
 
 
 def binned_alignment_count_from_coord(
