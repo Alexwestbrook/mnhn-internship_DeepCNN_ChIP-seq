@@ -6,7 +6,10 @@ import numpy as np
 # import time
 
 import tensorflow as tf
-from keras.engine import data_adapter
+try:
+    from keras.engine import data_adapter
+except ImportError:
+    from tensorflow.python.keras.engine import data_adapter
 import keras.backend as K
 from tensorflow.keras.callbacks import Callback
 from tensorflow.keras.utils import Sequence
