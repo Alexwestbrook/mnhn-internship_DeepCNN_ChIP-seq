@@ -15,7 +15,12 @@ import scipy
 from numpy.core.numeric import normalize_axis_tuple
 from numpy.lib.stride_tricks import as_strided
 from scipy import signal
-from scipy.signal import convolve, gaussian
+from scipy.signal import convolve
+
+try:
+    from scipy.signal import gaussian
+except ImportError:
+    from scipy.signal.windows import gaussian
 from scipy.sparse import coo_matrix
 from scipy.stats import pearsonr
 from sklearn.preprocessing import OneHotEncoder
@@ -788,7 +793,10 @@ def remove_windows_with_N_v3(one_hot_seq, window_size):
 def find_subseq(subseq, seq):
     subseq_rev = RCdna(subseq)
     pattern = f"(?P<fwd>{subseq[0]}(?={subseq[1:]}))|(?P<rev>{subseq_rev[0]}(?={subseq_rev[1:]}))"
-    sites = [(m.start(), "fwd" if m.groups()[0] is not None else "rev") for m in re.finditer(pattern, seq)]
+    sites = [
+        (m.start(), "fwd" if m.groups()[0] is not None else "rev")
+        for m in re.finditer(pattern, seq)
+    ]
     return sites
 
 
@@ -1921,7 +1929,7 @@ def best_cor_lag(x, y, mode="full"):
 
 # Peak manipulation
 def make_peaks(
-    peak_mask: np.ndarray, length_thres: int = 1, tol: int = 1
+    peak_mask: np.ndarray, length_thres: int = 1, tol: int = 0
 ) -> np.ndarray:
     """Format peak array from peak boolean mask.
 
@@ -1934,12 +1942,10 @@ def make_peaks(
     length_thres : int, default=1
         Minimum length required for peaks, any peak strictly below that
         length will be discarded
-    tol : int, default=1
+    tol : int, default=0
         Distance between consecutive peaks under which the peaks are merged
         into one. Can be set higher to get a single peak when signal is
-        fluctuating too much. Unlike slices, peaks include their end points,
-        meaning [1 2] and [4 5] actually contain a gap of one base,
-        but the distance is 2 (4-2). The default value of 1 means that no
+        fluctuating too much. The default value of 0 means that no
         peaks will be merged.
 
     Returns
@@ -1960,7 +1966,7 @@ def make_peaks(
     # # Check that change_idx contains as many starts as ends
     # assert (len(change_idx) % 2 == 0)
     # Merge consecutive peaks if their distance is below a threshold
-    if tol > 1:
+    if tol > 0:
         # Compute difference between end of peak and start of next one
         diffs = change_idx[2::2] - change_idx[1:-1:2]
         # Get index when difference is below threshold, see below for matching
@@ -1982,7 +1988,7 @@ def make_peaks(
 
 
 def find_peaks(
-    preds: np.ndarray, pred_thres: float, length_thres: int = 1, tol: int = 1
+    preds: np.ndarray, pred_thres: float, length_thres: int = 1, tol: int = 0
 ) -> np.ndarray:
     """Determine peaks from prediction signal and threshold.
 
@@ -1996,14 +2002,12 @@ def find_peaks(
     pred_thres : float
         Threshold above which prediction is considered in a peak
     length_thres : int, default=1
-        Minimum length required for peaks, any peak below or equal to that
+        Minimum length required for peaks, any peak strictly below that
         length will be discarded
-    tol : int, default=1
+    tol : int, default=0
         Distance between consecutive peaks under which the peaks are merged
         into one. Can be set higher to get a single peak when signal is
-        fluctuating too much. Unlike slices, peaks include their end points,
-        meaning [1 2] and [4 5] actually contain a gap of one base,
-        but the distance is 2 (4-2). The default value of 1 means that no
+        fluctuating too much. The default value of 0 means that no
         peaks will be merged.
 
     Returns
