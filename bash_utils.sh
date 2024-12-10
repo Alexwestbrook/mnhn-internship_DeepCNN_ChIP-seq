@@ -20,6 +20,10 @@ awk '/^>/ {next} {for(i=1;i<=length($0);i++) {array[substr($1,i,1)]++}} END {for
 # extract chromosome from fasta
 awk 'BEGIN {RS=">";FS="\n"} /^CHRNAME/ {printf("%s%s",">",$0)}' $fasta > $new_fasta
 
+# shuffle paired-end fastq
+paste <(zcat $input1) <(zcat $input2) | paste - - - - | shuf | awk -F '\t' '{OFS="\n"; print $1,$3,$5,$7 > "output_file1"; print $2,$4,$6,$8 > "output_file2"}'
+paste <(zcat $input1) <(zcat $input2) | paste - - - - | shuf | awk -F '\t' -v output_file1=$output_file1 -v output_file2=$output_file2 '{OFS="\n"; print $1,$3,$5,$7 > "output_file1"; print $2,$4,$6,$8 > "output_file2"}'
+
 # launch bash command, while saving the command and its terminal output to a file
 bash_command="bash my_script.sh"
 echo $bash_command > $log_file
